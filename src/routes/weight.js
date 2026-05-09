@@ -1,0 +1,61 @@
+const express = require('express');
+const { getDb } = require('../db');
+
+const router = express.Router();
+
+router.get('/', (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 30, 365);
+    const rows = getDb().prepare(
+      'SELECT * FROM weight_log ORDER BY date DESC LIMIT $limit'
+    ).all({ limit });
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/today', (req, res) => {
+  try {
+    const date = new Date().toISOString().split('T')[0];
+    const row = getDb().prepare(
+      'SELECT * FROM weight_log WHERE date = $date ORDER BY logged_at DESC LIMIT 1'
+    ).get({ date });
+    res.json(row || null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/', (req, res) => {
+  try {
+    const { weight_kg, note, date } = req.body;
+    if (!weight_kg || weight_kg <= 0) {
+      return res.status(400).json({ error: 'weight_kg must be > 0' });
+    }
+    const db = getDb();
+    const logDate = date || new Date().toISOString().split('T')[0];
+    const result = db.prepare(
+      'INSERT INTO weight_log (date, weight_kg, note) VALUES ($date, $weight_kg, $note)'
+    ).run({ date: logDate, weight_kg, note: note || null });
+    const entry = db.prepare('SELECT * FROM weight_log WHERE id = $id')
+      .get({ id: result.lastInsertRowid });
+    res.status(201).json(entry);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id', (req, res) => {
+  try {
+    const result = getDb()
+      .prepare('DELETE FROM weight_log WHERE id = $id')
+      .run({ id: req.params.id });
+    if (result.changes === 0) return res.status(404).json({ error: 'Entry not found' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
