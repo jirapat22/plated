@@ -9,7 +9,7 @@ const SALT_ROUNDS = 10;
 
 function signToken() {
   return jwt.sign({ app: 'plated' }, process.env.JWT_SECRET || 'dev_secret', {
-    expiresIn: '24h',
+    expiresIn: '30d',
   });
 }
 

@@ -82,6 +82,19 @@ export function navigateTo(view) {
   if (typeof cleanup === 'function') cleanupFn = cleanup;
 }
 
+// ─── Token persistence ──────────────────────────────────────
+const TOKEN_KEY = 'plated_token';
+
+function saveToken(t) {
+  setToken(t);
+  try { localStorage.setItem(TOKEN_KEY, t); } catch { /* private mode */ }
+}
+
+function clearToken() {
+  setToken(null);
+  try { localStorage.removeItem(TOKEN_KEY); } catch {}
+}
+
 // ─── Auth / Lock Screen ──────────────────────────────────────
 let passcode = '';
 let isSetup  = false;
@@ -110,7 +123,7 @@ async function submitPasscode() {
     } else {
       data = await api.post('/api/auth/verify', { passcode });
     }
-    setToken(data.token);
+    saveToken(data.token);
     showApp();
   } catch {
     setDots(passcode.length, 'error');
@@ -194,7 +207,7 @@ style.textContent = `
 document.head.appendChild(style);
 
 // ─── Init ────────────────────────────────────────────────────
-onUnauthorized(() => showLock(false));
+onUnauthorized(() => { clearToken(); showLock(false); });
 
 // Bottom nav routing
 document.querySelectorAll('.nav-item').forEach(btn => {
@@ -203,8 +216,25 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 
 setupNumpad();
 
-// Check auth status on load
+// Check auth status on load — auto-login if stored token is still valid
 (async () => {
+  try {
+    const stored = localStorage.getItem(TOKEN_KEY);
+    if (stored) {
+      setToken(stored);
+      // Verify token is still accepted by the server
+      await api.get('/api/settings');
+      // Token valid — go straight to app
+      await reloadEnergyUnit();
+      document.getElementById('lock-screen').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+      navigateTo('today');
+      return;
+    }
+  } catch {
+    clearToken(); // token expired or invalid
+  }
+
   try {
     const { hasPasscode } = await api.get('/api/auth/status');
     showLock(!hasPasscode);

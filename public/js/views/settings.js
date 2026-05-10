@@ -2,6 +2,11 @@ import { api }                        from '../api.js';
 import { showToast, showSheet, hideSheet, reloadEnergyUnit } from '../app.js';
 import { setEnergyUnit }             from '../utils/energy.js';
 
+function lockApp() {
+  try { localStorage.removeItem('plated_token'); } catch {}
+  location.reload();
+}
+
 export function renderSettings(container) {
   container.innerHTML = `
     <div class="today-header"><div class="today-date">Settings</div></div>
@@ -101,11 +106,12 @@ export function renderSettings(container) {
         </div>
       </div>
 
-      <!-- Passcode -->
+      <!-- Passcode / Security -->
       <div class="card" style="margin-bottom:12px;padding:0">
         <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">SECURITY</div>
-        <div style="padding:14px 16px">
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
           <button class="btn btn-secondary btn-full" id="change-passcode-btn">Change Passcode</button>
+          <button class="btn btn-danger btn-full" id="lock-app-btn">🔒 Lock App</button>
         </div>
       </div>
 
@@ -308,6 +314,11 @@ export function renderSettings(container) {
     // Passcode change
     document.getElementById('change-passcode-btn').addEventListener('click', () => {
       openChangePasscode();
+    });
+
+    // Lock app
+    document.getElementById('lock-app-btn').addEventListener('click', () => {
+      lockApp();
     });
 
     // Weight log
