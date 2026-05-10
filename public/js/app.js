@@ -90,13 +90,6 @@ function setDots(len, state = 'normal') {
     d.classList.remove('filled', 'error');
     if (i < len) d.classList.add(state === 'error' ? 'error' : 'filled');
   });
-  // Show the confirm button once a valid-length code is entered
-  const actionBtn = document.getElementById('lock-action');
-  if (len >= 4) {
-    actionBtn.classList.remove('hidden');
-  } else {
-    actionBtn.classList.add('hidden');
-  }
 }
 
 function shakeNumpad() {
@@ -131,10 +124,10 @@ async function submitPasscode() {
 function setupNumpad() {
   document.querySelectorAll('.numpad-key[data-digit]').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (passcode.length >= 6) return;
+      if (passcode.length >= 4) return;
       passcode += btn.dataset.digit;
       setDots(passcode.length);
-      if (passcode.length >= 6) submitPasscode();
+      if (passcode.length === 4) submitPasscode();
     });
   });
 
@@ -151,7 +144,7 @@ function showLock(setup = false) {
   passcode = '';
   setDots(0);
   document.getElementById('lock-subtitle').textContent = setup
-    ? 'Choose a 4–6 digit passcode'
+    ? 'Choose a 4-digit passcode'
     : 'Enter passcode';
   document.getElementById('lock-screen').classList.remove('hidden');
   document.getElementById('app').classList.add('hidden');

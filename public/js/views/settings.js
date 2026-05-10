@@ -182,15 +182,15 @@ export function renderSettings(container) {
         <div style="padding:0 16px">
           <div class="form-group">
             <label class="form-label">Current passcode</label>
-            <input class="input" id="pc-current" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="Current 4-6 digit code" />
+            <input class="input" id="pc-current" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="Current 4-digit code" />
           </div>
           <div class="form-group">
             <label class="form-label">New passcode</label>
-            <input class="input" id="pc-new" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="New 4-6 digit code" />
+            <input class="input" id="pc-new" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="New 4-digit code" />
           </div>
           <div class="form-group">
             <label class="form-label">Confirm new passcode</label>
-            <input class="input" id="pc-confirm" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="Confirm new code" />
+            <input class="input" id="pc-confirm" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="Confirm new code" />
           </div>
           <button class="btn btn-primary btn-full" id="pc-save">Update Passcode</button>
         </div>
@@ -201,7 +201,7 @@ export function renderSettings(container) {
         const next    = document.getElementById('pc-new').value;
         const confirm = document.getElementById('pc-confirm').value;
         if (next !== confirm) { showToast('Passcodes do not match', 'error'); return; }
-        if (!/^\d{4,6}$/.test(next)) { showToast('Passcode must be 4-6 digits', 'error'); return; }
+        if (!/^\d{4}$/.test(next)) { showToast('Passcode must be exactly 4 digits', 'error'); return; }
         try {
           await api.post('/api/auth/change', { currentPasscode: current, newPasscode: next });
           hideSheet();

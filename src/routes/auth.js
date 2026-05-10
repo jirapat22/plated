@@ -29,8 +29,8 @@ router.get('/status', (req, res) => {
 router.post('/setup', async (req, res) => {
   try {
     const { passcode } = req.body;
-    if (!passcode || !/^\d{4,6}$/.test(passcode)) {
-      return res.status(400).json({ error: 'Passcode must be 4-6 digits' });
+    if (!passcode || !/^\d{4}$/.test(passcode)) {
+      return res.status(400).json({ error: 'Passcode must be exactly 4 digits' });
     }
 
     const db = getDb();
