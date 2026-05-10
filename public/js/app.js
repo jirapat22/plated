@@ -90,6 +90,13 @@ function setDots(len, state = 'normal') {
     d.classList.remove('filled', 'error');
     if (i < len) d.classList.add(state === 'error' ? 'error' : 'filled');
   });
+  // Show the confirm button once a valid-length code is entered
+  const actionBtn = document.getElementById('lock-action');
+  if (len >= 4) {
+    actionBtn.classList.remove('hidden');
+  } else {
+    actionBtn.classList.add('hidden');
+  }
 }
 
 function shakeNumpad() {
