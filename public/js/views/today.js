@@ -96,7 +96,7 @@ export function renderToday(container) {
               <svg class="calorie-ring" viewBox="0 0 140 140">
                 <circle class="ring-bg"   cx="70" cy="70" r="60"/>
                 <circle class="ring-fill ${t.calories > goals.cal ? 'over' : ''}" cx="70" cy="70" r="60"
-                  stroke-dasharray="${(calPct/100)*CIRC} ${CIRC}" id="cal-ring-fill"/>
+                  style="stroke-dasharray:${(calPct/100)*CIRC} ${CIRC}" id="cal-ring-fill"/>
               </svg>
               <div class="ring-center" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)">
                 <div class="num ring-kcal">${fmtE(t.calories)}</div>
@@ -105,28 +105,8 @@ export function renderToday(container) {
             </div>
           </div>
 
-          <!-- Macro bar -->
-          <div class="macros-section" style="margin-top:4px">
-            <div id="macro-bar-root"></div>
-            <div class="macro-totals-row">
-              <div class="macro-total">
-                <div class="macro-total-val num" style="color:var(--protein)">${fmt(t.protein,1)}g</div>
-                <div class="macro-total-lbl label">Protein</div>
-              </div>
-              <div class="macro-total">
-                <div class="macro-total-val num" style="color:var(--carbs)">${fmt(t.carbs,1)}g</div>
-                <div class="macro-total-lbl label">Carbs</div>
-              </div>
-              <div class="macro-total">
-                <div class="macro-total-val num" style="color:var(--fat)">${fmt(t.fat,1)}g</div>
-                <div class="macro-total-lbl label">Fat</div>
-              </div>
-              <div class="macro-total">
-                <div class="macro-total-val num" style="color:var(--fiber)">${fmt(t.fiber,1)}g</div>
-                <div class="macro-total-lbl label">Fiber</div>
-              </div>
-            </div>
-          </div>
+          <!-- Macro bars (individual per-goal) -->
+          <div id="macro-bar-root" style="margin-top:12px"></div>
         </div>
       </div>
 

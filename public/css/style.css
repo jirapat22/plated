@@ -10,10 +10,10 @@
   --accent:       #c8b8ff;
   --accent-hover: #b8a4ff;
   --accent-dim:   #2a2540;
-  --protein:      #4fc3f7;   /* sky blue  — lean, muscle */
-  --carbs:        #ffd24a;   /* amber     — energy fuel  */
-  --fat:          #ff8a65;   /* orange    — calorie dense */
-  --fiber:        #81c784;   /* green     — plant / health */
+  --protein:      #5C6BC0;   /* indigo    — lean, muscle */
+  --carbs:        #FFA726;   /* orange    — energy fuel  */
+  --fat:          #EF5350;   /* red       — calorie dense */
+  --fiber:        #66BB6A;   /* green     — plant / health */
   --success:      #5dca8a;
   --warning:      #ffb347;
   --error:        #ff6b6b;
@@ -265,7 +265,7 @@ img { display: block; max-width: 100%; }
   stroke: var(--accent);
   stroke-width: 10;
   stroke-linecap: round;
-  stroke-dasharray: 0 377;
+  /* stroke-dasharray set via inline style= so CSS cannot override it */
   transition: stroke-dasharray 600ms ease-out;
 }
 .ring-fill.over { stroke: var(--warning); }

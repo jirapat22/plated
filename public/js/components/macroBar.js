@@ -1,51 +1,38 @@
 /**
- * Renders a stacked horizontal macro bar with legend.
- * @param {Element} container - Target DOM element
- * @param {Object}  totals    - { protein, carbs, fat, fiber }
- * @param {Object}  goals     - { protein, carbs, fat, fiber }
+ * Renders individual progress bars for each macro vs its goal.
+ * @param {Element} container
+ * @param {Object}  totals  — { protein, carbs, fat, fiber } consumed
+ * @param {Object}  goals   — { protein, carbs, fat, fiber } targets
  */
 export function renderMacroBar(container, totals, goals) {
-  const total = (totals.protein || 0) + (totals.carbs || 0) + (totals.fat || 0) + (totals.fiber || 0);
+  const macros = [
+    { key: 'protein', label: 'Protein', color: 'var(--protein)', unit: 'g' },
+    { key: 'carbs',   label: 'Carbs',   color: 'var(--carbs)',   unit: 'g' },
+    { key: 'fat',     label: 'Fat',     color: 'var(--fat)',     unit: 'g' },
+    { key: 'fiber',   label: 'Fiber',   color: 'var(--fiber)',   unit: 'g' },
+  ];
 
-  function pct(val) {
-    if (!total || !val) return 0;
-    return Math.min((val / total) * 100, 100);
-  }
+  container.innerHTML = macros.map(m => {
+    const consumed = totals[m.key] ?? 0;
+    const goal     = goals[m.key]  ?? 0;
+    const pct      = goal > 0 ? Math.min((consumed / goal) * 100, 100) : 0;
+    const over     = goal > 0 && consumed > goal;
+    const pctLabel = goal > 0 ? `${Math.round(pct)}%` : '';
 
-  function goalPct(val, goal) {
-    if (!goal) return '';
-    const p = Math.min(Math.round((val / goal) * 100), 100);
-    return ` (${p}%)`;
-  }
-
-  container.innerHTML = `
-    <div class="macro-bar-outer">
-      <div class="macro-seg protein" style="width:${pct(totals.protein)}%"></div>
-      <div class="macro-seg carbs"   style="width:${pct(totals.carbs)}%"></div>
-      <div class="macro-seg fat"     style="width:${pct(totals.fat)}%"></div>
-      <div class="macro-seg fiber"   style="width:${pct(totals.fiber)}%"></div>
-    </div>
-    <div class="macro-legend">
-      <div class="macro-item">
-        <div class="macro-dot" style="background:var(--protein)"></div>
-        <span class="num">${(totals.protein || 0).toFixed(1)}g</span>
-        <span class="muted">protein${goalPct(totals.protein, goals?.protein)}</span>
+    return `
+      <div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+          <span style="font-size:12px;font-weight:600;color:${m.color}">${m.label}</span>
+          <span style="font-size:12px;font-variant-numeric:tabular-nums;color:${over ? m.color : 'var(--text-muted)'}">
+            <strong style="color:${m.color}">${consumed.toFixed(1)}${m.unit}</strong>
+            ${goal > 0 ? `<span style="color:var(--text-faint)"> / ${goal}${m.unit}</span>` : ''}
+            ${pctLabel ? `<span style="color:var(--text-faint);margin-left:4px">${pctLabel}</span>` : ''}
+          </span>
+        </div>
+        <div style="height:7px;background:var(--surface-2);border-radius:999px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${m.color};border-radius:999px;transition:width 600ms ease-out;opacity:${over ? 1 : 0.85}"></div>
+        </div>
       </div>
-      <div class="macro-item">
-        <div class="macro-dot" style="background:var(--carbs)"></div>
-        <span class="num">${(totals.carbs || 0).toFixed(1)}g</span>
-        <span class="muted">carbs${goalPct(totals.carbs, goals?.carbs)}</span>
-      </div>
-      <div class="macro-item">
-        <div class="macro-dot" style="background:var(--fat)"></div>
-        <span class="num">${(totals.fat || 0).toFixed(1)}g</span>
-        <span class="muted">fat${goalPct(totals.fat, goals?.fat)}</span>
-      </div>
-      <div class="macro-item">
-        <div class="macro-dot" style="background:var(--fiber)"></div>
-        <span class="num">${(totals.fiber || 0).toFixed(1)}g</span>
-        <span class="muted">fiber${goalPct(totals.fiber, goals?.fiber)}</span>
-      </div>
-    </div>
-  `;
+    `;
+  }).join('');
 }
