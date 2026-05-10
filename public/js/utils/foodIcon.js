@@ -3,9 +3,32 @@
  * Priority order matters — more specific rules first.
  */
 const RULES = [
+  // ── Must come first — specific combos that would match general rules ──
+  [/bubble.tea|boba|pearl.milk.tea/i,                                                 '🧋'],
+  [/bone.broth/i,                                                                      '🦴'],
+  [/meat.pie|steak.pie|mince.pie/i,                                                   '🥧'],
+  [/sausage.roll/i,                                                                    '🌭'],
+  [/beyond.meat|impossible.burger|impossible.meat|plant.based.meat|plant.based.mince|meat.free|meat.alternative|veggie.burger|veggie.mince|quorn\b/i, '🌱'],
+  [/fish.and.chips/i,                                                                  '🐟'],
+  [/fried.chicken/i,                                                                   '🍗'],
+  [/poke.bowl/i,                                                                       '🥗'],
+  [/rice.paper.roll|summer.roll|fresh.roll/i,                                         '🌯'],
+  [/sushi.roll|california.roll|dragon.roll/i,                                         '🍣'],
+  [/cold.brew|nitro.coffee|iced.coffee|protein.coffee/i,                              '☕'],
+  [/hot.chocolate|drinking.chocolate/i,                                               '☕'],
+  [/turmeric.latte|golden.milk/i,                                                     '☕'],
+  [/green.tea|matcha\b/i,                                                              '🍵'],
+  [/pavlova/i,                                                                         '🎂'],
+  [/lamington/i,                                                                       '🍰'],
+  [/afghan.biscuit|anzac/i,                                                            '🍪'],
+  [/pork.crackling|pork.rind/i,                                                        '🥓'],
+  [/biltong|jerky|dried.meat|beef.stick/i,                                            '🥩'],
+
   // ── Supplements & sports nutrition ──────────────────────────
   [/protein.?(powder|shake|bar|supplement)|whey|casein|creatine|bcaa|pre.?workout/i, '💪'],
   [/vitamin|supplement|probiotic|omega.?3|fish.?oil|collagen|electrolyte/i,          '💊'],
+  [/spirulina|chlorella|moringa|supergreen|superfood/i,                              '🌱'],
+  [/meal.replacement|slim.fast|optifast/i,                                            '💊'],
 
   // ── Eggs ────────────────────────────────────────────────────
   [/\begg/i,                                                                           '🥚'],
@@ -13,7 +36,9 @@ const RULES = [
   // ── Dairy & alternatives ─────────────────────────────────────
   [/butter|margarine/i,                                                                '🧈'],
   [/ghee/i,                                                                            '🧈'],
+  [/kefir|labneh|skyr/i,                                                               '🥛'],
   [/yogh?urt|yogurt/i,                                                                 '🫙'],
+  [/kombucha|kefir.water/i,                                                            '🧃'],
   [/cheddar|mozzarella|parmesan|feta|ricotta|brie|gouda|camembert|colby|edam|gruyere|haloumi|halloumi|cottage.cheese|cream.cheese/i, '🧀'],
   [/\bcheese\b/i,                                                                      '🧀'],
   [/ice.?cream|gelato|sorbet|frozen.yogh/i,                                            '🍦'],
@@ -31,6 +56,7 @@ const RULES = [
   [/prawn|shrimp|crab|lobster|crayfish|langoustine|krill/i,                            '🦐'],
   [/mussel|oyster|scallop|clam|pipi|cockle|paua|kina|abalone|geoduck/i,               '🦪'],
   [/squid|calamari|octopus|cuttlefish/i,                                               '🦑'],
+  [/whitebait/i,                                                                        '🐟'],
   [/salmon/i,                                                                           '🍣'],
   [/tuna|albacore/i,                                                                    '🐟'],
   [/snapper|tarakihi|terakihi|warehou|gurnard|blue.cod|bluecod|john.dory|blue.moki|hapuku|kahawai|kingfish|yellowfin|marlin|swordfish/i, '🐟'],
@@ -62,7 +88,9 @@ const RULES = [
   [/\bmeat\b/i,                                                                        '🥩'],
 
   // ── Legumes & plant protein ──────────────────────────────────
+  [/beyond.meat|impossible|plant.based.meat|meat.free|meat.alternative|veggie.burger|veggie.mince|quorn\b/i, '🌱'],
   [/tofu|tempeh|seitan/i,                                                               '🧊'],
+  [/natto/i,                                                                            '🫘'],
   [/edamame/i,                                                                          '🫛'],
   [/lentil/i,                                                                           '🫘'],
   [/chickpea|garbanzo/i,                                                                '🫘'],
@@ -81,7 +109,8 @@ const RULES = [
   [/carrot/i,                                                                           '🥕'],
   [/parsnip|turnip|swede|celeriac|radish/i,                                             '🥕'],
   [/beetroot|beet\b/i,                                                                  '🫀'],
-  [/mushroom|shiitake|portobello|oyster.mushroom|fungi/i,                               '🍄'],
+  [/truffle\b/i,                                                                        '🍄'],
+  [/mushroom|shiitake|portobello|oyster.mushroom|enoki|porcini|fungi/i,                '🍄'],
   [/broccoli/i,                                                                         '🥦'],
   [/cauliflower/i,                                                                      '🥦'],
   [/brussels.sprout/i,                                                                  '🥦'],
@@ -142,6 +171,8 @@ const RULES = [
   [/tamarillo/i,                                                                        '🍅'],
   [/lychee|longan/i,                                                                    '🍈'],
   [/jackfruit|durian|papaya|guava|star.fruit|dragon.fruit|rambutan/i,                  '🍈'],
+  [/acai|açaí/i,                                                                        '🫐'],
+  [/goji.berr/i,                                                                        '🍓'],
   [/frozen.berr|mixed.berr|berry.mix/i,                                                '🍓'],
   [/dried.fruit|fruit.mix/i,                                                            '🍇'],
   [/\bfruit\b/i,                                                                       '🍎'],
@@ -218,7 +249,7 @@ const RULES = [
   [/maple.syrup|golden.syrup|treacle|molasses|agave/i,                                 '🍯'],
   [/jam\b|jelly\b|marmalade|preserve\b/i,                                              '🍓'],
   [/chocolate\b|cocoa\b|cacao/i,                                                       '🍫'],
-  [/dark.chocolate|milk.chocolate|white.chocolate/i,                                    '🍫'],
+  [/dark.chocolate|milk.chocolate|white.chocolate|cacao.nib/i,                         '🍫'],
   [/lolly|lollies|candy|caramel|toffee|fudge|nougat|mints\b|boiled.sweet/i,           '🍬'],
   [/sugar\b/i,                                                                          '🍬'],
   [/icing\b|frosting/i,                                                                 '🎂'],
@@ -250,7 +281,12 @@ const RULES = [
   [/curry.paste|curry.powder/i,                                                         '🍛'],
   [/salsa\b/i,                                                                          '🍅'],
   [/guacamole/i,                                                                        '🥑'],
-  [/tzatziki|raita/i,                                                                   '🫙'],
+  [/tzatziki|raita|labneh/i,                                                            '🫙'],
+  [/chimichurri|salsa.verde|gremolata/i,                                               '🌿'],
+  [/aioli\b/i,                                                                          '🫙'],
+  [/harissa|dukkah|za.?atar|romesco/i,                                                 '🫙'],
+  [/gochujang|doenjang|sambal\b/i,                                                     '🌶️'],
+  [/xo.sauce|black.bean.sauce/i,                                                       '🫙'],
   [/tahini/i,                                                                            '🥜'],
   [/miso\b/i,                                                                           '🍜'],
   [/kimchi/i,                                                                            '🥬'],
@@ -354,13 +390,49 @@ const RULES = [
   [/baked.bean/i,                                                                        '🫘'],
   [/vegemite|marmite/i,                                                                  '🫙'],
 
-  // ── Misc ────────────────────────────────────────────────────
-  [/nutritional.yeast/i,                                                                  '🌱'],
+  // ── NZ-specific foods ────────────────────────────────────────
+  [/pavlova/i,                                                                            '🎂'],
+  [/lamington/i,                                                                          '🍰'],
+  [/afghan.biscuit|anzac/i,                                                              '🍪'],
+  [/hangi\b/i,                                                                            '🍖'],
+  [/rewena/i,                                                                             '🍞'],
+  [/poke.bowl/i,                                                                          '🥗'],
+
+  // ── Biltong & jerky ──────────────────────────────────────────
+  [/biltong|jerky|dried.meat|beef.stick/i,                                               '🥩'],
+  [/pork.crackling|pork.rind|crackling/i,                                                '🥓'],
+
+  // ── Bubble tea & specialty drinks ────────────────────────────
+  [/bubble.tea|boba|pearl.milk.tea/i,                                                    '🧋'],
+  [/cold.brew|nitro.coffee|iced.coffee/i,                                                '☕'],
+  [/hot.chocolate|drinking.chocolate|cacao.drink/i,                                      '☕'],
+  [/turmeric.latte|golden.milk/i,                                                        '☕'],
+  [/protein.coffee|proffee/i,                                                             '☕'],
+
+  // ── Specific sauces not yet covered ──────────────────────────
+  [/peri.peri|nandos/i,                                                                   '🌶️'],
+  [/tahini/i,                                                                             '🥜'],
+  [/bone.broth/i,                                                                         '🦴'],
+
+  // ── Wraps & rolls ─────────────────────────────────────────────
+  [/sushi.roll|california.roll|dragon.roll/i,                                             '🍣'],
+  [/rice.paper.roll|summer.roll|fresh.roll/i,                                             '🌯'],
+  [/meat.pie|steak.pie|mince.pie/i,                                                       '🥧'],
+  [/sausage.roll/i,                                                                       '🌭'],
+  [/poke.bowl\b/i,                                                                        '🥗'],
+
+  // ── Fermented & specialty ─────────────────────────────────────
+  [/tempeh/i,                                                                             '🧊'],
   [/miso\b/i,                                                                             '🍜'],
+  [/natto/i,                                                                              '🫘'],
+
+  // ── Misc ─────────────────────────────────────────────────────
+  [/nutritional.yeast/i,                                                                  '🌱'],
   [/topping|sprinkle|garnish/i,                                                           '✨'],
-  [/glaze|marinade/i,                                                                     '🫙'],
+  [/glaze|marinade|brine/i,                                                               '🫙'],
   [/stuffing|filling/i,                                                                   '🍗'],
   [/breadcrumb/i,                                                                         '🌾'],
+  [/batter\b|coating\b/i,                                                                '🌾'],
 ];
 
 export function getFoodIcon(name) {
