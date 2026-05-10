@@ -85,8 +85,12 @@ function initDb() {
     { key: 'fat_goal',          value: '65'   },
     { key: 'fiber_goal',        value: '30'   },
     { key: 'water_goal_ml',     value: '2500' },
-    { key: 'ironlog_api_url',   value: ''     },
-    { key: 'protein_multiplier',value: '2.2'  },
+    { key: 'ironlog_api_url',   value: ''         },
+    { key: 'protein_multiplier',value: '2.2'      },
+    { key: 'phase',             value: 'maintain' },
+    { key: 'tdee',              value: ''         },
+    { key: 'cut_deficit',       value: '500'      },
+    { key: 'bulk_surplus',      value: '300'      },
   ].forEach(d => setDefault.run(d));
 
   console.log(`DB ready: ${dbPath}`);

@@ -100,7 +100,10 @@ export function renderToday(container) {
         <div>
           <div class="today-date">${fmtDate(today)}</div>
         </div>
-        ${ironlog ? '<div class="ironlog-chip">⚡ IronLog</div>' : ''}
+        <div style="display:flex;align-items:center;gap:8px">
+          ${phaseBadge(settings.phase)}
+          ${ironlog ? '<div class="ironlog-chip">⚡ IronLog</div>' : ''}
+        </div>
       </div>
 
       <!-- Calorie ring + macro bar -->
@@ -164,6 +167,9 @@ export function renderToday(container) {
           </div>
         </div>
       </div>
+
+      <!-- Phase progress vs TDEE -->
+      ${phaseProgressCard(settings, t, burned)}
 
       <!-- IronLog panel -->
       ${ironlog ? `
@@ -335,6 +341,58 @@ export function renderToday(container) {
   load();
 
   return () => { clearTimeout(refreshTimer); };
+}
+
+function phaseBadge(phase) {
+  const map = { cut: ['🔻', '#ff6b6b'], maintain: ['⚖️', '#5dca8a'], bulk: ['📈', '#c8b8ff'] };
+  const [icon, color] = map[phase] || map.maintain;
+  return `<span style="font-size:11px;font-weight:700;color:${color};background:${color}18;padding:3px 10px;border-radius:999px;border:1px solid ${color}44">${icon} ${(phase||'maintain').toUpperCase()}</span>`;
+}
+
+function phaseProgressCard(settings, totals, burned) {
+  const tdee = parseFloat(settings.tdee);
+  if (!tdee) return '';
+
+  const phase    = settings.phase || 'maintain';
+  const deficit  = parseInt(settings.cut_deficit)  || 500;
+  const surplus  = parseInt(settings.bulk_surplus) || 300;
+  const consumed = totals.calories || 0;
+  const net      = consumed - burned;
+
+  const target = phase === 'cut'  ? tdee - deficit
+               : phase === 'bulk' ? tdee + surplus
+               : tdee;
+
+  const diff    = net - target;
+  const onTrack = Math.abs(diff) <= 150;
+  const over    = diff > 150;
+  const diffLabel = over
+    ? `+${fmt(Math.abs(diff))} over target`
+    : diff < -150
+    ? `${fmt(Math.abs(diff))} under target`
+    : 'On track ✓';
+  const diffColor = onTrack ? 'var(--success)' : over ? 'var(--warning)' : 'var(--fat)';
+
+  const pct = Math.min((net / target) * 100, 110);
+
+  return `
+    <div style="padding:0 16px 4px">
+      <div class="card" style="border-color:${onTrack ? 'var(--success)' : 'var(--border)'}44">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span class="label">${phase.toUpperCase()} TARGET</span>
+          <span class="num" style="font-size:13px;color:${diffColor}">${diffLabel}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted);margin-bottom:6px">
+          <span>Net <strong class="num" style="color:var(--text)">${fmt(net)} kcal</strong></span>
+          <span>Target <strong class="num" style="color:var(--text)">${fmt(target)} kcal</strong></span>
+        </div>
+        <div style="height:6px;background:var(--surface-2);border-radius:999px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${diffColor};border-radius:999px;transition:width .6s ease-out;max-width:100%"></div>
+        </div>
+        <div style="font-size:11px;color:var(--text-faint);margin-top:6px">TDEE ${fmt(tdee)} · Burned ${fmt(burned)} · Consumed ${fmt(consumed)}</div>
+      </div>
+    </div>
+  `;
 }
 
 function buildSkeleton() {
