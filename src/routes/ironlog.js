@@ -1,33 +1,19 @@
 const express = require('express');
 const { getDb } = require('../db');
 
-// Resolve TDEE from whatever shape the IronLog profile returns
-function extractTdee(profileData) {
-  if (!profileData) return null;
-  return profileData.tdee
-    ?? profileData.maintenance_calories
-    ?? profileData.maintenanceCalories
-    ?? profileData.total_daily_energy
-    ?? profileData.bmr
-    ?? null;
-}
-
-// Resolve bodyweight from the profile
-function extractBodyweight(profileData) {
-  if (!profileData) return null;
-  return profileData.bodyweight_kg
-    ?? profileData.weight_kg
-    ?? profileData.bodyweight
-    ?? profileData.weight
-    ?? null;
-}
-
-// Calculate calorie goal based on phase + TDEE
-function phaseCalories(tdee, phase, deficit, surplus) {
-  if (!tdee) return null;
-  if (phase === 'cut')  return Math.round(tdee - deficit);
-  if (phase === 'bulk') return Math.round(tdee + surplus);
-  return Math.round(tdee); // maintain
+// Extract all goals from IronLog profile data
+function extractProfile(profileData) {
+  if (!profileData) return {};
+  return {
+    tdee:         profileData.tdee_kcal        ?? profileData.tdee             ?? profileData.maintenance_calories ?? profileData.total_daily_energy ?? null,
+    bodyweight:   profileData.bodyweight_kg     ?? profileData.weight_kg        ?? profileData.bodyweight           ?? null,
+    calorie_goal: profileData.calorie_goal      ?? profileData.calories_goal    ?? null,
+    protein_goal: profileData.protein_g         ?? profileData.protein_goal     ?? null,
+    carb_goal:    profileData.carbs_g           ?? profileData.carb_goal        ?? profileData.carbs_goal           ?? null,
+    fat_goal:     profileData.fat_g             ?? profileData.fat_goal         ?? null,
+    fiber_goal:   profileData.fiber_g           ?? profileData.fiber_goal       ?? null,
+    phase:        profileData.goal              ?? profileData.phase            ?? null,
+  };
 }
 
 const router = express.Router();
@@ -105,62 +91,43 @@ router.get('/raw', async (req, res) => {
   }
 });
 
-// POST /api/ironlog/sync — pull TDEE + bodyweight from IronLog, recalculate goals
+// POST /api/ironlog/sync — pull all goals directly from IronLog profile
 router.post('/sync', async (req, res) => {
   try {
     const db = getDb();
 
-    const profileRaw = await ironFetch('/api/plated/profile');
+    const profileRaw  = await ironFetch('/api/plated/profile');
     const profileData = profileRaw?.data ?? profileRaw;
+    const p           = extractProfile(profileData);
 
-    const tdee       = extractTdee(profileData);
-    const bodyweight = extractBodyweight(profileData);
-
-    // Always return the raw profile so the frontend can show what fields exist
-    if (!tdee && !bodyweight) {
+    if (!p.tdee && !p.bodyweight && !p.calorie_goal) {
       return res.status(422).json({
-        error: 'IronLog profile did not include TDEE or bodyweight.',
-        hint: 'Check the "profile_raw" field below to see what field names IronLog sends, then tell me and I\'ll add them.',
+        error: 'IronLog profile did not include recognisable fields.',
         profile_raw: profileData,
       });
     }
 
-    const getSetting = key => {
-      const row = db.prepare('SELECT value FROM settings WHERE key = $key').get({ key });
-      return row?.value;
-    };
     const setSetting = (key, value) => {
+      if (value == null) return;
       db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES ($key, $value)')
         .run({ key, value: String(value) });
     };
 
-    const phase   = getSetting('phase')        || 'maintain';
-    const deficit = parseFloat(getSetting('cut_deficit'))  || 500;
-    const surplus = parseFloat(getSetting('bulk_surplus')) || 300;
-    const multiplier = parseFloat(getSetting('protein_multiplier')) || 2.2;
-
     const updates = {};
 
-    // Save raw TDEE
-    if (tdee) {
-      setSetting('tdee', tdee);
-      updates.tdee = tdee;
-
-      // Recalculate calorie goal for current phase
-      const newCalGoal = phaseCalories(tdee, phase, deficit, surplus);
-      setSetting('calorie_goal', newCalGoal);
-      updates.calorie_goal = newCalGoal;
+    if (p.tdee)         { setSetting('tdee',         p.tdee);         updates.tdee         = p.tdee;         }
+    if (p.bodyweight)   { setSetting('bodyweight_kg', p.bodyweight);                                         updates.bodyweight_kg = p.bodyweight; }
+    if (p.calorie_goal) { setSetting('calorie_goal',  p.calorie_goal); updates.calorie_goal = p.calorie_goal; }
+    if (p.protein_goal) { setSetting('protein_goal',  p.protein_goal); updates.protein_goal = p.protein_goal; }
+    if (p.carb_goal)    { setSetting('carb_goal',     p.carb_goal);    updates.carb_goal    = p.carb_goal;    }
+    if (p.fat_goal)     { setSetting('fat_goal',      p.fat_goal);     updates.fat_goal     = p.fat_goal;     }
+    if (p.fiber_goal)   { setSetting('fiber_goal',    p.fiber_goal);   updates.fiber_goal   = p.fiber_goal;   }
+    if (p.phase && ['cut','maintain','bulk'].includes(p.phase)) {
+      setSetting('phase', p.phase);
+      updates.phase = p.phase;
     }
 
-    // Recalculate protein goal from bodyweight
-    if (bodyweight) {
-      const newProteinGoal = Math.round(bodyweight * multiplier);
-      setSetting('protein_goal', newProteinGoal);
-      updates.protein_goal = newProteinGoal;
-      updates.bodyweight_kg = bodyweight;
-    }
-
-    res.json({ synced: true, updates, phase, tdee, bodyweight_kg: bodyweight, profile_raw: profileData });
+    res.json({ synced: true, updates, profile_raw: profileData });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

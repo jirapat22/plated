@@ -175,25 +175,28 @@ export function renderSettings(container) {
       try {
         const result = await api.post('/api/ironlog/sync');
         const u = result.updates;
-        const lines = [`✓ Synced at ${new Date().toLocaleTimeString()}`];
+        const lines = [`✓ Synced from IronLog at ${new Date().toLocaleTimeString()}`];
+        if (u.phase)        lines.push(`Phase: ${u.phase}`);
         if (u.tdee)         lines.push(`TDEE: ${u.tdee} kcal`);
-        if (u.calorie_goal) lines.push(`Calorie goal → ${u.calorie_goal} kcal (${result.phase})`);
-        if (u.protein_goal) lines.push(`Protein goal → ${u.protein_goal}g (${u.bodyweight_kg}kg × ${s.protein_multiplier})`);
-        if (!u.tdee && result.profile_raw) {
-          lines.push(`⚠ No TDEE found. IronLog sent: ${Object.keys(result.profile_raw).join(', ')}`);
-          lines.push(`Enter TDEE manually in the field above.`);
-        }
-        statusEl.style.color = u.calorie_goal ? 'var(--success)' : 'var(--warning)';
+        if (u.calorie_goal) lines.push(`Calories: ${u.calorie_goal} kcal`);
+        if (u.protein_goal) lines.push(`Protein: ${u.protein_goal}g`);
+        if (u.carb_goal)    lines.push(`Carbs: ${u.carb_goal}g`);
+        if (u.fat_goal)     lines.push(`Fat: ${u.fat_goal}g`);
+        if (u.fiber_goal)   lines.push(`Fiber: ${u.fiber_goal}g`);
+        statusEl.style.color = 'var(--success)';
         statusEl.innerHTML = lines.join('<br/>');
 
-        // Immediately update visible goal inputs — no waiting for full reload
+        // Immediately update every visible goal input
         const patch = (key, val) => {
           const el = body.querySelector(`[data-key="${key}"]`);
           if (el && val != null) el.value = val;
         };
         patch('calorie_goal', u.calorie_goal);
         patch('protein_goal', u.protein_goal);
-        patch('tdee', u.tdee);
+        patch('carb_goal',    u.carb_goal);
+        patch('fat_goal',     u.fat_goal);
+        patch('fiber_goal',   u.fiber_goal);
+        patch('tdee',         u.tdee);
 
         // Tell Today view to refresh its data
         window.dispatchEvent(new CustomEvent('plated:settings-changed'));
