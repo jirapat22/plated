@@ -105,7 +105,7 @@ export function renderSettings(container) {
       const statusEl = document.getElementById('ironlog-status');
       statusEl.textContent = 'Testing…';
       try {
-        const result = await api.get('/api/settings/ironlog/test');
+        const result = await api.get('/api/ironlog/test');
         statusEl.style.color = result.connected ? 'var(--success)' : 'var(--error)';
         statusEl.textContent = result.connected
           ? '✓ Connected'

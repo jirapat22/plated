@@ -88,18 +88,12 @@ export function renderTrends(container) {
         api.get('/api/settings'),
       ]);
 
-      // Try to fetch IronLog weight data and merge
-      const ironlogUrl = settings.ironlog_api_url?.trim();
+      // Fetch IronLog weight data via backend proxy (avoids CORS)
       let ironlogWeights = [];
-      if (ironlogUrl) {
+      if (settings.ironlog_api_url?.trim()) {
         try {
-          const resp = await fetch(`${ironlogUrl}/api/plated/bodyweight`, {
-            signal: AbortSignal.timeout(5000),
-          });
-          if (resp.ok) {
-            const d = await resp.json();
-            ironlogWeights = d.entries || d || [];
-          }
+          const d = await api.get('/api/ironlog/bodyweight');
+          ironlogWeights = d.entries || (Array.isArray(d) ? d : []);
         } catch { /* non-fatal */ }
       }
 

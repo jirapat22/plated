@@ -21,7 +21,8 @@ const foodsRoutes = require('./src/routes/foods');
 const mealsRoutes = require('./src/routes/meals');
 const waterRoutes = require('./src/routes/water');
 const weightRoutes = require('./src/routes/weight');
-const settingsRoutes = require('./src/routes/settings');
+const settingsRoutes  = require('./src/routes/settings');
+const ironlogRoutes   = require('./src/routes/ironlog');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -43,6 +44,7 @@ app.use('/api/meals', authenticateToken, mealsRoutes);
 app.use('/api/water', authenticateToken, waterRoutes);
 app.use('/api/weight', authenticateToken, weightRoutes);
 app.use('/api/settings', authenticateToken, settingsRoutes);
+app.use('/api/ironlog',  authenticateToken, ironlogRoutes);
 
 // SPA fallback
 app.get('*', (req, res) => {

@@ -44,17 +44,12 @@ function enableSwipe(el, onDelete) {
   });
 }
 
-// ─── IronLog fetch (non-fatal) ─────────────────────────────
+// ─── IronLog fetch via Plated backend proxy (avoids CORS) ──
 async function fetchIronLog(settings) {
-  const url = settings.ironlog_api_url?.trim();
-  if (!url) return null;
-  const today = new Date().toISOString().split('T')[0];
+  if (!settings.ironlog_api_url?.trim()) return null;
   try {
-    const [profile, cals] = await Promise.all([
-      fetch(`${url}/api/plated/profile`, { signal: AbortSignal.timeout(5000) }).then(r => r.json()),
-      fetch(`${url}/api/plated/workouts/calories?date=${today}`, { signal: AbortSignal.timeout(5000) }).then(r => r.json()),
-    ]);
-    return { profile, calories_burned: cals.calories_burned ?? cals.total ?? 0 };
+    const data = await api.get('/api/ironlog/today');
+    return data.connected ? data : null;
   } catch {
     return null;
   }
