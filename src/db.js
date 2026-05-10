@@ -1,6 +1,7 @@
 const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
-const NZ_FOODS = require('./nz-foods.json');
+const NZ_FOODS     = require('./nz-foods.json');
+const AUSNUT_FOODS = require('./ausnut-foods.json');
 
 let db;
 
@@ -129,6 +130,8 @@ function seedNzFoods(db) {
     { name:'Stir Fry (veg + protein)',   cal:130, pro:12,  carb:8,   fat:6,   fib:2.5, srv:200 },
   ];
 
+  const ALCOHOL_RE = /beer|wine|spirit|cider|whisky|vodka|rum|\bgin\b|liqueur|champagne|brandy|sake|mead/i;
+
   const allFoods = [
     ...extras,
     ...NZ_FOODS.map(f => ({
@@ -140,6 +143,18 @@ function seedNzFoods(db) {
       fib:  f.fiber_per_100g,
       srv:  f.serving_size_g,
     })),
+    // AUSNUT 2023 — skip alcoholic drinks
+    ...AUSNUT_FOODS
+      .filter(f => !ALCOHOL_RE.test(f.name))
+      .map(f => ({
+        name: f.name,
+        cal:  f.calories_per_100g,
+        pro:  f.protein_per_100g,
+        carb: f.carbs_per_100g,
+        fat:  f.fat_per_100g,
+        fib:  f.fiber_per_100g,
+        srv:  f.serving_size_g,
+      })),
   ];
 
   let added = 0;
@@ -151,6 +166,6 @@ function seedNzFoods(db) {
       } catch { /* skip duplicates */ }
     }
   }
-  if (added > 0) console.log('Seeded ' + added + ' NZ foods (official NZFCD 14th Ed. + extras)');
+  if (added > 0) console.log('Seeded ' + added + ' foods (NZFCD 14th Ed. + AUSNUT 2023 + extras)');
 }
 module.exports = { initDb, getDb };
