@@ -36,7 +36,15 @@ export function renderSettings(container) {
             ${goalRow('cut_deficit',  'Cut deficit',   s.cut_deficit,  'kcal', true)}
             ${goalRow('bulk_surplus', 'Bulk surplus',  s.bulk_surplus, 'kcal', true)}
           </div>
-          ${s.tdee ? `<div style="font-size:12px;color:var(--text-muted)">TDEE from IronLog: <strong style="color:var(--text)">${s.tdee} kcal</strong></div>` : ''}
+          <div style="margin-top:10px">
+            <label class="form-label">TDEE (manual override if IronLog doesn't send it)</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input class="input settings-row-input" type="number" value="${s.tdee || ''}"
+                data-key="tdee" placeholder="e.g. 2400" style="height:40px;flex:1;width:auto" />
+              <span style="font-size:12px;color:var(--text-muted)">kcal</span>
+              <button class="btn btn-secondary" id="manual-tdee-apply" style="height:40px;padding:0 14px;font-size:13px">Apply</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -133,6 +141,27 @@ export function renderSettings(container) {
       });
     });
 
+    // Manual TDEE apply
+    document.getElementById('manual-tdee-apply').addEventListener('click', async () => {
+      const tdee = parseFloat(body.querySelector('[data-key="tdee"]')?.value);
+      if (!tdee || tdee < 500) { showToast('Enter a valid TDEE (e.g. 2400)', 'error'); return; }
+      const phase   = s.phase || 'maintain';
+      const deficit = parseInt(s.cut_deficit)  || 500;
+      const surplus = parseInt(s.bulk_surplus) || 300;
+      const calGoal = phase === 'cut'  ? tdee - deficit
+                    : phase === 'bulk' ? tdee + surplus : tdee;
+      try {
+        await api.patch('/api/settings', { tdee: String(tdee), calorie_goal: String(calGoal) });
+        body.querySelector('[data-key="calorie_goal"]').value = calGoal;
+        document.getElementById('phase-description').textContent =
+          phaseDesc(phase, tdee, s.cut_deficit, s.bulk_surplus);
+        showToast(`TDEE saved · Calorie goal → ${calGoal} kcal`, 'success');
+        window.dispatchEvent(new CustomEvent('plated:settings-changed'));
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+
     // IronLog sync
     document.getElementById('ironlog-sync').addEventListener('click', async () => {
       const statusEl = document.getElementById('ironlog-status');
@@ -142,17 +171,31 @@ export function renderSettings(container) {
       statusEl.textContent = '';
       try {
         const result = await api.post('/api/ironlog/sync');
+        const u = result.updates;
         const lines = [`✓ Synced at ${new Date().toLocaleTimeString()}`];
-        if (result.updates.tdee)         lines.push(`TDEE: ${result.updates.tdee} kcal`);
-        if (result.updates.calorie_goal) lines.push(`Calorie goal → ${result.updates.calorie_goal} kcal (${result.phase})`);
-        if (result.updates.protein_goal) lines.push(`Protein goal → ${result.updates.protein_goal}g (${result.updates.bodyweight_kg}kg × ${s.protein_multiplier})`);
+        if (u.tdee)         lines.push(`TDEE: ${u.tdee} kcal`);
+        if (u.calorie_goal) lines.push(`Calorie goal → ${u.calorie_goal} kcal (${result.phase})`);
+        if (u.protein_goal) lines.push(`Protein goal → ${u.protein_goal}g`);
         statusEl.style.color = 'var(--success)';
         statusEl.innerHTML = lines.join('<br/>');
-        // Reload to reflect new values
-        setTimeout(() => load(), 800);
+
+        // Immediately update visible goal inputs — no waiting for full reload
+        const patch = (key, val) => {
+          const el = body.querySelector(`[data-key="${key}"]`);
+          if (el && val != null) el.value = val;
+        };
+        patch('calorie_goal', u.calorie_goal);
+        patch('protein_goal', u.protein_goal);
+        patch('tdee', u.tdee);
+
+        // Tell Today view to refresh its data
+        window.dispatchEvent(new CustomEvent('plated:settings-changed'));
+
+        // Full settings reload to sync everything else
+        setTimeout(() => load(), 1200);
       } catch (err) {
         statusEl.style.color = 'var(--error)';
-        statusEl.textContent = `✕ ${err.message}`;
+        statusEl.textContent = `✕ ${err.message} — check /api/ironlog/raw to see what IronLog sends`;
       } finally {
         btn.disabled = false;
         btn.textContent = '⟳ Sync Goals';

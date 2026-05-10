@@ -74,7 +74,13 @@ router.get('/search', (req, res) => {
     const rows = getDb().prepare(`
       SELECT * FROM foods
       WHERE name LIKE $term OR brand LIKE $term
-      ORDER BY use_count DESC, is_favourite DESC, name ASC
+      ORDER BY
+        is_favourite DESC,
+        use_count DESC,
+        CASE WHEN source IN ('nz_seed','custom') THEN 0 ELSE 1 END ASC,
+        CASE WHEN brand IS NULL OR brand = '' THEN 0 ELSE 1 END ASC,
+        LENGTH(name) ASC,
+        name ASC
       LIMIT $limit
     `).all({ term, limit: Math.min(parseInt(limit) || 20, 50) });
     res.json(rows);

@@ -338,9 +338,15 @@ export function renderToday(container) {
     }
   }
 
+  const onSettingsChanged = () => load();
+  window.addEventListener('plated:settings-changed', onSettingsChanged);
+
   load();
 
-  return () => { clearTimeout(refreshTimer); };
+  return () => {
+    clearTimeout(refreshTimer);
+    window.removeEventListener('plated:settings-changed', onSettingsChanged);
+  };
 }
 
 function phaseBadge(phase) {
