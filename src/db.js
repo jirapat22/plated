@@ -100,9 +100,9 @@ function initDb() {
 }
 
 function seedNzFoods(db) {
-  const { n } = db.prepare("SELECT COUNT(*) as n FROM foods WHERE source = 'nz_seed'").get();
-  if (n > 0) return; // already seeded
-
+  const alreadyExists = db.prepare(
+    "SELECT 1 FROM foods WHERE name = $name AND source = 'nz_seed'"
+  );
   const insert = db.prepare(`
     INSERT INTO foods (name, calories_per_100g, protein_per_100g, carbs_per_100g,
       fat_per_100g, fiber_per_100g, serving_size_g, source)
@@ -207,10 +207,14 @@ function seedNzFoods(db) {
     { name:'Sriracha',                   cal:93,  pro:1.3, carb:18,   fat:2.2, fib:0,   srv:10  },
   ];
 
+  let added = 0;
   for (const f of foods) {
-    insert.run({ name: f.name, cal: f.cal, pro: f.pro, carb: f.carb, fat: f.fat, fib: f.fib, srv: f.srv });
+    if (!alreadyExists.get({ name: f.name })) {
+      insert.run({ name: f.name, cal: f.cal, pro: f.pro, carb: f.carb, fat: f.fat, fib: f.fib, srv: f.srv });
+      added++;
+    }
   }
-  console.log(`Seeded ${foods.length} NZ foods`);
+  if (added > 0) console.log(`Seeded ${added} NZ foods`);
 }
 
 module.exports = { initDb, getDb };
