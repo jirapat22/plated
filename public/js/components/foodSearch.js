@@ -2,6 +2,7 @@ import { api }                           from '../api.js';
 import { showToast }                    from '../app.js';
 import { openBarcodeScanner }           from './barcode.js';
 import { fmtE, unitLabel, parseNutritionLabel } from '../utils/energy.js';
+import { getFoodIcon }                  from '../utils/foodIcon.js';
 
 let searchDebounce = null;
 
@@ -140,8 +141,8 @@ export function renderFoodSearch(container, onSelect) {
 
     el.innerHTML = `
       <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--surface-2);
-        display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">
-        ${food.is_favourite ? '⭐' : food.source === 'nz_seed' ? '🥗' : food.source === 'custom' ? '✏️' : '🌍'}
+        display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">
+        ${food.is_favourite ? '⭐' : getFoodIcon(food.name)}
       </div>
       <div class="food-list-info" style="flex:1;min-width:0">
         <div class="food-list-name">${food.name}</div>

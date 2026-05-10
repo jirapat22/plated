@@ -1,5 +1,6 @@
 import { api }           from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
+import { getFoodIcon }  from '../utils/foodIcon.js';
 
 let debounceTimer = null;
 
@@ -67,7 +68,7 @@ export function renderFoods(container) {
     const el = document.createElement('div');
     el.className = 'food-list-item';
     el.innerHTML = `
-      <div class="food-list-icon">${food.source === 'openfoodfacts' ? '🌍' : '✏️'}</div>
+      <div class="food-list-icon" style="font-size:18px">${food.is_favourite ? '⭐' : getFoodIcon(food.name)}</div>
       <div class="food-list-info">
         <div class="food-list-name">${food.name}</div>
         <div class="food-list-sub">${food.brand || 'Custom'} · ${food.calories_per_100g != null ? food.calories_per_100g.toFixed(0) + ' kcal/100g' : 'no cal data'}</div>
