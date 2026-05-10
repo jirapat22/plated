@@ -60,7 +60,7 @@ export function renderFoodSearch(container, onSelect) {
   });
 
   // ── Search ───────────────────────────────────────────────────
-  async function search() {
+  async function search(fetchRemote = false) {
     results.innerHTML = `<div class="skeleton skel-line" style="margin:12px 16px;width:60%"></div>
       <div class="skeleton skel-line" style="margin:8px 16px"></div>
       <div class="skeleton skel-line" style="margin:8px 16px;width:80%"></div>`;
@@ -70,31 +70,28 @@ export function renderFoodSearch(container, onSelect) {
       const q = query.trim();
 
       if (q) {
-        // Local search first
-        rows = await api.get(`/api/foods/search?q=${encodeURIComponent(q)}&limit=15`);
-        // Always also search remote in background and merge
-        api.get(`/api/foods/search/remote?q=${encodeURIComponent(q)}`)
-          .then(remote => {
-            const existing = new Set(rows.map(r => r.name.toLowerCase()));
-            const newRemote = remote.filter(r => !existing.has(r.name.toLowerCase()));
-            remoteRows = newRemote;
-            if (newRemote.length && query.trim() === q) {
-              appendRemoteRows(newRemote);
-            }
-          }).catch(() => {});
+        rows = await api.get(`/api/foods/search?q=${encodeURIComponent(q)}&limit=20`);
+
+        // Auto-fetch remote only when local has nothing; otherwise show button
+        if (fetchRemote || rows.length === 0) {
+          const remote = await api.get(`/api/foods/search/remote?q=${encodeURIComponent(q)}`);
+          const existing = new Set(rows.map(r => r.name.toLowerCase()));
+          remoteRows = remote.filter(r => !existing.has(r.name.toLowerCase()));
+          rows = [...rows, ...remoteRows];
+        }
       } else if (filter === 'favourites') {
         rows = await api.get('/api/foods/favourites');
       } else {
         rows = await api.get('/api/foods/recent');
       }
 
-      renderResults(rows, q);
+      renderResults(rows, q, fetchRemote);
     } catch (err) {
       results.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
     }
   }
 
-  function renderResults(rows, q) {
+  function renderResults(rows, q, alreadyFetchedRemote = false) {
     results.innerHTML = '';
     remoteRows = [];
 
@@ -105,26 +102,31 @@ export function renderFoodSearch(container, onSelect) {
       return;
     }
 
-    rows.forEach(food => results.appendChild(buildFoodRow(food)));
+    // Separate local vs remote rows visually
+    const localRows  = rows.filter(r => r.id && r.source !== 'openfoodfacts' || r.id);
+    const remoteOnly = rows.filter(r => !r.id);
+
+    localRows.forEach(food => results.appendChild(buildFoodRow(food)));
+
+    if (remoteOnly.length) {
+      const lbl = document.createElement('div');
+      lbl.style.cssText = 'padding:10px 16px 4px;font-size:11px;font-weight:700;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase';
+      lbl.textContent = 'From Open Food Facts';
+      results.appendChild(lbl);
+      remoteOnly.forEach(food => results.appendChild(buildFoodRow(food)));
+    }
 
     if (q) {
-      // Separator for remote results (filled in async)
-      const remoteSep = document.createElement('div');
-      remoteSep.id = 'fs-remote-sep';
-      results.appendChild(remoteSep);
-      // "Not found?" quick-add at bottom
+      // Show "Search online" button only if we haven't fetched remote yet
+      if (!alreadyFetchedRemote && remoteOnly.length === 0) {
+        const btn = document.createElement('button');
+        btn.style.cssText = 'display:block;width:calc(100% - 32px);margin:10px 16px;height:40px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-weight:600;color:var(--text-muted);transition:all .15s';
+        btn.textContent = '🌍 Search Open Food Facts';
+        btn.addEventListener('click', () => search(true));
+        results.appendChild(btn);
+      }
       appendQuickAdd(q);
     }
-  }
-
-  function appendRemoteRows(remote) {
-    const sep = document.getElementById('fs-remote-sep');
-    if (!sep) return;
-    const label = document.createElement('div');
-    label.style.cssText = 'padding:6px 16px 2px;font-size:11px;font-weight:600;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase';
-    label.textContent = 'From Open Food Facts';
-    sep.replaceWith(label);
-    remote.forEach(food => results.insertBefore(buildFoodRow(food), results.querySelector('#fs-quick-add')));
   }
 
   function buildFoodRow(food) {
@@ -279,14 +281,14 @@ export function renderFoodSearch(container, onSelect) {
     query = e.target.value;
     clearBtn.style.display = query ? 'block' : 'none';
     clearTimeout(searchDebounce);
-    searchDebounce = setTimeout(search, 280);
+    searchDebounce = setTimeout(() => search(false), 280);
   });
   clearBtn.addEventListener('click', () => {
     input.value = '';
     query = '';
     clearBtn.style.display = 'none';
     input.focus();
-    search();
+    search(false);
   });
 
   // ── Barcode ──────────────────────────────────────────────────
