@@ -1,5 +1,6 @@
 const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
+const NZ_FOODS = require('./nz-foods.json');
 
 let db;
 
@@ -110,254 +111,46 @@ function seedNzFoods(db) {
     VALUES ($name, $cal, $pro, $carb, $fat, $fib, $srv, 'nz_seed')
   `);
 
-  const foods = [
-    // ── Proteins ───────────────────────────────────────────────
-    { name:'Chicken Breast (Raw)',         cal:165, pro:31,  carb:0,    fat:3.6, fib:0,   srv:150 },
-    { name:'Chicken Breast (Cooked)',      cal:185, pro:35,  carb:0,    fat:4,   fib:0,   srv:150 },
-    { name:'Chicken Thigh (Raw)',          cal:175, pro:18,  carb:0,    fat:11,  fib:0,   srv:130 },
-    { name:'Chicken Mince',               cal:150, pro:17,  carb:0,    fat:9,   fib:0,   srv:120 },
-    { name:'Basa Fillet',                 cal:90,  pro:18,  carb:0,    fat:1.5, fib:0,   srv:120 },
-    { name:'Salmon (Atlantic)',            cal:208, pro:20,  carb:0,    fat:13,  fib:0,   srv:150 },
-    { name:'Tuna (Canned in Water)',       cal:116, pro:26,  carb:0,    fat:1,   fib:0,   srv:95  },
-    { name:'Snapper Fillet',              cal:100, pro:20,  carb:0,    fat:1.3, fib:0,   srv:150 },
-    { name:'Beef Mince (Lean)',            cal:180, pro:20,  carb:0,    fat:11,  fib:0,   srv:120 },
-    { name:'Beef Mince (Regular)',         cal:250, pro:17,  carb:0,    fat:20,  fib:0,   srv:120 },
-    { name:'Beef Steak',                  cal:200, pro:26,  carb:0,    fat:10,  fib:0,   srv:180 },
-    { name:'Lamb Mince',                  cal:235, pro:18,  carb:0,    fat:18,  fib:0,   srv:120 },
-    { name:'Pork Mince',                  cal:185, pro:17,  carb:0,    fat:13,  fib:0,   srv:120 },
-    { name:'Egg (Whole)',                  cal:155, pro:13,  carb:1.1,  fat:11,  fib:0,   srv:60  },
-    { name:'Egg White',                   cal:52,  pro:11,  carb:0.7,  fat:0.2, fib:0,   srv:30  },
-    { name:'Tofu (Firm)',                  cal:76,  pro:8,   carb:2,    fat:4,   fib:0.3, srv:100 },
-    { name:'Edamame (Shelled)',            cal:122, pro:11,  carb:10,   fat:5,   fib:5,   srv:150 },
-    { name:'Prawns / Shrimp',             cal:99,  pro:24,  carb:0,    fat:0.3, fib:0,   srv:100 },
-    { name:'Cottage Cheese',              cal:98,  pro:11,  carb:3.4,  fat:4.3, fib:0,   srv:100 },
-    { name:'Whey Protein Powder',         cal:380, pro:75,  carb:10,   fat:5,   fib:1,   srv:30  },
-    { name:'Tempeh',                      cal:193, pro:19,  carb:9,    fat:11,  fib:5,   srv:100 },
+  // Curated extras not in NZFCD official data
+  const extras = [
+    { name:'Whey Protein Powder',        cal:380, pro:75,  carb:10,  fat:5,   fib:1,   srv:30  },
+    { name:'Protein Bar',                cal:380, pro:20,  carb:38,  fat:12,  fib:4,   srv:60  },
+    { name:'Protein Shake (mixed)',      cal:150, pro:25,  carb:8,   fat:2,   fib:1,   srv:350 },
+    { name:'Flat White (full cream)',    cal:120, pro:6.5, carb:9,   fat:6,   fib:0,   srv:220 },
+    { name:'Flat White (trim milk)',     cal:80,  pro:7,   carb:9.5, fat:1.5, fib:0,   srv:220 },
+    { name:'Frozen Mixed Vegetables',    cal:55,  pro:3,   carb:10,  fat:0.3, fib:3,   srv:100 },
+    { name:'Frozen Edamame (Shelled)',   cal:122, pro:11,  carb:10,  fat:5,   fib:5,   srv:150 },
+    { name:'Frozen Asian Stir Fry Mix',  cal:40,  pro:2,   carb:7,   fat:0.3, fib:2,   srv:150 },
+    { name:'Oat Milk',                   cal:42,  pro:1,   carb:7,   fat:1,   fib:0.5, srv:250 },
+    { name:'Almond Milk (Unsweetened)',  cal:15,  pro:0.6, carb:0.3, fat:1.1, fib:0.3, srv:250 },
+    { name:'Kimchi',                     cal:15,  pro:1,   carb:2.4, fat:0.5, fib:1.6, srv:50  },
+    { name:'Dumplings / Gyoza (frozen)', cal:220, pro:9,   carb:25,  fat:9,   fib:1.5, srv:100 },
+    { name:'Nutritional Yeast',          cal:325, pro:50,  carb:38,  fat:5,   fib:26,  srv:10  },
+    { name:'Stir Fry (veg + protein)',   cal:130, pro:12,  carb:8,   fat:6,   fib:2.5, srv:200 },
+  ];
 
-    // ── Frozen Vegetables ──────────────────────────────────────
-    { name:'Frozen Peas',                 cal:77,  pro:5,   carb:14,   fat:0.4, fib:5,   srv:80  },
-    { name:'Frozen Corn',                 cal:86,  pro:3,   carb:19,   fat:1,   fib:2,   srv:80  },
-    { name:'Frozen Broccoli',             cal:28,  pro:3,   carb:5,    fat:0.3, fib:3,   srv:100 },
-    { name:'Frozen Spinach',              cal:23,  pro:3,   carb:3,    fat:0.3, fib:3,   srv:100 },
-    { name:'Frozen Mixed Vegetables',     cal:55,  pro:3,   carb:10,   fat:0.3, fib:3,   srv:100 },
-    { name:'Frozen Edamame (Shelled)',    cal:122, pro:11,  carb:10,   fat:5,   fib:5,   srv:150 },
-    { name:'Frozen Green Beans',          cal:31,  pro:2,   carb:7,    fat:0.1, fib:3,   srv:100 },
-    { name:'Frozen Cauliflower',          cal:25,  pro:2,   carb:5,    fat:0.1, fib:2,   srv:100 },
-    { name:'Frozen Asian Stir Fry Mix',   cal:40,  pro:2,   carb:7,    fat:0.3, fib:2,   srv:150 },
-    { name:'Frozen Baby Carrots',         cal:41,  pro:0.9, carb:10,   fat:0.2, fib:3,   srv:100 },
-    { name:'Frozen Peas & Corn',          cal:82,  pro:4,   carb:16,   fat:0.7, fib:3.5, srv:80  },
-
-    // ── Carbohydrates ──────────────────────────────────────────
-    { name:'White Rice (Raw)',            cal:365, pro:7,   carb:80,   fat:0.6, fib:0.4, srv:75  },
-    { name:'White Rice (Cooked)',         cal:130, pro:2.7, carb:28,   fat:0.3, fib:0.4, srv:200 },
-    { name:'Brown Rice (Cooked)',         cal:123, pro:2.7, carb:26,   fat:1,   fib:1.8, srv:200 },
-    { name:'Basmati Rice (Cooked)',       cal:121, pro:3.5, carb:25,   fat:0.4, fib:0.7, srv:200 },
-    { name:'Rolled Oats',                 cal:389, pro:17,  carb:66,   fat:7,   fib:10,  srv:60  },
-    { name:'White Bread',                 cal:265, pro:9,   carb:49,   fat:3,   fib:2,   srv:35  },
-    { name:'Wholegrain Bread',            cal:250, pro:10,  carb:41,   fat:4,   fib:7,   srv:35  },
-    { name:'Pasta (Dry)',                 cal:371, pro:13,  carb:74,   fat:1.5, fib:3,   srv:80  },
-    { name:'Pasta (Cooked)',              cal:158, pro:5.8, carb:31,   fat:0.9, fib:1.8, srv:200 },
-    { name:'Potato',                      cal:77,  pro:2,   carb:17,   fat:0.1, fib:2,   srv:150 },
-    { name:'Kumara (Sweet Potato)',       cal:86,  pro:1.6, carb:20,   fat:0.1, fib:3,   srv:150 },
-    { name:'Quinoa (Cooked)',             cal:120, pro:4.4, carb:22,   fat:1.9, fib:2.8, srv:185 },
-    { name:'Pita Bread',                  cal:275, pro:9,   carb:55,   fat:1.5, fib:2,   srv:60  },
-    { name:'Corn Tortilla',               cal:218, pro:5.7, carb:46,   fat:2.5, fib:4,   srv:45  },
-    { name:'Couscous (Cooked)',           cal:112, pro:3.8, carb:23,   fat:0.2, fib:1.4, srv:180 },
-    { name:'Noodles (Cooked)',            cal:138, pro:4.5, carb:27,   fat:1.5, fib:1,   srv:200 },
-
-    // ── Dairy ──────────────────────────────────────────────────
-    { name:'Milk (Trim)',                 cal:34,  pro:3.4, carb:5,    fat:0.1, fib:0,   srv:250 },
-    { name:'Milk (Full Fat)',             cal:61,  pro:3.2, carb:4.8,  fat:3.3, fib:0,   srv:250 },
-    { name:'Greek Yoghurt (Plain)',       cal:97,  pro:9,   carb:4,    fat:5,   fib:0,   srv:200 },
-    { name:'Greek Yoghurt (Non-Fat)',     cal:59,  pro:10,  carb:3.6,  fat:0.4, fib:0,   srv:200 },
-    { name:'Cheddar Cheese',             cal:403, pro:25,  carb:1.3,  fat:33,  fib:0,   srv:30  },
-    { name:'Mozzarella',                 cal:280, pro:28,  carb:2.2,  fat:17,  fib:0,   srv:30  },
-    { name:'Cream Cheese',               cal:342, pro:6,   carb:4.1,  fat:34,  fib:0,   srv:30  },
-
-    // ── Vegetables (Fresh) ─────────────────────────────────────
-    { name:'Broccoli',                   cal:34,  pro:2.8, carb:7,    fat:0.4, fib:2.6, srv:100 },
-    { name:'Spinach',                    cal:23,  pro:2.9, carb:3.6,  fat:0.4, fib:2.2, srv:100 },
-    { name:'Carrot',                     cal:41,  pro:0.9, carb:10,   fat:0.2, fib:2.8, srv:100 },
-    { name:'Capsicum (Bell Pepper)',      cal:31,  pro:1,   carb:6,    fat:0.3, fib:2.1, srv:100 },
-    { name:'Zucchini / Courgette',       cal:17,  pro:1.2, carb:3.1,  fat:0.3, fib:1,   srv:100 },
-    { name:'Cucumber',                   cal:16,  pro:0.7, carb:3.6,  fat:0.1, fib:0.5, srv:100 },
-    { name:'Onion',                      cal:40,  pro:1.1, carb:9,    fat:0.1, fib:1.7, srv:100 },
-    { name:'Garlic',                     cal:149, pro:6.4, carb:33,   fat:0.5, fib:2.1, srv:5   },
-    { name:'Tomato',                     cal:18,  pro:0.9, carb:3.9,  fat:0.2, fib:1.2, srv:100 },
-    { name:'Mushroom',                   cal:22,  pro:3.1, carb:3.3,  fat:0.3, fib:1,   srv:100 },
-    { name:'Lettuce / Salad Greens',     cal:15,  pro:1.4, carb:2.9,  fat:0.2, fib:1.8, srv:50  },
-
-    // ── Fruit ──────────────────────────────────────────────────
-    { name:'Banana',                     cal:89,  pro:1.1, carb:23,   fat:0.3, fib:2.6, srv:120 },
-    { name:'Apple',                      cal:52,  pro:0.3, carb:14,   fat:0.2, fib:2.4, srv:150 },
-    { name:'Blueberries',                cal:57,  pro:0.7, carb:14,   fat:0.3, fib:2.4, srv:100 },
-    { name:'Strawberries',               cal:32,  pro:0.7, carb:7.7,  fat:0.3, fib:2,   srv:100 },
-    { name:'Avocado',                    cal:160, pro:2,   carb:9,    fat:15,  fib:7,   srv:100 },
-    { name:'Mango',                      cal:60,  pro:0.8, carb:15,   fat:0.4, fib:1.6, srv:150 },
-    { name:'Orange',                     cal:47,  pro:0.9, carb:12,   fat:0.1, fib:2.4, srv:130 },
-
-    // ── Fats & Extras ──────────────────────────────────────────
-    { name:'Olive Oil',                  cal:884, pro:0,    carb:0,    fat:100, fib:0,   srv:15  },
-    { name:'Coconut Oil',                cal:862, pro:0,    carb:0,    fat:100, fib:0,   srv:15  },
-    { name:'Rice Bran Oil',              cal:884, pro:0,    carb:0,    fat:100, fib:0,   srv:15  },
-    { name:'Peanut Butter',              cal:588, pro:25,   carb:20,   fat:50,  fib:6,   srv:30  },
-    { name:'Almond Butter',              cal:614, pro:21,   carb:19,   fat:56,  fib:10,  srv:30  },
-    { name:'Almonds',                    cal:579, pro:21,   carb:22,   fat:50,  fib:12.5,srv:30  },
-    { name:'Cashews',                    cal:553, pro:18,   carb:30,   fat:44,  fib:3.3, srv:30  },
-    { name:'Walnuts',                    cal:654, pro:15,   carb:14,   fat:65,  fib:6.7, srv:30  },
-    { name:'Mixed Nuts',                 cal:607, pro:20,   carb:20,   fat:54,  fib:5,   srv:30  },
-    { name:'Chia Seeds',                 cal:486, pro:17,   carb:42,   fat:31,  fib:34,  srv:15  },
-    { name:'Sunflower Seeds',            cal:584, pro:21,   carb:20,   fat:51,  fib:9,   srv:20  },
-    { name:'Pumpkin Seeds',              cal:559, pro:30,   carb:11,   fat:49,  fib:6,   srv:20  },
-    { name:'Soy Sauce',                  cal:60,  pro:6,    carb:6,    fat:0,   fib:0,   srv:15  },
-    { name:'Oyster Sauce',               cal:100, pro:3,    carb:23,   fat:0,   fib:0,   srv:15  },
-    { name:'Fish Sauce',                 cal:35,  pro:5,    carb:3.6,  fat:0,   fib:0,   srv:10  },
-    { name:'Sriracha',                   cal:93,  pro:1.3,  carb:18,   fat:2.2, fib:0,   srv:10  },
-    { name:'Tahini',                     cal:595, pro:17,   carb:21,   fat:54,  fib:9,   srv:15  },
-
-    // ── Pantry Staples ─────────────────────────────────────────
-    { name:'Honey',                      cal:304, pro:0.3,  carb:82,   fat:0,   fib:0.2, srv:20  },
-    { name:'Maple Syrup',                cal:260, pro:0,    carb:67,   fat:0.1, fib:0,   srv:20  },
-    { name:'White Sugar',                cal:387, pro:0,    carb:100,  fat:0,   fib:0,   srv:10  },
-    { name:'Brown Sugar',                cal:380, pro:0,    carb:98,   fat:0,   fib:0,   srv:10  },
-    { name:'Butter (Unsalted)',          cal:717, pro:0.9,  carb:0.1,  fat:81,  fib:0,   srv:10  },
-    { name:'Butter (Salted)',            cal:717, pro:0.9,  carb:0.1,  fat:81,  fib:0,   srv:10  },
-    { name:'Cream (Thickened)',          cal:340, pro:2.1,  carb:2.8,  fat:36,  fib:0,   srv:30  },
-    { name:'Sour Cream',                 cal:198, pro:2.4,  carb:4.6,  fat:19,  fib:0,   srv:30  },
-    { name:'Coconut Cream',              cal:230, pro:2,    carb:6,    fat:24,  fib:0,   srv:60  },
-    { name:'Coconut Milk',               cal:154, pro:1.6,  carb:3.3,  fat:15,  fib:0,   srv:125 },
-    { name:'Oat Milk',                   cal:42,  pro:1,    carb:7,    fat:1,   fib:0.5, srv:250 },
-    { name:'Soy Milk',                   cal:40,  pro:3.3,  carb:2.5,  fat:2,   fib:0.3, srv:250 },
-    { name:'Almond Milk (Unsweetened)',  cal:15,  pro:0.6,  carb:0.3,  fat:1.1, fib:0.3, srv:250 },
-    { name:'Tomato Paste',               cal:82,  pro:4.3,  carb:18,   fat:0.5, fib:4,   srv:30  },
-    { name:'Tomato Passata',             cal:29,  pro:1.5,  carb:5,    fat:0.3, fib:1.5, srv:100 },
-    { name:'Hummus',                     cal:177, pro:7.9,  carb:14,   fat:10,  fib:6,   srv:40  },
-    { name:'Dark Chocolate (70%)',       cal:598, pro:7.8,  carb:46,   fat:43,  fib:11,  srv:20  },
-
-    // ── Legumes & Pulses ───────────────────────────────────────
-    { name:'Lentils (Cooked)',           cal:116, pro:9,    carb:20,   fat:0.4, fib:8,   srv:150 },
-    { name:'Chickpeas (Canned)',         cal:139, pro:8,    carb:22,   fat:2.4, fib:7,   srv:120 },
-    { name:'Black Beans (Canned)',       cal:91,  pro:6,    carb:16,   fat:0.5, fib:7,   srv:120 },
-    { name:'Kidney Beans (Canned)',      cal:127, pro:8.7,  carb:22.8, fat:0.5, fib:6.4, srv:120 },
-    { name:'Mixed Beans (Canned)',       cal:100, pro:7,    carb:17,   fat:0.5, fib:6,   srv:120 },
-
-    // ── NZ Breakfast Staples ───────────────────────────────────
-    { name:'Weet-Bix',                   cal:367, pro:12,   carb:67,   fat:3.7, fib:11,  srv:30  },
-    { name:'Milo (Powder)',              cal:366, pro:10.5, carb:70,   fat:4,   fib:2,   srv:20  },
-    { name:'Granola / Muesli',           cal:400, pro:10,   carb:62,   fat:14,  fib:6,   srv:60  },
-    { name:'Cornflakes',                 cal:357, pro:7,    carb:80,   fat:0.4, fib:2,   srv:30  },
-
-    // ── Deli / Convenience Proteins ───────────────────────────
-    { name:'Ham (Shaved)',               cal:145, pro:20,   carb:3,    fat:6,   fib:0,   srv:50  },
-    { name:'Turkey Breast (Sliced)',     cal:135, pro:30,   carb:0,    fat:1.6, fib:0,   srv:50  },
-    { name:'Salami',                     cal:425, pro:22,   carb:2,    fat:37,  fib:0,   srv:30  },
-    { name:'Canned Salmon',              cal:153, pro:20,   carb:0,    fat:8,   fib:0,   srv:100 },
-    { name:'Sardines (Canned in Water)', cal:208, pro:24,   carb:0,    fat:12,  fib:0,   srv:90  },
-    { name:'Canned Tuna (in Oil)',       cal:198, pro:25.5, carb:0,    fat:11,  fib:0,   srv:95  },
-
-    // ── More Vegetables ────────────────────────────────────────
-    { name:'Cabbage',                    cal:25,  pro:1.3,  carb:5.8,  fat:0.1, fib:2.5, srv:100 },
-    { name:'Bok Choy',                   cal:13,  pro:1.5,  carb:2.2,  fat:0.2, fib:1,   srv:100 },
-    { name:'Asparagus',                  cal:20,  pro:2.2,  carb:3.7,  fat:0.1, fib:2.1, srv:100 },
-    { name:'Celery',                     cal:16,  pro:0.7,  carb:3,    fat:0.2, fib:1.6, srv:100 },
-    { name:'Beetroot',                   cal:43,  pro:1.6,  carb:9.6,  fat:0.2, fib:2.8, srv:100 },
-    { name:'Pumpkin',                    cal:26,  pro:1,    carb:6.5,  fat:0.1, fib:0.5, srv:100 },
-    { name:'Corn on the Cob',            cal:86,  pro:3.2,  carb:19,   fat:1.2, fib:2,   srv:150 },
-    { name:'Leek',                       cal:61,  pro:1.5,  carb:14,   fat:0.3, fib:1.8, srv:100 },
-    { name:'Eggplant / Aubergine',       cal:25,  pro:1,    carb:5.9,  fat:0.2, fib:3,   srv:100 },
-    { name:'Spring Onion / Shallot',     cal:32,  pro:1.8,  carb:7.3,  fat:0.2, fib:2.6, srv:20  },
-    { name:'Kale',                       cal:35,  pro:2.9,  carb:4.4,  fat:1.5, fib:4.1, srv:50  },
-    { name:'Edamame (in pods)',           cal:76,  pro:6.9,  carb:6,    fat:3.5, fib:3.9, srv:200 },
-
-    // ── More Fruit ─────────────────────────────────────────────
-    { name:'Grapes',                     cal:69,  pro:0.7,  carb:18,   fat:0.2, fib:0.9, srv:150 },
-    { name:'Watermelon',                 cal:30,  pro:0.6,  carb:7.6,  fat:0.2, fib:0.4, srv:200 },
-    { name:'Pineapple',                  cal:50,  pro:0.5,  carb:13,   fat:0.1, fib:1.4, srv:150 },
-    { name:'Kiwifruit',                  cal:61,  pro:1.1,  carb:15,   fat:0.5, fib:3,   srv:70  },
-    { name:'Pear',                       cal:57,  pro:0.4,  carb:15,   fat:0.1, fib:3.1, srv:150 },
-    { name:'Peach / Nectarine',          cal:39,  pro:0.9,  carb:10,   fat:0.3, fib:1.5, srv:150 },
-    { name:'Frozen Berries (Mixed)',     cal:45,  pro:0.9,  carb:10,   fat:0.4, fib:3,   srv:100 },
-    { name:'Raspberries',                cal:52,  pro:1.2,  carb:12,   fat:0.7, fib:6.5, srv:80  },
-    { name:'Cherries',                   cal:63,  pro:1.1,  carb:16,   fat:0.2, fib:2.1, srv:100 },
-    { name:'Lemon / Lime (juice)',       cal:22,  pro:0.4,  carb:7,    fat:0.2, fib:0.3, srv:30  },
-
-    // ── More Carbs & Grains ────────────────────────────────────
-    { name:'Sourdough Bread',            cal:268, pro:9,    carb:51,   fat:2.5, fib:2.4, srv:40  },
-    { name:'Corn (Canned)',              cal:82,  pro:3.1,  carb:18,   fat:0.8, fib:2.4, srv:100 },
-    { name:'Breadcrumbs',                cal:395, pro:13,   carb:74,   fat:4.5, fib:3,   srv:30  },
-    { name:'Plain Flour',                cal:364, pro:10,   carb:76,   fat:1,   fib:2.7, srv:30  },
-    { name:'Self-Raising Flour',         cal:355, pro:9,    carb:74,   fat:1,   fib:2.5, srv:30  },
-    { name:'Polenta / Cornmeal',         cal:362, pro:8,    carb:77,   fat:3.6, fib:7.3, srv:60  },
-    { name:'Buckwheat (Cooked)',         cal:92,  pro:3.4,  carb:20,   fat:0.6, fib:2.7, srv:180 },
-    { name:'Barley (Cooked)',            cal:123, pro:2.3,  carb:28,   fat:0.4, fib:3.8, srv:180 },
-
-    // ── More Dairy ─────────────────────────────────────────────
-    { name:'Parmesan Cheese',            cal:431, pro:38,   carb:4.1,  fat:29,  fib:0,   srv:15  },
-    { name:'Feta Cheese',               cal:264, pro:14,   carb:4,    fat:21,  fib:0,   srv:30  },
-    { name:'Ricotta',                   cal:174, pro:11,   carb:3,    fat:13,  fib:0,   srv:60  },
-    { name:'Yoghurt (Regular)',          cal:61,  pro:3.5,  carb:7,    fat:3.3, fib:0,   srv:200 },
-    { name:'Skim Milk Powder',           cal:362, pro:36,   carb:52,   fat:0.8, fib:0,   srv:25  },
-    { name:'Ice Cream (Vanilla)',        cal:207, pro:3.5,  carb:23,   fat:11,  fib:0,   srv:100 },
-
-    // ── Sauces, Dressings & Condiments ────────────────────────
-    { name:'Tomato Sauce (Ketchup)',     cal:112, pro:1.7,  carb:26,   fat:0.5, fib:0.7, srv:20  },
-    { name:'Mayonnaise',                 cal:680, pro:1,    carb:2.5,  fat:75,  fib:0,   srv:15  },
-    { name:'Light Mayonnaise',           cal:310, pro:1,    carb:14,   fat:27,  fib:0,   srv:15  },
-    { name:'Mustard (Dijon)',            cal:66,  pro:4.4,  carb:5.3,  fat:3.3, fib:3.2, srv:10  },
-    { name:'Salad Dressing (Caesar)',    cal:350, pro:2,    carb:8,    fat:34,  fib:0,   srv:30  },
-    { name:'Balsamic Vinegar',           cal:88,  pro:0.5,  carb:17,   fat:0,   fib:0,   srv:15  },
-    { name:'Sweet Chilli Sauce',         cal:152, pro:0.5,  carb:38,   fat:0.2, fib:0.4, srv:20  },
-    { name:'Hoisin Sauce',               cal:220, pro:4.1,  carb:37,   fat:5.1, fib:1.7, srv:20  },
-    { name:'Teriyaki Sauce',             cal:89,  pro:5,    carb:15,   fat:0.6, fib:0.3, srv:20  },
-    { name:'Curry Paste (Red/Green)',    cal:130, pro:3,    carb:10,   fat:8,   fib:3,   srv:30  },
-    { name:'Coconut Aminos',             cal:50,  pro:1,    carb:12,   fat:0,   fib:0,   srv:15  },
-    { name:'Miso Paste',                 cal:199, pro:12,   carb:26,   fat:6,   fib:5.4, srv:15  },
-    { name:'Nutritional Yeast',          cal:325, pro:50,   carb:38,   fat:5,   fib:26,  srv:10  },
-
-    // ── Drinks ─────────────────────────────────────────────────
-    { name:'Orange Juice',               cal:45,  pro:0.7,  carb:10,   fat:0.2, fib:0.2, srv:250 },
-    { name:'Smoothie (Fruit, homemade)', cal:80,  pro:1.5,  carb:18,   fat:0.5, fib:2,   srv:300 },
-    { name:'Protein Shake (mixed)',      cal:150, pro:25,   carb:8,    fat:2,   fib:1,   srv:350 },
-    { name:'Coffee (black)',             cal:2,   pro:0.3,  carb:0,    fat:0,   fib:0,   srv:240 },
-    { name:'Flat White (full cream)',    cal:120, pro:6.5,  carb:9,    fat:6,   fib:0,   srv:220 },
-    { name:'Flat White (trim milk)',     cal:80,  pro:7,    carb:9.5,  fat:1.5, fib:0,   srv:220 },
-
-    // ── Snacks ─────────────────────────────────────────────────
-    { name:'Rice Cakes (plain)',         cal:387, pro:8,    carb:82,   fat:2.7, fib:2.4, srv:9   },
-    { name:'Popcorn (air popped)',       cal:387, pro:13,   carb:78,   fat:4.5, fib:15,  srv:28  },
-    { name:'Corn Chips',                 cal:536, pro:7,    carb:64,   fat:28,  fib:4,   srv:30  },
-    { name:'Protein Bar',                cal:380, pro:20,   carb:38,   fat:12,  fib:4,   srv:60  },
-    { name:'Muesli Bar',                 cal:420, pro:7,    carb:60,   fat:16,  fib:4,   srv:35  },
-    { name:'Dark Chocolate (85%)',       cal:598, pro:7.8,  carb:46,   fat:43,  fib:11,  srv:20  },
-
-    // ── Asian Pantry ───────────────────────────────────────────
-    { name:'Udon Noodles (Cooked)',      cal:97,  pro:3,    carb:20,   fat:0.6, fib:0.5, srv:200 },
-    { name:'Soba Noodles (Cooked)',      cal:99,  pro:5,    carb:21,   fat:0.1, fib:0.5, srv:200 },
-    { name:'Ramen Noodles (Cooked)',     cal:138, pro:4.9,  carb:26,   fat:2,   fib:0.6, srv:200 },
-    { name:'Glass Noodles (Cooked)',     cal:79,  pro:0.1,  carb:20,   fat:0,   fib:0.1, srv:150 },
-    { name:'Jasmine Rice (Cooked)',      cal:130, pro:2.4,  carb:28,   fat:0.4, fib:0.4, srv:200 },
-    { name:'Wonton Wrappers',            cal:272, pro:10,   carb:52,   fat:3,   fib:1.7, srv:50  },
-    { name:'Dumplings / Gyoza (frozen)', cal:220, pro:9,    carb:25,   fat:9,   fib:1.5, srv:100 },
-    { name:'Kimchi',                     cal:15,  pro:1,    carb:2.4,  fat:0.5, fib:1.6, srv:50  },
-    { name:'Tofu (Silken)',              cal:55,  pro:4.8,  carb:2.3,  fat:2.5, fib:0.3, srv:100 },
-    { name:'Miso Soup (made up)',        cal:35,  pro:3,    carb:4,    fat:1,   fib:0.5, srv:250 },
-
-    // ── Mixed Dishes (estimates) ───────────────────────────────
-    { name:'Stir Fry (veg + protein)',   cal:130, pro:12,   carb:8,    fat:6,   fib:2.5, srv:200 },
-    { name:'Fried Rice',                 cal:163, pro:4.8,  carb:27,   fat:4.4, fib:1,   srv:200 },
-    { name:'Chicken Fried Rice',         cal:195, pro:12,   carb:27,   fat:5,   fib:1,   srv:250 },
-    { name:'Spaghetti Bolognese',        cal:180, pro:14,   carb:20,   fat:5,   fib:2,   srv:300 },
-    { name:'Caesar Salad (no dressing)', cal:65,  pro:4.5,  carb:3.5,  fat:4,   fib:2,   srv:150 },
+  const allFoods = [
+    ...extras,
+    ...NZ_FOODS.map(f => ({
+      name: f.name,
+      cal:  f.calories_per_100g,
+      pro:  f.protein_per_100g,
+      carb: f.carbs_per_100g,
+      fat:  f.fat_per_100g,
+      fib:  f.fiber_per_100g,
+      srv:  f.serving_size_g,
+    })),
   ];
 
   let added = 0;
-  for (const f of foods) {
-    if (!alreadyExists.get({ name: f.name })) {
-      insert.run({ name: f.name, cal: f.cal, pro: f.pro, carb: f.carb, fat: f.fat, fib: f.fib, srv: f.srv });
-      added++;
+  for (const f of allFoods) {
+    if (!f.name || !alreadyExists.get({ name: f.name })) {
+      try {
+        insert.run({ name: f.name, cal: f.cal ?? null, pro: f.pro ?? null, carb: f.carb ?? null, fat: f.fat ?? null, fib: f.fib ?? null, srv: f.srv ?? 100 });
+        added++;
+      } catch { /* skip duplicates */ }
     }
   }
-  if (added > 0) console.log(`Seeded ${added} NZ foods`);
+  if (added > 0) console.log('Seeded ' + added + ' NZ foods (official NZFCD 14th Ed. + extras)');
 }
-
 module.exports = { initDb, getDb };
