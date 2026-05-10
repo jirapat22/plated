@@ -72,8 +72,11 @@ export function renderSettings(container) {
             <button class="btn btn-secondary" id="ironlog-test" style="flex:1;min-width:100px">Test</button>
             <button class="btn btn-primary"   id="ironlog-sync" style="flex:1;min-width:120px">⟳ Sync Goals</button>
           </div>
-          <div id="ironlog-status" style="margin-top:10px;font-size:12px;color:var(--text-muted)"></div>
-          <div style="margin-top:8px;font-size:11px;color:var(--text-faint)">Sync pulls your TDEE + bodyweight from IronLog and recalculates calorie &amp; protein goals for your selected phase.</div>
+          <button class="btn btn-secondary btn-full" id="ironlog-inspect" style="margin-top:8px;font-size:12px;height:36px">
+            🔍 Inspect raw IronLog data
+          </button>
+          <div id="ironlog-status" style="margin-top:10px;font-size:12px;color:var(--text-muted);user-select:text;-webkit-user-select:text"></div>
+          <pre id="ironlog-raw-box" style="display:none;margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;user-select:text;-webkit-user-select:text;max-height:300px;overflow-y:auto"></pre>
         </div>
       </div>
 
@@ -211,6 +214,28 @@ export function renderSettings(container) {
       } finally {
         btn.disabled = false;
         btn.textContent = '⟳ Sync Goals';
+      }
+    });
+
+    // IronLog inspect — shows raw JSON, stays on screen, fully selectable
+    document.getElementById('ironlog-inspect').addEventListener('click', async () => {
+      const box = document.getElementById('ironlog-raw-box');
+      const btn = document.getElementById('ironlog-inspect');
+      if (box.style.display !== 'none') {
+        box.style.display = 'none';
+        btn.textContent = '🔍 Inspect raw IronLog data';
+        return;
+      }
+      btn.textContent = 'Loading…';
+      try {
+        const data = await api.get('/api/ironlog/raw');
+        box.textContent = JSON.stringify(data, null, 2);
+        box.style.display = 'block';
+        btn.textContent = '✕ Hide raw data';
+      } catch (err) {
+        box.textContent = err.message;
+        box.style.display = 'block';
+        btn.textContent = '✕ Hide';
       }
     });
 
