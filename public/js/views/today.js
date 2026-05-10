@@ -23,26 +23,7 @@ function formatTime(iso) {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
-// ─── Swipe-to-delete on a meal entry element ────────────────
-function enableSwipe(el, onDelete) {
-  let startX = 0, dx = 0;
-  const THRESHOLD = 64;
-
-  el.addEventListener('touchstart', e => { startX = e.touches[0].clientX; dx = 0; }, { passive: true });
-  el.addEventListener('touchmove', e => {
-    dx = e.touches[0].clientX - startX;
-    if (dx < 0) el.style.transform = `translateX(${Math.max(dx, -THRESHOLD)}px)`;
-  }, { passive: true });
-  el.addEventListener('touchend', () => {
-    if (dx < -THRESHOLD * 0.7) {
-      el.classList.add('swiped');
-    } else {
-      el.style.transform = '';
-      el.classList.remove('swiped');
-    }
-    dx = 0;
-  });
-}
+// (swipe-to-delete removed — replaced with visible × button)
 
 // ─── IronLog fetch via Plated backend proxy (avoids CORS) ──
 async function fetchIronLog(settings) {
@@ -271,31 +252,25 @@ export function renderToday(container) {
       entryEl.innerHTML = `
         <div class="meal-entry-info">
           <div class="meal-entry-name">${entry.food_name}${entry.food_brand ? ` <span style="color:var(--text-muted);font-size:12px">${entry.food_brand}</span>` : ''}</div>
-          <div class="meal-entry-sub">${fmt(entry.quantity_g)}g
-            <span class="meal-entry-dots">
-              <span class="macro-mini-dot" style="background:var(--protein)"></span>
-              <span class="macro-mini-dot" style="background:var(--carbs)"></span>
-              <span class="macro-mini-dot" style="background:var(--fat)"></span>
-            </span>
+          <div class="meal-entry-sub">${fmt(entry.quantity_g)}g &nbsp;
+            <span style="color:var(--protein);font-variant-numeric:tabular-nums">${fmt(entry.protein,1)}P</span> ·
+            <span style="color:var(--carbs);font-variant-numeric:tabular-nums">${fmt(entry.carbs,1)}C</span> ·
+            <span style="color:var(--fat);font-variant-numeric:tabular-nums">${fmt(entry.fat,1)}F</span>
           </div>
         </div>
         <div class="meal-entry-kcal">${fmt(entry.calories)}</div>
-        <div class="meal-entry-delete-reveal" data-entry-id="${entry.id}">Delete</div>
+        <button class="entry-del-btn" data-id="${entry.id}" style="
+          width:32px;height:32px;border-radius:50%;
+          background:rgba(255,107,107,.1);color:var(--error);
+          display:flex;align-items:center;justify-content:center;
+          flex-shrink:0;font-size:16px;transition:background .15s">×</button>
       `;
-      enableSwipe(entryEl, async () => {
+      entryEl.querySelector('.entry-del-btn').addEventListener('click', async () => {
         try {
           await api.delete(`/api/meals/entries/${entry.id}`);
-          showToast('Entry removed', 'success');
-          load();
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
-      entryEl.querySelector('.meal-entry-delete-reveal').addEventListener('click', async () => {
-        try {
-          await api.delete(`/api/meals/entries/${entry.id}`);
-          showToast('Entry removed', 'success');
-          load();
+          entryEl.style.opacity = '0';
+          entryEl.style.transition = 'opacity .2s';
+          setTimeout(() => load(), 200);
         } catch (err) {
           showToast(err.message, 'error');
         }

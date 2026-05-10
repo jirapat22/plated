@@ -116,9 +116,12 @@ router.post('/sync', async (req, res) => {
     const tdee       = extractTdee(profileData);
     const bodyweight = extractBodyweight(profileData);
 
+    // Always return the raw profile so the frontend can show what fields exist
     if (!tdee && !bodyweight) {
       return res.status(422).json({
-        error: 'IronLog profile did not include TDEE or bodyweight. Check /api/ironlog/raw to see what fields are returned.',
+        error: 'IronLog profile did not include TDEE or bodyweight.',
+        hint: 'Check the "profile_raw" field below to see what field names IronLog sends, then tell me and I\'ll add them.',
+        profile_raw: profileData,
       });
     }
 
@@ -157,7 +160,7 @@ router.post('/sync', async (req, res) => {
       updates.bodyweight_kg = bodyweight;
     }
 
-    res.json({ synced: true, updates, phase, tdee, bodyweight_kg: bodyweight });
+    res.json({ synced: true, updates, phase, tdee, bodyweight_kg: bodyweight, profile_raw: profileData });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

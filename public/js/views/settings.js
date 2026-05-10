@@ -175,8 +175,12 @@ export function renderSettings(container) {
         const lines = [`✓ Synced at ${new Date().toLocaleTimeString()}`];
         if (u.tdee)         lines.push(`TDEE: ${u.tdee} kcal`);
         if (u.calorie_goal) lines.push(`Calorie goal → ${u.calorie_goal} kcal (${result.phase})`);
-        if (u.protein_goal) lines.push(`Protein goal → ${u.protein_goal}g`);
-        statusEl.style.color = 'var(--success)';
+        if (u.protein_goal) lines.push(`Protein goal → ${u.protein_goal}g (${u.bodyweight_kg}kg × ${s.protein_multiplier})`);
+        if (!u.tdee && result.profile_raw) {
+          lines.push(`⚠ No TDEE found. IronLog sent: ${Object.keys(result.profile_raw).join(', ')}`);
+          lines.push(`Enter TDEE manually in the field above.`);
+        }
+        statusEl.style.color = u.calorie_goal ? 'var(--success)' : 'var(--warning)';
         statusEl.innerHTML = lines.join('<br/>');
 
         // Immediately update visible goal inputs — no waiting for full reload
@@ -195,7 +199,15 @@ export function renderSettings(container) {
         setTimeout(() => load(), 1200);
       } catch (err) {
         statusEl.style.color = 'var(--error)';
-        statusEl.textContent = `✕ ${err.message} — check /api/ironlog/raw to see what IronLog sends`;
+        // Try to parse the error body for profile_raw hint
+        let detail = err.message;
+        try {
+          const raw = JSON.parse(err.message.match(/\{.*\}/s)?.[0] || '{}');
+          if (raw.profile_raw) {
+            detail = `IronLog profile fields: ${Object.keys(raw.profile_raw).join(', ')}`;
+          }
+        } catch { /* ignore */ }
+        statusEl.innerHTML = `✕ ${err.message}<br/><span style="color:var(--text-faint);font-size:11px">${detail}<br/>Enter TDEE manually above instead.</span>`;
       } finally {
         btn.disabled = false;
         btn.textContent = '⟳ Sync Goals';
