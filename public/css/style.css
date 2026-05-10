@@ -10,10 +10,10 @@
   --accent:       #c8b8ff;
   --accent-hover: #b8a4ff;
   --accent-dim:   #2a2540;
-  --protein:      #ff8ad1;
-  --carbs:        #ffd24a;
-  --fat:          #62d8ff;
-  --fiber:        #a8e6cf;
+  --protein:      #4fc3f7;   /* sky blue  — lean, muscle */
+  --carbs:        #ffd24a;   /* amber     — energy fuel  */
+  --fat:          #ff8a65;   /* orange    — calorie dense */
+  --fiber:        #81c784;   /* green     — plant / health */
   --success:      #5dca8a;
   --warning:      #ffb347;
   --error:        #ff6b6b;
@@ -548,6 +548,25 @@ img { display: block; max-width: 100%; }
   color: var(--accent);
   border-color: var(--accent-dim);
 }
+/* ── Food search chips ───────────────────────────────────── */
+.fs-chip {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.fs-chip.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: rgba(200,184,255,.3);
+}
+
 .food-list-item {
   display: flex;
   align-items: center;
