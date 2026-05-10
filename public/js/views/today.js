@@ -3,6 +3,7 @@ import { showToast, showSheet }      from '../app.js';
 import { openFoodEntry }             from './log.js';
 import { renderMacroBar }            from '../components/macroBar.js';
 import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
+import { getFoodIcon }               from '../utils/foodIcon.js';
 
 const CIRC = 2 * Math.PI * 60; // r=60
 
@@ -231,6 +232,7 @@ export function renderToday(container) {
       const entryEl = document.createElement('div');
       entryEl.className = 'meal-entry';
       entryEl.innerHTML = `
+        <div style="font-size:22px;flex-shrink:0;width:32px;text-align:center">${getFoodIcon(entry.food_name)}</div>
         <div class="meal-entry-info">
           <div class="meal-entry-name">${entry.food_name}${entry.food_brand ? ` <span style="color:var(--text-muted);font-size:12px">${entry.food_brand}</span>` : ''}</div>
           <div class="meal-entry-sub">${fmt(entry.quantity_g)}g &nbsp;
