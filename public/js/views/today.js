@@ -2,6 +2,7 @@ import { api }                      from '../api.js';
 import { showToast, showSheet }      from '../app.js';
 import { openFoodEntry }             from './log.js';
 import { renderMacroBar }            from '../components/macroBar.js';
+import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
 
 const CIRC = 2 * Math.PI * 60; // r=60
 
@@ -98,8 +99,8 @@ export function renderToday(container) {
                   stroke-dasharray="${(calPct/100)*CIRC} ${CIRC}" id="cal-ring-fill"/>
               </svg>
               <div class="ring-center" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)">
-                <div class="num ring-kcal">${fmt(t.calories)}</div>
-                <div class="ring-goal muted">/ ${fmt(goals.cal)} kcal</div>
+                <div class="num ring-kcal">${fmtE(t.calories)}</div>
+                <div class="ring-goal muted">/ ${fmtE(goals.cal)} ${unitLabel()}</div>
               </div>
             </div>
           </div>
@@ -159,11 +160,11 @@ export function renderToday(container) {
           <div class="label" style="margin-bottom:10px">⚡ IronLog — Today</div>
           <div class="ironlog-row">
             <span class="muted">Calories burned</span>
-            <span class="num">${fmt(burned)} kcal</span>
+            <span class="num">${fmtE(burned)} ${unitLabel()}</span>
           </div>
           <div class="ironlog-row">
             <span class="muted">Net calories</span>
-            <span class="num" style="color:${net < 0 ? 'var(--success)' : 'var(--text)'}">${fmt(net)} kcal</span>
+            <span class="num" style="color:${net < 0 ? 'var(--success)' : 'var(--text)'}">${fmtE(net)} ${unitLabel()}</span>
           </div>
           ${recProtein ? `<div class="ironlog-row">
             <span class="muted">Rec. protein (${bodyweight}kg × ${multiplier})</span>
@@ -364,13 +365,13 @@ function phaseProgressCard(settings, totals, burned) {
           <span class="num" style="font-size:13px;color:${diffColor}">${diffLabel}</span>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted);margin-bottom:6px">
-          <span>Net <strong class="num" style="color:var(--text)">${fmt(net)} kcal</strong></span>
-          <span>Target <strong class="num" style="color:var(--text)">${fmt(target)} kcal</strong></span>
+          <span>Net <strong class="num" style="color:var(--text)">${fmtE(net)} ${unitLabel()}</strong></span>
+          <span>Target <strong class="num" style="color:var(--text)">${fmtE(target)} ${unitLabel()}</strong></span>
         </div>
         <div style="height:6px;background:var(--surface-2);border-radius:999px;overflow:hidden">
           <div style="height:100%;width:${pct}%;background:${diffColor};border-radius:999px;transition:width .6s ease-out;max-width:100%"></div>
         </div>
-        <div style="font-size:11px;color:var(--text-faint);margin-top:6px">TDEE ${fmt(tdee)} · Burned ${fmt(burned)} · Consumed ${fmt(consumed)}</div>
+        <div style="font-size:11px;color:var(--text-faint);margin-top:6px">TDEE ${fmtE(tdee)} · Burned ${fmtE(burned)} · Consumed ${fmtE(consumed)} ${unitLabel()}</div>
       </div>
     </div>
   `;

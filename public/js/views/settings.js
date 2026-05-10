@@ -1,5 +1,6 @@
-import { api }           from '../api.js';
-import { showToast, showSheet, hideSheet } from '../app.js';
+import { api }                        from '../api.js';
+import { showToast, showSheet, hideSheet, reloadEnergyUnit } from '../app.js';
+import { setEnergyUnit }             from '../utils/energy.js';
 
 export function renderSettings(container) {
   container.innerHTML = `
@@ -44,6 +45,26 @@ export function renderSettings(container) {
               <span style="font-size:12px;color:var(--text-muted)">kcal</span>
               <button class="btn btn-secondary" id="manual-tdee-apply" style="height:40px;padding:0 14px;font-size:13px">Apply</button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Energy unit toggle -->
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:14px;font-weight:600">Energy unit</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Affects all calorie displays</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="unit-btn${s.energy_unit !== 'kj' ? ' active' : ''}" data-unit="kcal"
+              style="height:34px;padding:0 14px;border-radius:var(--radius-full);font-size:13px;font-weight:700;border:1.5px solid ${s.energy_unit !== 'kj' ? 'var(--accent)' : 'var(--border)'};background:${s.energy_unit !== 'kj' ? 'var(--accent-dim)' : 'var(--surface-2)'};color:${s.energy_unit !== 'kj' ? 'var(--accent)' : 'var(--text-muted)'}">
+              kcal
+            </button>
+            <button class="unit-btn${s.energy_unit === 'kj' ? ' active' : ''}" data-unit="kj"
+              style="height:34px;padding:0 14px;border-radius:var(--radius-full);font-size:13px;font-weight:700;border:1.5px solid ${s.energy_unit === 'kj' ? 'var(--accent)' : 'var(--border)'};background:${s.energy_unit === 'kj' ? 'var(--accent-dim)' : 'var(--surface-2)'};color:${s.energy_unit === 'kj' ? 'var(--accent)' : 'var(--text-muted)'}">
+              kJ
+            </button>
           </div>
         </div>
       </div>
@@ -109,6 +130,22 @@ export function renderSettings(container) {
         </div>
       </div>
     `;
+
+    // Energy unit toggle
+    body.querySelectorAll('.unit-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const unit = btn.dataset.unit;
+        try {
+          await api.patch('/api/settings', { energy_unit: unit });
+          setEnergyUnit(unit);
+          window.dispatchEvent(new CustomEvent('plated:settings-changed'));
+          showToast(`Energy unit set to ${unit}`, 'success');
+          setTimeout(() => load(), 200);
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
 
     // Goal inputs — save on blur
     body.querySelectorAll('.settings-row-input').forEach(input => {

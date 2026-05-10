@@ -768,6 +768,24 @@ img { display: block; max-width: 100%; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form-hint { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
 
+/* ─── Quantity mode buttons ──────────────────────────────── */
+.qty-mode-btn {
+  flex: 1;
+  height: 32px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  transition: all 0.15s;
+}
+.qty-mode-btn.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: rgba(200,184,255,.3);
+}
+
 /* ─── Settings ───────────────────────────────────────────── */
 .settings-row {
   display: flex;

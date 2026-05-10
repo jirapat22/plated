@@ -87,6 +87,7 @@ function initDb() {
     { key: 'water_goal_ml',     value: '2500' },
     { key: 'ironlog_api_url',   value: ''         },
     { key: 'protein_multiplier',value: '2.2'      },
+    { key: 'energy_unit',       value: 'kcal'     },
     { key: 'phase',             value: 'maintain' },
     { key: 'tdee',              value: ''         },
     { key: 'cut_deficit',       value: '500'      },

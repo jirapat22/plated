@@ -1,6 +1,7 @@
-import { api }                from '../api.js';
-import { showToast }          from '../app.js';
-import { openBarcodeScanner } from './barcode.js';
+import { api }                           from '../api.js';
+import { showToast }                    from '../app.js';
+import { openBarcodeScanner }           from './barcode.js';
+import { fmtE, unitLabel, parseNutritionLabel } from '../utils/energy.js';
 
 let searchDebounce = null;
 
@@ -129,7 +130,7 @@ export function renderFoodSearch(container, onSelect) {
   function buildFoodRow(food) {
     const el = document.createElement('div');
     el.className = 'food-list-item';
-    const kcal = food.calories_per_100g != null ? `${Math.round(food.calories_per_100g)} kcal` : '–';
+    const kcal = food.calories_per_100g != null ? `${fmtE(food.calories_per_100g)} ${unitLabel()}` : '–';
     const pro  = food.protein_per_100g  != null ? `${food.protein_per_100g.toFixed(1)}P` : '';
     const carb = food.carbs_per_100g    != null ? `${food.carbs_per_100g.toFixed(1)}C` : '';
     const fat  = food.fat_per_100g      != null ? `${food.fat_per_100g.toFixed(1)}F` : '';
@@ -144,7 +145,7 @@ export function renderFoodSearch(container, onSelect) {
         <div class="food-list-name">${food.name}</div>
         <div style="font-size:12px;color:var(--text-muted);margin-top:2px">
           ${food.brand ? `<span>${food.brand} · </span>` : ''}
-          <span style="font-variant-numeric:tabular-nums">${kcal}/100g</span>
+          <span style="font-variant-numeric:tabular-nums">${fmtE(food.calories_per_100g)} ${unitLabel()}/100g</span>
           ${macroStr ? `<span style="color:var(--text-faint)"> · ${macroStr}</span>` : ''}
         </div>
       </div>
@@ -161,33 +162,47 @@ export function renderFoodSearch(container, onSelect) {
     const wrap = document.createElement('div');
     wrap.id = 'fs-quick-add';
     wrap.style.cssText = 'padding:12px 16px 8px;border-top:1px solid var(--border);margin-top:4px';
+    const ul = unitLabel();
     wrap.innerHTML = `
-      <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">
-        ${prefill ? `"${prefill}" not found — add it:` : 'Add a custom food:'}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:12px;font-weight:600;color:var(--text-muted)">
+          ${prefill ? `"${prefill}" not found — add it:` : 'Add a custom food:'}
+        </span>
+        <button id="qa-paste-btn" style="font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-dim);padding:3px 10px;border-radius:999px;border:1px solid rgba(200,184,255,.2)">
+          📋 Paste label
+        </button>
       </div>
+
+      <!-- Paste area (hidden by default) -->
+      <div id="qa-paste-area" style="display:none;margin-bottom:10px">
+        <textarea id="qa-paste-input" placeholder="Paste the nutrition panel text here…"
+          style="width:100%;height:100px;background:var(--surface-2);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px;font-size:12px;font-family:monospace;color:var(--text);resize:none;outline:none"></textarea>
+        <div style="font-size:11px;color:var(--text-faint);margin-top:4px">Paste the full nutrition table — values auto-fill below</div>
+      </div>
+
       <div style="display:flex;flex-direction:column;gap:8px">
         <input id="qa-name" class="input" placeholder="Food name *" value="${prefill}" style="height:42px" />
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div style="position:relative">
-            <input id="qa-cal" class="input" type="number" placeholder="Calories" style="height:42px;padding-right:52px" />
-            <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-faint)">kcal/100g</span>
+            <input id="qa-cal" class="input" type="number" placeholder="${ul}/100g" style="height:42px;padding-right:46px" />
+            <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-faint)">${ul}</span>
           </div>
           <div style="position:relative">
             <input id="qa-srv" class="input" type="number" placeholder="Serving" value="100" style="height:42px;padding-right:24px" />
-            <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-faint)">g</span>
+            <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-faint)">g/srv</span>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
           <div style="position:relative">
-            <input id="qa-pro" class="input" type="number" placeholder="Protein" style="height:38px;font-size:13px;padding-right:18px;border-color:var(--protein)44" />
+            <input id="qa-pro" class="input" type="number" placeholder="Protein" style="height:38px;font-size:13px;padding-right:18px;border-color:var(--protein)55" />
             <span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--protein)">P</span>
           </div>
           <div style="position:relative">
-            <input id="qa-carb" class="input" type="number" placeholder="Carbs" style="height:38px;font-size:13px;padding-right:18px;border-color:var(--carbs)44" />
+            <input id="qa-carb" class="input" type="number" placeholder="Carbs" style="height:38px;font-size:13px;padding-right:18px;border-color:var(--carbs)55" />
             <span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--carbs)">C</span>
           </div>
           <div style="position:relative">
-            <input id="qa-fat" class="input" type="number" placeholder="Fat" style="height:38px;font-size:13px;padding-right:18px;border-color:var(--fat)44" />
+            <input id="qa-fat" class="input" type="number" placeholder="Fat" style="height:38px;font-size:13px;padding-right:18px;border-color:var(--fat)55" />
             <span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--fat)">F</span>
           </div>
         </div>
@@ -196,12 +211,48 @@ export function renderFoodSearch(container, onSelect) {
     `;
     results.appendChild(wrap);
 
+    // Paste label toggle
+    const pasteBtn  = wrap.querySelector('#qa-paste-btn');
+    const pasteArea = wrap.querySelector('#qa-paste-area');
+    const pasteInput= wrap.querySelector('#qa-paste-input');
+
+    pasteBtn.addEventListener('click', () => {
+      const open = pasteArea.style.display !== 'none';
+      pasteArea.style.display = open ? 'none' : 'block';
+      if (!open) pasteInput.focus();
+    });
+
+    // Auto-parse on paste or input
+    pasteInput.addEventListener('input', () => {
+      const parsed = parseNutritionLabel(pasteInput.value);
+      if (parsed.calories_per_100g != null) {
+        // Convert kcal to display unit for the input
+        const ul2 = unitLabel();
+        wrap.querySelector('#qa-cal').value =
+          ul2 === 'kj'
+            ? Math.round(parsed.calories_per_100g * 4.184)
+            : parsed.calories_per_100g;
+      }
+      if (parsed.protein_per_100g  != null) wrap.querySelector('#qa-pro').value  = parsed.protein_per_100g;
+      if (parsed.carbs_per_100g    != null) wrap.querySelector('#qa-carb').value = parsed.carbs_per_100g;
+      if (parsed.fat_per_100g      != null) wrap.querySelector('#qa-fat').value  = parsed.fat_per_100g;
+      if (parsed.serving_size_g    != null) wrap.querySelector('#qa-srv').value  = parsed.serving_size_g;
+      if (Object.keys(parsed).length > 0)   pasteArea.style.display = 'none';
+    });
+
+    // Save
     wrap.querySelector('#qa-save').addEventListener('click', async () => {
       const name = wrap.querySelector('#qa-name').value.trim();
       if (!name) { showToast('Food name is required', 'error'); return; }
+
+      // Convert energy input back to kcal for storage
+      const calInput = parseFloat(wrap.querySelector('#qa-cal').value) || null;
+      const calKcal  = calInput == null ? null
+        : unitLabel() === 'kj' ? Math.round(calInput / 4.184) : calInput;
+
       const body = {
         name,
-        calories_per_100g: parseFloat(wrap.querySelector('#qa-cal').value)  || null,
+        calories_per_100g: calKcal,
         protein_per_100g:  parseFloat(wrap.querySelector('#qa-pro').value)  || null,
         carbs_per_100g:    parseFloat(wrap.querySelector('#qa-carb').value) || null,
         fat_per_100g:      parseFloat(wrap.querySelector('#qa-fat').value)  || null,

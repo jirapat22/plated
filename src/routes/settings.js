@@ -6,7 +6,7 @@ const router = express.Router();
 const ALLOWED = new Set([
   'calorie_goal', 'protein_goal', 'carb_goal', 'fat_goal',
   'fiber_goal', 'water_goal_ml', 'ironlog_api_url', 'protein_multiplier',
-  'phase', 'tdee', 'cut_deficit', 'bulk_surplus',
+  'phase', 'tdee', 'cut_deficit', 'bulk_surplus', 'energy_unit',
 ]);
 
 function allSettings(db) {

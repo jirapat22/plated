@@ -1,4 +1,5 @@
 import { api, setToken, onUnauthorized } from './api.js';
+import { setEnergyUnit } from './utils/energy.js';
 import { renderToday }    from './views/today.js';
 import { renderHistory }  from './views/history.js';
 import { renderTrends }   from './views/trends.js';
@@ -153,7 +154,7 @@ function showLock(setup = false) {
 function showApp() {
   document.getElementById('lock-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
-  navigateTo('today');
+  reloadEnergyUnit().then(() => navigateTo('today'));
 }
 
 // ─── Service Worker ──────────────────────────────────────────
@@ -211,3 +212,11 @@ setupNumpad();
     showLock(false);
   }
 })();
+
+// Load energy unit preference once logged in (called by settings view on save too)
+export async function reloadEnergyUnit() {
+  try {
+    const s = await api.get('/api/settings');
+    setEnergyUnit(s.energy_unit || 'kcal');
+  } catch { /* use default */ }
+}
