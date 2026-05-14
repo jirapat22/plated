@@ -60,6 +60,12 @@ app.use((err, req, res, next) => {
 });
 
 function start() {
+  // Generate icons if missing (e.g. fresh deployment)
+  const iconPath = path.join(__dirname, 'public', 'icons', 'icon-192.png');
+  if (!fs.existsSync(iconPath)) {
+    try { require('./scripts/gen-icons'); } catch (e) { console.warn('Icon gen skipped:', e.message); }
+  }
+
   initDb();
 
   const server = app.listen(PORT, () => {
