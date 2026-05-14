@@ -52,13 +52,24 @@ router.get('/today', async (req, res) => {
     const calsData    = cals?.data    ?? cals;
     const burned      = calsData?.calories_burned ?? calsData?.total ?? calsData?.calories ?? 0;
 
+    // Save last synced timestamp
+    const now = new Date().toISOString();
+    try {
+      getDb().prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('ironlog_last_synced',$v)")
+        .run({ v: now });
+    } catch { /* non-fatal */ }
+
     res.json({
       connected:       true,
       profile:         profileData,
       calories_burned: burned,
+      last_synced:     now,
     });
   } catch (err) {
-    res.json({ connected: false, error: err.message, profile: null, calories_burned: 0 });
+    // Return last known sync time even on failure
+    let last_synced = null;
+    try { last_synced = getDb().prepare("SELECT value FROM settings WHERE key='ironlog_last_synced'").get()?.value || null; } catch {}
+    res.json({ connected: false, error: err.message, profile: null, calories_burned: 0, last_synced });
   }
 });
 

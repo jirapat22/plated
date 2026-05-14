@@ -1,6 +1,6 @@
 import { api }                      from '../api.js';
 import { showToast, showSheet }      from '../app.js';
-import { openFoodEntry }             from './log.js';
+import { openFoodEntry, openEditEntry } from './log.js';
 import { renderMacroBar }            from '../components/macroBar.js';
 import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
 import { getFoodIcon }               from '../utils/foodIcon.js';
@@ -27,12 +27,23 @@ function formatTime(iso) {
 
 // (swipe-to-delete removed — replaced with visible × button)
 
+function timeAgo(iso) {
+  if (!iso) return null;
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 // ─── IronLog fetch via Plated backend proxy (avoids CORS) ──
 async function fetchIronLog(settings) {
   if (!settings.ironlog_api_url?.trim()) return null;
   try {
     const data = await api.get('/api/ironlog/today');
-    return data.connected ? data : null;
+    return data.connected ? data : { ...data, _stale: true };
   } catch {
     return null;
   }
@@ -114,20 +125,29 @@ export function renderToday(container) {
       <!-- Water tracker -->
       <div style="padding:0 16px 4px">
         <div class="card">
-          <div class="label" style="margin-bottom:10px">💧 Water</div>
-          <div class="water-track">
-            <div class="water-bar-outer" style="flex:1">
-              <div class="water-bar-fill" style="width:${waterPct}%"></div>
-            </div>
-            <div class="water-amount num">${waterData.total_ml} <span style="font-size:11px;color:var(--text-muted)">/ ${goals.water} ml</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <span class="label">💧 Water</span>
+            <span class="water-amount num">${waterData.total_ml} <span style="font-size:11px;color:var(--text-muted)">/ ${goals.water} ml</span></span>
+          </div>
+          <div class="water-bar-outer" style="margin-bottom:10px">
+            <div class="water-bar-fill" style="width:${waterPct}%"></div>
           </div>
           <div class="water-btns" id="water-btns">
-            <button class="water-btn" data-ml="150">+150 ml</button>
-            <button class="water-btn" data-ml="250">+250 ml</button>
-            <button class="water-btn" data-ml="330">+330 ml</button>
-            <button class="water-btn" data-ml="500">+500 ml</button>
+            <button class="water-btn" data-ml="150">+150</button>
+            <button class="water-btn" data-ml="250">+250</button>
+            <button class="water-btn" data-ml="330">+330</button>
+            <button class="water-btn" data-ml="500">+500</button>
             <button class="water-btn" data-ml="custom">Custom</button>
           </div>
+          ${waterData.entries.length > 0 ? `
+          <div id="water-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
+            ${waterData.entries.map(e => `
+              <span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:3px 10px 3px 10px;font-size:12px;font-variant-numeric:tabular-nums">
+                ${e.amount_ml}ml
+                <button data-water-id="${e.id}" style="color:var(--text-faint);font-size:14px;line-height:1;margin-left:2px">×</button>
+              </span>
+            `).join('')}
+          </div>` : ''}
         </div>
       </div>
 
@@ -138,7 +158,10 @@ export function renderToday(container) {
       ${ironlog ? `
       <div style="padding:0 16px 4px">
         <div class="card ironlog-panel">
-          <div class="label" style="margin-bottom:10px">⚡ IronLog — Today</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <span class="label">⚡ IronLog — Today</span>
+            ${ironlog.last_synced ? `<span style="font-size:11px;color:var(--text-faint)">${ironlog._stale ? '⚠ cached · ' : ''}${timeAgo(ironlog.last_synced)}</span>` : ''}
+          </div>
           <div class="ironlog-row">
             <span class="muted">Calories burned</span>
             <span class="num">${fmtE(burned)} ${unitLabel()}</span>
@@ -178,7 +201,7 @@ export function renderToday(container) {
       mealData.sessions.forEach(session => renderSession(mealsList, session));
     }
 
-    // Water buttons
+    // Water add buttons
     document.getElementById('water-btns').addEventListener('click', async e => {
       const btn = e.target.closest('[data-ml]');
       if (!btn) return;
@@ -191,6 +214,18 @@ export function renderToday(container) {
         await logWater(parseInt(ml));
       }
       load();
+    });
+
+    // Water chip remove buttons
+    document.querySelectorAll('[data-water-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api.delete(`/api/water/${btn.dataset.waterId}`);
+          load();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
     });
 
     // New meal
@@ -242,12 +277,21 @@ export function renderToday(container) {
           </div>
         </div>
         <div class="meal-entry-kcal">${fmt(entry.calories)}</div>
-        <button class="entry-del-btn" data-id="${entry.id}" style="
-          width:32px;height:32px;border-radius:50%;
-          background:rgba(255,107,107,.1);color:var(--error);
-          display:flex;align-items:center;justify-content:center;
-          flex-shrink:0;font-size:16px;transition:background .15s">×</button>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="entry-edit-btn" data-id="${entry.id}" title="Edit quantity" style="
+            width:32px;height:32px;border-radius:50%;
+            background:var(--surface-2);color:var(--text-muted);
+            display:flex;align-items:center;justify-content:center;font-size:13px">✏️</button>
+          <button class="entry-del-btn" data-id="${entry.id}" title="Delete" style="
+            width:32px;height:32px;border-radius:50%;
+            background:rgba(255,107,107,.1);color:var(--error);
+            display:flex;align-items:center;justify-content:center;
+            font-size:16px">×</button>
+        </div>
       `;
+      entryEl.querySelector('.entry-edit-btn').addEventListener('click', () => {
+        openEditEntry(entry, () => load());
+      });
       entryEl.querySelector('.entry-del-btn').addEventListener('click', async () => {
         try {
           await api.delete(`/api/meals/entries/${entry.id}`);

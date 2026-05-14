@@ -1,4 +1,5 @@
-import { api } from '../api.js';
+import { api }            from '../api.js';
+import { fmtE, unitLabel } from '../utils/energy.js';
 
 const CHART_DEFAULTS = {
   responsive: true,
@@ -20,12 +21,9 @@ const CHART_DEFAULTS = {
   },
 };
 
-function destroyChart(id) {
-  const existing = Chart.getChart(id);
-  existing?.destroy();
-}
+function destroyChart(id) { Chart.getChart(id)?.destroy(); }
 
-function makeChart(id, labels, data, color, label) {
+function makeChart(id, labels, data, color, yLabel) {
   destroyChart(id);
   const ctx = document.getElementById(id);
   if (!ctx) return;
@@ -33,24 +31,17 @@ function makeChart(id, labels, data, color, label) {
     type: 'line',
     data: {
       labels,
-      datasets: [{
-        label,
-        data,
-        borderColor: color,
-        backgroundColor: color + '22',
-        fill: true,
-        borderWidth: 2,
-      }],
+      datasets: [{ data, borderColor: color, backgroundColor: color + '22', fill: true, borderWidth: 2 }],
     },
     options: {
       ...CHART_DEFAULTS,
       plugins: {
         ...CHART_DEFAULTS.plugins,
-        tooltip: {
-          callbacks: {
-            label: ctx => `${ctx.parsed.y.toFixed(1)} ${label}`,
-          },
-        },
+        tooltip: { callbacks: { label: c => `${c.parsed.y.toFixed(1)} ${yLabel}` } },
+      },
+      scales: {
+        ...CHART_DEFAULTS.scales,
+        y: { ...CHART_DEFAULTS.scales.y, ticks: { ...CHART_DEFAULTS.scales.y.ticks, callback: v => `${Math.round(v)}` } },
       },
     },
   });
@@ -58,37 +49,58 @@ function makeChart(id, labels, data, color, label) {
 
 function calcStreak(summary, goal) {
   const sorted = [...summary].sort((a, b) => b.date.localeCompare(a.date));
-  let streak = 0;
-  const today = new Date().toISOString().split('T')[0];
+  const today  = new Date().toISOString().split('T')[0];
+  let streak   = 0;
   for (const row of sorted) {
     if (row.date > today) continue;
     const cal = row.calories ?? 0;
-    if (cal > 0 && Math.abs(cal - goal) / goal <= 0.10) {
-      streak++;
-    } else {
-      break;
-    }
+    if (cal > 0 && Math.abs(cal - goal) / goal <= 0.10) streak++;
+    else break;
   }
   return streak;
 }
 
 export function renderTrends(container) {
+  let days = 30;
+
   container.innerHTML = `
-    <div class="today-header"><div class="today-date">Trends</div></div>
+    <div class="today-header">
+      <div class="today-date">Trends</div>
+      <div style="display:flex;gap:6px">
+        <button class="range-btn active" data-days="7">7d</button>
+        <button class="range-btn" data-days="30">30d</button>
+        <button class="range-btn" data-days="90">90d</button>
+      </div>
+    </div>
     <div id="trends-body" style="padding:0 16px">
       <div class="skeleton skel-line" style="height:180px;border-radius:14px"></div>
     </div>
   `;
 
+  // Range buttons
+  container.querySelectorAll('.range-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      days = parseInt(btn.dataset.days);
+      container.querySelectorAll('.range-btn').forEach(b => b.classList.toggle('active', b === btn));
+      load();
+    });
+  });
+
+  // Inline range button styles
+  const style = document.createElement('style');
+  style.textContent = `.range-btn{height:28px;padding:0 12px;border-radius:999px;font-size:12px;font-weight:700;background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border);transition:all .15s}.range-btn.active{background:var(--accent-dim);color:var(--accent);border-color:rgba(200,184,255,.3)}`;
+  container.prepend(style);
+
   async function load() {
+    document.getElementById('trends-body').innerHTML =
+      '<div class="skeleton skel-line" style="height:180px;border-radius:14px"></div>';
     try {
       const [summary, weights, settings] = await Promise.all([
-        api.get('/api/meals/summary?days=30'),
-        api.get('/api/weight?limit=30'),
+        api.get(`/api/meals/summary?days=${days}`),
+        api.get('/api/weight?limit=90'),
         api.get('/api/settings'),
       ]);
 
-      // Fetch IronLog weight data via backend proxy (avoids CORS)
       let ironlogWeights = [];
       if (settings.ironlog_api_url?.trim()) {
         try {
@@ -105,79 +117,82 @@ export function renderTrends(container) {
   }
 
   function render(summary, localWeights, ironlogWeights, settings) {
-    const goal = parseFloat(settings.calorie_goal) || 2000;
+    const goal   = parseFloat(settings.calorie_goal) || 2000;
     const streak = calcStreak(summary, goal);
+    const ul     = unitLabel();
 
-    const labels = summary.map(r => {
-      const d = new Date(r.date + 'T00:00:00');
-      return `${d.getMonth() + 1}/${d.getDate()}`;
-    });
-    const cals    = summary.map(r => r.calories    ?? 0);
-    const proteins= summary.map(r => r.protein     ?? 0);
+    const labels   = summary.map(r => { const d = new Date(r.date + 'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; });
+    const cals     = summary.map(r => fmtE(r.calories ?? 0, 0));     // display unit
+    const proteins = summary.map(r => r.protein ?? 0);
+    const goalLine = summary.map(() => parseFloat(fmtE(goal)));       // display unit
 
-    // Merge weight: local takes priority for same date
     const weightMap = {};
     ironlogWeights.forEach(w => { weightMap[w.date] = w.weight_kg; });
-    localWeights.forEach(w  => { weightMap[w.date]  = w.weight_kg; });
+    localWeights.forEach(w   => { weightMap[w.date] = w.weight_kg; });
     const weightEntries = Object.entries(weightMap)
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .slice(-30);
-    const wLabels = weightEntries.map(([d]) => {
-      const dt = new Date(d + 'T00:00:00');
-      return `${dt.getMonth()+1}/${dt.getDate()}`;
-    });
-    const wVals = weightEntries.map(([, v]) => v);
+      .slice(-days);
+    const wLabels = weightEntries.map(([d]) => { const dt = new Date(d + 'T00:00:00'); return `${dt.getMonth()+1}/${dt.getDate()}`; });
+    const wVals   = weightEntries.map(([, v]) => v);
 
     const weeklyAvg = summary.length >= 7
-      ? (summary.slice(-7).reduce((s, r) => s + (r.calories ?? 0), 0) / 7).toFixed(0)
-      : '–';
+      ? fmtE(summary.slice(-7).reduce((s, r) => s + (r.calories ?? 0), 0) / 7)
+      : null;
+
+    // Streak messaging
+    const streakEl = streak === 0
+      ? `<div style="font-size:13px;color:var(--text-muted);margin-top:4px">Log meals and hit your calorie goal to start a streak 🎯</div>`
+      : streak === 1
+      ? `<div style="font-size:13px;color:var(--text-muted);margin-top:4px">1 day — keep it going! 💪</div>`
+      : `<div style="font-size:13px;color:var(--text-muted);margin-top:4px">${streak} consecutive days within 10% of goal</div>`;
 
     document.getElementById('trends-body').innerHTML = `
       <!-- Streak -->
       <div class="card streak-card" style="margin-bottom:12px">
-        <div class="streak-num">${streak}</div>
+        <div class="streak-num">${streak === 0 ? '–' : streak}</div>
         <div>
-          <div style="font-size:15px;font-weight:700">Day streak</div>
-          <div class="streak-label">Hitting calorie goal (±10%)</div>
+          <div style="font-size:15px;font-weight:700">Day streak 🔥</div>
+          ${streakEl}
         </div>
       </div>
 
       <!-- Weekly avg -->
+      ${weeklyAvg ? `
       <div class="card" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
-        <div class="label">7-day avg calories</div>
-        <div class="num" style="font-size:18px">${weeklyAvg} <span style="font-size:12px;color:var(--text-muted)">/ ${goal}</span></div>
-      </div>
+        <div class="label">7-day avg</div>
+        <div class="num" style="font-size:18px">${weeklyAvg}
+          <span style="font-size:12px;color:var(--text-muted)"> / ${fmtE(goal)} ${ul}</span>
+        </div>
+      </div>` : ''}
 
       <!-- Calories chart -->
-      <div class="card chart-card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Calories — 30 days</div>
-        <div style="height:160px;position:relative">
-          <canvas id="chart-cal"></canvas>
-        </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="label" style="margin-bottom:10px">Calories — ${days}d</div>
+        <div style="height:160px;position:relative"><canvas id="chart-cal"></canvas></div>
       </div>
 
       <!-- Protein chart -->
-      <div class="card chart-card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Protein — 30 days</div>
-        <div style="height:160px;position:relative">
-          <canvas id="chart-pro"></canvas>
-        </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="label" style="margin-bottom:10px">Protein — ${days}d</div>
+        <div style="height:160px;position:relative"><canvas id="chart-pro"></canvas></div>
       </div>
 
       <!-- Weight chart -->
-      <div class="card chart-card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Bodyweight — 30 days</div>
-        <div style="height:160px;position:relative">
-          <canvas id="chart-wt"></canvas>
-        </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="label" style="margin-bottom:10px">Bodyweight — ${days}d</div>
+        <div style="height:160px;position:relative"><canvas id="chart-wt"></canvas></div>
       </div>
     `;
 
-    // Small delay so DOM is painted
     requestAnimationFrame(() => {
-      makeChart('chart-cal', labels, cals, '#c8b8ff', 'kcal');
-      makeChart('chart-pro', labels, proteins, '#ff8ad1', 'g protein');
-      if (wVals.length > 0) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg');
+      makeChart('chart-cal', labels, cals,     '#c8b8ff', ul);
+      makeChart('chart-pro', labels, proteins, '#1E88E5', 'g');
+      if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg');
+      else {
+        const c = document.getElementById('chart-wt');
+        if (c) c.closest('.card').querySelector('.label').nextElementSibling.innerHTML =
+          '<div class="empty-state" style="height:160px;display:flex;align-items:center;justify-content:center"><div class="empty-text">Log your weight to see a chart</div></div>';
+      }
     });
   }
 

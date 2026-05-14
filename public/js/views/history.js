@@ -1,15 +1,11 @@
-import { api }          from '../api.js';
-import { renderMacroBar } from '../components/macroBar.js';
+import { api }             from '../api.js';
+import { showToast }        from '../app.js';
+import { renderMacroBar }   from '../components/macroBar.js';
+import { fmtE, unitLabel }  from '../utils/energy.js';
+import { openFoodEntry }    from './log.js';
 
-function isoDate(d) {
-  return d.toISOString().split('T')[0];
-}
-
-function addDays(date, n) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + n);
-  return d;
-}
+function isoDate(d) { return d.toISOString().split('T')[0]; }
+function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate() + n); return d; }
 
 function fmtDateFull(iso) {
   const d = new Date(iso + 'T00:00:00');
@@ -19,12 +15,12 @@ function fmtDateFull(iso) {
 }
 
 function fmtWeekday(d) {
-  return d.toLocaleDateString('en-US', { weekday: 'short' }).slice(0,3);
+  return d.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 3);
 }
 
 export function renderHistory(container) {
   let selectedDate = isoDate(new Date());
-  let summary = []; // last 30 days aggregates
+  let summary = [];
 
   container.innerHTML = `
     <div class="today-header"><div class="today-date">History</div></div>
@@ -59,7 +55,6 @@ export function renderHistory(container) {
       strip.appendChild(el);
     }
 
-    // Scroll selected into view
     const sel = strip.querySelector('.selected');
     sel?.scrollIntoView({ inline: 'center', behavior: 'smooth' });
   }
@@ -92,20 +87,21 @@ export function renderHistory(container) {
       fat:    parseFloat(settings.fat_goal)       || 65,
       fiber:  parseFloat(settings.fiber_goal)     || 30,
     };
-    const t = mealData.totals;
+    const t  = mealData.totals;
+    const ul = unitLabel();
 
     el.innerHTML = `
       <div class="card" style="margin-bottom:12px">
         <div style="font-size:15px;font-weight:700;margin-bottom:12px">${fmtDateFull(date)}</div>
         <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px">
           <div>
-            <div class="num" style="font-size:28px;font-weight:800">${Math.round(t.calories)}</div>
-            <div class="label">of ${goals.cal} kcal</div>
+            <div class="num" style="font-size:28px;font-weight:800">${fmtE(t.calories)}</div>
+            <div class="label">of ${fmtE(goals.cal)} ${ul}</div>
           </div>
           <div style="text-align:right">
-            <div class="num" style="font-size:14px;color:var(--protein)">${t.protein.toFixed(1)}g protein</div>
-            <div class="num" style="font-size:14px;color:var(--carbs)">${t.carbs.toFixed(1)}g carbs</div>
-            <div class="num" style="font-size:14px;color:var(--fat)">${t.fat.toFixed(1)}g fat</div>
+            <div class="num" style="font-size:13px;color:var(--protein)">${t.protein.toFixed(1)}g protein</div>
+            <div class="num" style="font-size:13px;color:var(--carbs)">${t.carbs.toFixed(1)}g carbs</div>
+            <div class="num" style="font-size:13px;color:var(--fat)">${t.fat.toFixed(1)}g fat</div>
           </div>
         </div>
         <div id="hist-macro-bar"></div>
@@ -114,32 +110,52 @@ export function renderHistory(container) {
     renderMacroBar(el.querySelector('#hist-macro-bar'), t, goals);
 
     if (mealData.sessions.length === 0) {
-      el.insertAdjacentHTML('beforeend', '<div class="empty-state"><div class="empty-icon">🍽</div><div class="empty-text">No meals logged this day</div></div>');
-      return;
+      el.insertAdjacentHTML('beforeend', '<div class="empty-state" style="padding:20px 0"><div class="empty-icon">🍽</div><div class="empty-text">No meals logged</div></div>');
+    } else {
+      mealData.sessions.forEach(session => {
+        const sessionKcal = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.marginBottom = '10px';
+        card.innerHTML = `
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+            <span style="font-weight:600">${session.name}</span>
+            <span class="num muted">${fmtE(sessionKcal)} ${ul}</span>
+          </div>
+          ${session.entries.map(e => `
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border)">
+              <div>
+                <div style="font-size:13px;font-weight:500">${e.food_name}</div>
+                <div style="font-size:12px;color:var(--text-muted)">${e.quantity_g}g</div>
+              </div>
+              <div class="num" style="font-size:13px">${fmtE(e.calories ?? 0)} ${ul}</div>
+            </div>
+          `).join('')}
+        `;
+        el.appendChild(card);
+      });
     }
 
-    mealData.sessions.forEach(session => {
-      const sessionKcal = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
-      const card = document.createElement('div');
-      card.className = 'card';
-      card.style.marginBottom = '10px';
-      card.innerHTML = `
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-          <span style="font-weight:600">${session.name}</span>
-          <span class="num muted">${Math.round(sessionKcal)} kcal</span>
-        </div>
-        ${session.entries.map(e => `
-          <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border)">
-            <div>
-              <div style="font-size:13px;font-weight:500">${e.food_name}</div>
-              <div style="font-size:12px;color:var(--text-muted)">${e.quantity_g}g</div>
-            </div>
-            <div class="num" style="font-size:13px">${Math.round(e.calories ?? 0)} kcal</div>
-          </div>
-        `).join('')}
-      `;
-      el.appendChild(card);
+    // ── Add meal to past date ─────────────────────────────────
+    const addBtn = document.createElement('button');
+    addBtn.className = 'new-meal-btn';
+    addBtn.style.margin = '8px 0 16px';
+    addBtn.style.width = '100%';
+    addBtn.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      Add Meal to ${fmtDateFull(date)}
+    `;
+    addBtn.addEventListener('click', async () => {
+      try {
+        const session = await api.post('/api/meals/sessions', { date });
+        openFoodEntry(session.id, () => loadDay(date));
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
     });
+    el.appendChild(addBtn);
   }
 
   loadSummary().then(() => loadDay(selectedDate));

@@ -87,7 +87,8 @@ function initDb() {
     { key: 'fat_goal',          value: '65'   },
     { key: 'fiber_goal',        value: '30'   },
     { key: 'water_goal_ml',     value: '2500' },
-    { key: 'ironlog_api_url',   value: ''         },
+    { key: 'ironlog_api_url',      value: ''         },
+    { key: 'ironlog_last_synced',  value: ''         },
     { key: 'protein_multiplier',value: '2.2'      },
     { key: 'energy_unit',       value: 'kcal'     },
     { key: 'phase',             value: 'maintain' },
@@ -158,13 +159,20 @@ function seedNzFoods(db) {
   ];
 
   let added = 0;
-  for (const f of allFoods) {
-    if (!f.name || !alreadyExists.get({ name: f.name })) {
-      try {
-        insert.run({ name: f.name, cal: f.cal ?? null, pro: f.pro ?? null, carb: f.carb ?? null, fat: f.fat ?? null, fib: f.fib ?? null, srv: f.srv ?? 100 });
-        added++;
-      } catch { /* skip duplicates */ }
+  db.exec('BEGIN TRANSACTION');
+  try {
+    for (const f of allFoods) {
+      if (!f.name || !alreadyExists.get({ name: f.name })) {
+        try {
+          insert.run({ name: f.name, cal: f.cal ?? null, pro: f.pro ?? null, carb: f.carb ?? null, fat: f.fat ?? null, fib: f.fib ?? null, srv: f.srv ?? 100 });
+          added++;
+        } catch { /* skip duplicates */ }
+      }
     }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
   }
   if (added > 0) console.log('Seeded ' + added + ' foods (NZFCD 14th Ed. + AUSNUT 2023 + extras)');
 }

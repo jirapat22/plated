@@ -103,6 +103,15 @@ export function renderFoodSearch(container, onSelect) {
       return;
     }
 
+    // Result count label
+    const localCount = rows.filter(r => r.id).length;
+    if (q && localCount > 0) {
+      const countEl = document.createElement('div');
+      countEl.style.cssText = 'padding:4px 16px 6px;font-size:11px;color:var(--text-faint)';
+      countEl.textContent = `${localCount} found locally`;
+      results.appendChild(countEl);
+    }
+
     // Separate local vs remote rows visually
     const localRows  = rows.filter(r => r.id && r.source !== 'openfoodfacts' || r.id);
     const remoteOnly = rows.filter(r => !r.id);
