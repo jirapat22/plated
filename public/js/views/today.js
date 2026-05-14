@@ -1,9 +1,10 @@
 import { api }                      from '../api.js';
-import { showToast, showSheet }      from '../app.js';
+import { showToast, showSheet, hideSheet } from '../app.js';
 import { openFoodEntry, openEditEntry } from './log.js';
 import { renderMacroBar }            from '../components/macroBar.js';
 import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
 import { getFoodIcon }               from '../utils/foodIcon.js';
+import { localDate }                 from '../utils/date.js';
 
 const CIRC = 2 * Math.PI * 60; // r=60
 
@@ -51,7 +52,7 @@ async function fetchIronLog(settings) {
 
 // ─── Render ─────────────────────────────────────────────────
 export function renderToday(container) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDate();
   container.innerHTML = buildSkeleton();
 
   let refreshTimer = null;
@@ -59,8 +60,8 @@ export function renderToday(container) {
   async function load() {
     try {
       const [mealData, waterData, settings] = await Promise.all([
-        api.get('/api/meals/today'),
-        api.get('/api/water/today'),
+        api.get(`/api/meals/day/${today}`),
+        api.get(`/api/water/day/${today}`),
         api.get('/api/settings'),
       ]);
 
@@ -182,12 +183,17 @@ export function renderToday(container) {
         <h2>Meals</h2>
       </div>
       <div id="meals-list"></div>
-      <button class="new-meal-btn" id="new-meal-btn">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-          <path d="M9 3v12M3 9h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        New Meal
-      </button>
+      <div style="display:flex;gap:10px;margin:8px 16px 16px">
+        <button class="new-meal-btn" id="new-meal-btn" style="margin:0;flex:1">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          New Meal
+        </button>
+        <button class="new-meal-btn" id="quick-log-standalone" style="margin:0;flex:1;color:var(--carbs);border-color:var(--carbs)44">
+          ⚡ Quick Log
+        </button>
+      </div>
     `;
 
     // Render macro bar
@@ -233,6 +239,16 @@ export function renderToday(container) {
       try {
         await api.post('/api/meals/sessions', { date: today });
         load();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+
+    // Standalone Quick Log — creates a session then opens quick log
+    document.getElementById('quick-log-standalone').addEventListener('click', async () => {
+      try {
+        const session = await api.post('/api/meals/sessions', { date: today });
+        openQuickLog(session.id, () => load());
       } catch (err) {
         showToast(err.message, 'error');
       }
@@ -305,18 +321,29 @@ export function renderToday(container) {
       sessionEl.appendChild(entryEl);
     });
 
+    const footer = document.createElement('div');
+    footer.style.cssText = 'display:flex;border-top:1px solid var(--border)';
+
     const addBtn = document.createElement('button');
     addBtn.className = 'meal-session-add';
+    addBtn.style.flex = '1';
     addBtn.innerHTML = `
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
         <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
       </svg>
-      Add to ${session.name}
+      Add Food
     `;
-    addBtn.addEventListener('click', () => {
-      openFoodEntry(session.id, () => load());
-    });
-    sessionEl.appendChild(addBtn);
+    addBtn.addEventListener('click', () => openFoodEntry(session.id, () => load()));
+
+    const quickBtn = document.createElement('button');
+    quickBtn.className = 'meal-session-add';
+    quickBtn.style.cssText = 'flex:0 0 auto;border-left:1px solid var(--border);color:var(--carbs)';
+    quickBtn.innerHTML = `⚡ Quick Log`;
+    quickBtn.addEventListener('click', () => openQuickLog(session.id, () => load()));
+
+    footer.appendChild(addBtn);
+    footer.appendChild(quickBtn);
+    sessionEl.appendChild(footer);
     container.appendChild(sessionEl);
 
     // Delete session
@@ -401,6 +428,91 @@ function phaseProgressCard(settings, totals, burned) {
       </div>
     </div>
   `;
+}
+
+// ── Quick Log — one-time calorie entry ──────────────────────
+function openQuickLog(sessionId, onSuccess) {
+  const ul = unitLabel();
+  showSheet(content => {
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">⚡ Quick Log</span>
+        <button class="sheet-close" id="ql-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.5">
+          For meals out where you know the rough calories but not every ingredient. This won't be saved to your food database.
+        </div>
+        <div class="form-group">
+          <label class="form-label">Meal description *</label>
+          <input class="input" id="ql-name" placeholder="e.g. Burger from Burgerfuel" autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Calories (${ul}) *</label>
+          <input class="input" id="ql-cal" type="number" placeholder="e.g. 650" inputmode="numeric" />
+        </div>
+        <div class="label" style="margin-bottom:10px">Macros — optional</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+          <div style="position:relative">
+            <input class="input" id="ql-pro" type="number" placeholder="Protein" inputmode="numeric" style="height:42px;padding-right:20px;border-color:var(--protein)44" />
+            <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:var(--protein)">P</span>
+          </div>
+          <div style="position:relative">
+            <input class="input" id="ql-carb" type="number" placeholder="Carbs" inputmode="numeric" style="height:42px;padding-right:20px;border-color:var(--carbs)44" />
+            <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:var(--carbs)">C</span>
+          </div>
+          <div style="position:relative">
+            <input class="input" id="ql-fat" type="number" placeholder="Fat" inputmode="numeric" style="height:42px;padding-right:20px;border-color:var(--fat)44" />
+            <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:var(--fat)">F</span>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full" id="ql-submit">Log Meal</button>
+      </div>
+    `;
+
+    document.getElementById('ql-close').addEventListener('click', hideSheet);
+    setTimeout(() => document.getElementById('ql-name')?.focus(), 150);
+
+    document.getElementById('ql-submit').addEventListener('click', async () => {
+      const name    = document.getElementById('ql-name').value.trim();
+      const calDisp = parseFloat(document.getElementById('ql-cal').value) || 0;
+      if (!name)    { showToast('Enter a meal description', 'error'); return; }
+      if (!calDisp) { showToast('Enter the calories', 'error'); return; }
+
+      // Convert display unit back to kcal for storage
+      const { toKcal } = await import('../utils/energy.js');
+      const calKcal = toKcal(calDisp);
+      const pro  = parseFloat(document.getElementById('ql-pro').value)  || null;
+      const carb = parseFloat(document.getElementById('ql-carb').value) || null;
+      const fat  = parseFloat(document.getElementById('ql-fat').value)  || null;
+
+      const btn = document.getElementById('ql-submit');
+      btn.disabled = true; btn.textContent = 'Logging…';
+
+      try {
+        // Create a one-off food (source='quick', qty=100g so macros = exact entered values)
+        const food = await api.post('/api/foods', {
+          name,
+          calories_per_100g: calKcal,
+          protein_per_100g:  pro,
+          carbs_per_100g:    carb,
+          fat_per_100g:      fat,
+          serving_size_g:    100,
+          source:            'quick',
+        });
+        await api.post(`/api/meals/sessions/${sessionId}/entries`, {
+          food_id:    food.id,
+          quantity_g: 100,
+        });
+        hideSheet();
+        showToast('Meal logged', 'success');
+        onSuccess?.();
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Log Meal';
+      }
+    });
+  });
 }
 
 function buildSkeleton() {

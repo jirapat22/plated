@@ -3,8 +3,9 @@ import { showToast }        from '../app.js';
 import { renderMacroBar }   from '../components/macroBar.js';
 import { fmtE, unitLabel }  from '../utils/energy.js';
 import { openFoodEntry }    from './log.js';
+import { localDate }        from '../utils/date.js';
 
-function isoDate(d) { return d.toISOString().split('T')[0]; }
+function isoDate(d) { return localDate(d); }          // local timezone, not UTC
 function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate() + n); return d; }
 
 function fmtDateFull(iso) {
@@ -19,7 +20,7 @@ function fmtWeekday(d) {
 }
 
 export function renderHistory(container) {
-  let selectedDate = isoDate(new Date());
+  let selectedDate = localDate();
   let summary = [];
 
   container.innerHTML = `
