@@ -1,23 +1,20 @@
-import { api }                      from '../api.js';
+import { api }                            from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
-import { openFoodEntry, openEditEntry } from './log.js';
-import { renderMacroBar }            from '../components/macroBar.js';
-import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
-import { getFoodIcon }               from '../utils/foodIcon.js';
-import { localDate }                 from '../utils/date.js';
+import { openFoodEntry, openEditEntry }    from './log.js';
+import { renderMacroBar }                  from '../components/macroBar.js';
+import { fmtE, unitLabel, toKcal }         from '../utils/energy.js';
+import { getFoodIcon }                     from '../utils/foodIcon.js';
+import { localDate }                       from '../utils/date.js';
 
-const CIRC = 2 * Math.PI * 60; // r=60
+const CIRC = 2 * Math.PI * 60;
 
-function fmt(n, dec = 0) {
-  if (n == null) return '–';
-  return Number(n).toFixed(dec);
-}
+function fmt(n, dec = 0) { return n == null ? '–' : Number(n).toFixed(dec); }
 
-function fmtDate(d) {
-  const now = new Date();
-  const dt  = new Date(d);
-  if (dt.toDateString() === now.toDateString()) return 'Today';
-  return dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+function fmtDateNav(iso) {
+  const today = localDate();
+  if (iso === today) return 'Today';
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 function formatTime(iso) {
@@ -26,45 +23,244 @@ function formatTime(iso) {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
-// (swipe-to-delete removed — replaced with visible × button)
-
 function timeAgo(iso) {
   if (!iso) return null;
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1)  return 'just now';
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 1) return 'just now';
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }
 
-// ─── IronLog fetch via Plated backend proxy (avoids CORS) ──
+function addDays(iso, n) {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return localDate(d);
+}
+
 async function fetchIronLog(settings) {
   if (!settings.ironlog_api_url?.trim()) return null;
   try {
     const data = await api.get('/api/ironlog/today');
     return data.connected ? data : { ...data, _stale: true };
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-// ─── Render ─────────────────────────────────────────────────
-export function renderToday(container) {
-  const today = localDate();
-  container.innerHTML = buildSkeleton();
+// ── Meal name presets ────────────────────────────────────────
+const MEAL_PRESETS = [
+  { emoji: '🌅', name: 'Breakfast'    },
+  { emoji: '☕', name: 'Brunch'       },
+  { emoji: '🌞', name: 'Lunch'        },
+  { emoji: '🌙', name: 'Dinner'       },
+  { emoji: '🍎', name: 'Snack'        },
+  { emoji: '💪', name: 'Pre-Workout'  },
+  { emoji: '🥤', name: 'Post-Workout' },
+  { emoji: '🍽', name: 'Meal Out'     },
+];
 
-  let refreshTimer = null;
+function openRenameSession(sessionId, currentName, onSuccess) {
+  showSheet(content => {
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">Name this meal</span>
+        <button class="sheet-close" id="rn-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+          ${MEAL_PRESETS.map(p => `
+            <button class="btn btn-secondary rn-preset" data-name="${p.name}"
+              style="height:46px;font-size:14px;justify-content:flex-start;gap:10px;${currentName===p.name?'border-color:var(--accent);color:var(--accent)':''}">
+              ${p.emoji} ${p.name}
+            </button>
+          `).join('')}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Custom name</label>
+          <input class="input" id="rn-input" value="${currentName}" placeholder="e.g. Late Night Snack" />
+        </div>
+        <button class="btn btn-primary btn-full" id="rn-save">Save</button>
+      </div>
+    `;
+    document.getElementById('rn-close').addEventListener('click', hideSheet);
+
+    async function doRename(name) {
+      try {
+        await api.patch(`/api/meals/sessions/${sessionId}`, { name });
+        hideSheet();
+        onSuccess?.();
+      } catch (err) { showToast(err.message, 'error'); }
+    }
+
+    content.querySelectorAll('.rn-preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('rn-input').value = btn.dataset.name;
+        doRename(btn.dataset.name);
+      });
+    });
+    document.getElementById('rn-save').addEventListener('click', () => {
+      const name = document.getElementById('rn-input').value.trim();
+      if (name) doRename(name);
+    });
+  });
+}
+
+// ── Copy past meal ───────────────────────────────────────────
+async function openCopyPastMeal(targetSessionId, onSuccess) {
+  showSheet(async content => {
+    content.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-muted)">Loading past meals…</div>`;
+
+    const days = Array.from({ length: 7 }, (_, i) => addDays(localDate(), -(i + 1)));
+    const dayResults = await Promise.all(days.map(d => api.get(`/api/meals/day/${d}`).catch(() => null)));
+
+    const sessions = [];
+    dayResults.forEach((data, i) => {
+      (data?.sessions || []).forEach(s => {
+        if (s.entries.length > 0) sessions.push({ ...s, date: days[i] });
+      });
+    });
+
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">♻️ Copy past meal</span>
+        <button class="sheet-close" id="cp-close">✕</button>
+      </div>
+      ${sessions.length === 0
+        ? '<div class="empty-state"><div class="empty-text">No past meals to copy from</div></div>'
+        : sessions.map(s => {
+            const kcal = s.entries.reduce((sum, e) => sum + (e.calories || 0), 0);
+            return `
+              <button class="food-list-item cp-session" data-idx="${sessions.indexOf(s)}"
+                style="width:100%;text-align:left">
+                <div style="font-size:20px;width:36px;text-align:center">🍽</div>
+                <div class="food-list-info">
+                  <div class="food-list-name">${s.name}</div>
+                  <div style="font-size:12px;color:var(--text-muted)">${s.date} · ${s.entries.length} items · ${Math.round(kcal)} kcal</div>
+                </div>
+              </button>`;
+          }).join('')
+      }
+    `;
+
+    document.getElementById('cp-close').addEventListener('click', hideSheet);
+
+    content.querySelectorAll('.cp-session').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const s = sessions[parseInt(btn.dataset.idx)];
+        btn.style.opacity = '0.5';
+        try {
+          for (const e of s.entries) {
+            await api.post(`/api/meals/sessions/${targetSessionId}/entries`, {
+              food_id: e.food_id, quantity_g: e.quantity_g,
+            });
+          }
+          hideSheet();
+          showToast(`Copied ${s.entries.length} foods from ${s.name}`, 'success');
+          onSuccess?.();
+        } catch (err) {
+          showToast(err.message, 'error');
+          btn.style.opacity = '1';
+        }
+      });
+    });
+  });
+}
+
+// ── Quick Log ────────────────────────────────────────────────
+function openQuickLog(sessionId, onSuccess) {
+  const ul = unitLabel();
+  showSheet(content => {
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">⚡ Quick Log</span>
+        <button class="sheet-close" id="ql-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">
+          For meals out — enter rough calories from Google. Won't be saved to your food database.
+        </div>
+        <div class="form-group">
+          <label class="form-label">Meal description *</label>
+          <input class="input" id="ql-name" placeholder="e.g. Burger from Burgerfuel" autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Calories (${ul}) *</label>
+          <input class="input" id="ql-cal" type="number" placeholder="e.g. 650" inputmode="numeric" />
+        </div>
+        <div class="label" style="margin-bottom:10px">Macros — optional</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+          ${['pro','carb','fat'].map((id, i) => {
+            const [label, color] = [['Protein','var(--protein)'],['Carbs','var(--carbs)'],['Fat','var(--fat)']][i];
+            return `<div style="position:relative">
+              <input class="input" id="ql-${id}" type="number" placeholder="${label}" inputmode="numeric"
+                style="height:42px;padding-right:20px;border-color:${color}44"/>
+              <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:${color}">${label[0]}</span>
+            </div>`;
+          }).join('')}
+        </div>
+        <button class="btn btn-primary btn-full" id="ql-submit">Log Meal</button>
+      </div>
+    `;
+    document.getElementById('ql-close').addEventListener('click', hideSheet);
+    setTimeout(() => document.getElementById('ql-name')?.focus(), 200);
+
+    document.getElementById('ql-submit').addEventListener('click', async () => {
+      const name    = document.getElementById('ql-name').value.trim();
+      const calDisp = parseFloat(document.getElementById('ql-cal').value) || 0;
+      if (!name)    { showToast('Enter a meal description', 'error'); return; }
+      if (!calDisp) { showToast('Enter the calories', 'error'); return; }
+      const calKcal = toKcal(calDisp);
+      const pro  = parseFloat(document.getElementById('ql-pro').value)  || null;
+      const carb = parseFloat(document.getElementById('ql-carb').value) || null;
+      const fat  = parseFloat(document.getElementById('ql-fat').value)  || null;
+      const btn = document.getElementById('ql-submit');
+      btn.disabled = true; btn.textContent = 'Logging…';
+      try {
+        const food = await api.post('/api/foods', {
+          name, calories_per_100g: calKcal,
+          protein_per_100g: pro, carbs_per_100g: carb, fat_per_100g: fat,
+          serving_size_g: 100, source: 'quick',
+        });
+        await api.post(`/api/meals/sessions/${sessionId}/entries`, { food_id: food.id, quantity_g: 100 });
+        hideSheet();
+        showToast('Meal logged', 'success');
+        onSuccess?.();
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Log Meal';
+      }
+    });
+  });
+}
+
+// ── Main render ──────────────────────────────────────────────
+export function renderToday(container) {
+  let viewDate = localDate();
+  let ironlogExpanded = false;
+
+  // Swipe navigation
+  let swipeStartX = 0, swipeStartY = 0;
+  container.addEventListener('touchstart', e => {
+    swipeStartX = e.touches[0].clientX;
+    swipeStartY = e.touches[0].clientY;
+  }, { passive: true });
+  container.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - swipeStartX;
+    const dy = Math.abs(e.changedTouches[0].clientY - swipeStartY);
+    if (Math.abs(dx) > 55 && dy < 35) {
+      const next = addDays(viewDate, dx < 0 ? -1 : 1);
+      if (next <= localDate()) { viewDate = next; load(); }
+    }
+  }, { passive: true });
 
   async function load() {
+    const ul = unitLabel();
     try {
       const [mealData, waterData, settings] = await Promise.all([
-        api.get(`/api/meals/day/${today}`),
-        api.get(`/api/water/day/${today}`),
+        api.get(`/api/meals/day/${viewDate}`),
+        api.get(`/api/water/day/${viewDate}`),
         api.get('/api/settings'),
       ]);
-
       const ironlog = await fetchIronLog(settings);
       render(mealData, waterData, settings, ironlog);
     } catch (err) {
@@ -73,62 +269,95 @@ export function renderToday(container) {
   }
 
   function render(mealData, waterData, settings, ironlog) {
-    const goals = {
-      cal:    parseFloat(settings.calorie_goal)   || 2000,
-      protein:parseFloat(settings.protein_goal)   || 150,
-      carbs:  parseFloat(settings.carb_goal)       || 250,
-      fat:    parseFloat(settings.fat_goal)         || 65,
-      fiber:  parseFloat(settings.fiber_goal)       || 30,
-      water:  parseFloat(settings.water_goal_ml)   || 2500,
+    const today  = localDate();
+    const isToday = viewDate === today;
+    const ul     = unitLabel();
+    const goals  = {
+      cal:    parseFloat(settings.calorie_goal)  || 2000,
+      protein:parseFloat(settings.protein_goal)  || 150,
+      carbs:  parseFloat(settings.carb_goal)      || 250,
+      fat:    parseFloat(settings.fat_goal)        || 65,
+      fiber:  parseFloat(settings.fiber_goal)      || 30,
+      water:  parseFloat(settings.water_goal_ml)  || 2500,
     };
-    const t = mealData.totals;
-    const waterPct = Math.min((waterData.total_ml / goals.water) * 100, 100);
-    const calPct   = Math.min((t.calories / goals.cal) * 100, 100);
-    const multiplier = parseFloat(settings.protein_multiplier) || 2.2;
-    const bodyweight = ironlog?.profile?.bodyweight_kg ?? null;
-    const burned     = ironlog?.calories_burned ?? 0;
-    const net        = t.calories - burned;
-    const recProtein = bodyweight ? Math.round(bodyweight * multiplier) : null;
+    const t         = mealData.totals;
+    const waterPct  = Math.min((waterData.total_ml / goals.water) * 100, 100);
+    const calPct    = Math.min((t.calories / goals.cal) * 100, 100);
+    const burned    = ironlog?.calories_burned ?? 0;
+    const net       = t.calories - burned;
+    const remaining = goals.cal - t.calories;
+    const hintText  = t.calories === 0 ? 'Start logging to track progress'
+      : remaining > 50  ? `${fmtE(remaining)} ${ul} remaining`
+      : remaining < -50 ? `${fmtE(-remaining)} ${ul} over goal`
+      : 'Goal reached! ✓';
+    const hintColor = remaining < -50 ? 'var(--warning)' : remaining < 50 ? 'var(--success)' : 'var(--text-muted)';
+
+    // Water chips (collapse > 3)
+    const entries = waterData.entries;
+    const showChips = entries.length > 0;
+    const visibleChips = entries.slice(-3);
+    const hiddenCount = Math.max(0, entries.length - 3);
+
+    // IronLog/phase summary for collapsed row
+    const tdee  = parseFloat(settings.tdee);
+    const phase = settings.phase || 'maintain';
+    const deficit = parseInt(settings.cut_deficit) || 500;
+    const surplus = parseInt(settings.bulk_surplus) || 300;
+    const target  = phase === 'cut' ? tdee - deficit : phase === 'bulk' ? tdee + surplus : tdee;
+    const diff    = net - target;
+    const onTrack = tdee && Math.abs(diff) <= 150;
+    const phaseLabel = tdee
+      ? (onTrack ? 'On track ✓' : diff > 150 ? `+${fmt(diff)} over` : `${fmt(-diff)} under`)
+      : phase;
+
+    // First meal morning prompt
+    const hour = new Date().getHours();
+    const showMorningPrompt = isToday && mealData.sessions.length === 0 && hour >= 5 && hour <= 11;
 
     container.innerHTML = `
-      <div class="today-header">
-        <div>
-          <div class="today-date">${fmtDate(today)}</div>
+      <!-- Date navigation -->
+      <div class="today-header" style="padding-bottom:4px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <button id="nav-prev" style="width:32px;height:32px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:18px">‹</button>
+          <div style="text-align:center">
+            <div class="today-date" style="font-size:18px">${fmtDateNav(viewDate)}</div>
+          </div>
+          <button id="nav-next" style="width:32px;height:32px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:${isToday ? 'var(--text-faint)' : 'var(--text-muted)'};font-size:18px" ${isToday ? 'disabled' : ''}>›</button>
         </div>
-        <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:6px">
           ${phaseBadge(settings.phase)}
-          ${ironlog ? '<div class="ironlog-chip">⚡ IronLog</div>' : ''}
         </div>
       </div>
 
-      <!-- Calorie ring + macro bar -->
+      <!-- Calorie ring -->
       <div style="padding:0 16px 4px">
         <div class="card">
           <div class="summary-row">
             <div class="ring-wrap-relative">
               <svg class="calorie-ring" viewBox="0 0 140 140">
-                <circle class="ring-bg"   cx="70" cy="70" r="60"/>
+                <circle class="ring-bg" cx="70" cy="70" r="60"/>
                 <circle class="ring-fill ${t.calories > goals.cal ? 'over' : ''}" cx="70" cy="70" r="60"
-                  style="stroke-dasharray:${(calPct/100)*CIRC} ${CIRC}" id="cal-ring-fill"/>
+                  style="stroke-dasharray:${(calPct/100)*CIRC} ${CIRC}"/>
               </svg>
-              <div class="ring-center" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)">
+              <div class="ring-center" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center">
                 <div class="num ring-kcal">${fmtE(t.calories)}</div>
-                <div class="ring-goal muted">/ ${fmtE(goals.cal)} ${unitLabel()}</div>
+                <div class="ring-goal muted">/ ${fmtE(goals.cal)} ${ul}</div>
+                <div style="font-size:11px;margin-top:2px;color:${hintColor};font-weight:600">${hintText}</div>
               </div>
             </div>
           </div>
-
-          <!-- Macro bars (individual per-goal) -->
           <div id="macro-bar-root" style="margin-top:12px"></div>
         </div>
       </div>
 
-      <!-- Water tracker -->
+      <!-- Water -->
       <div style="padding:0 16px 4px">
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
             <span class="label">💧 Water</span>
-            <span class="water-amount num">${waterData.total_ml} <span style="font-size:11px;color:var(--text-muted)">/ ${goals.water} ml</span></span>
+            <span class="num" style="font-size:13px">${waterData.total_ml}
+              <span style="font-size:11px;color:var(--text-muted)">/ ${goals.water} ml</span>
+            </span>
           </div>
           <div class="water-bar-outer" style="margin-bottom:10px">
             <div class="water-bar-fill" style="width:${waterPct}%"></div>
@@ -140,53 +369,64 @@ export function renderToday(container) {
             <button class="water-btn" data-ml="500">+500</button>
             <button class="water-btn" data-ml="custom">Custom</button>
           </div>
-          ${waterData.entries.length > 0 ? `
-          <div id="water-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
-            ${waterData.entries.map(e => `
-              <span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:3px 10px 3px 10px;font-size:12px;font-variant-numeric:tabular-nums">
-                ${e.amount_ml}ml
-                <button data-water-id="${e.id}" style="color:var(--text-faint);font-size:14px;line-height:1;margin-left:2px">×</button>
-              </span>
-            `).join('')}
+          ${showChips ? `
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px" id="water-chips">
+            ${hiddenCount > 0 ? `<button id="water-show-all" style="background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--text-muted)">+${hiddenCount} more</button>` : ''}
+            ${visibleChips.map(e => waterChip(e)).join('')}
           </div>` : ''}
         </div>
       </div>
 
-      <!-- Phase progress vs TDEE -->
-      ${phaseProgressCard(settings, t, burned)}
-
-      <!-- IronLog panel -->
-      ${ironlog ? `
+      <!-- IronLog + Phase (collapsible) -->
+      ${(ironlog || tdee) ? `
       <div style="padding:0 16px 4px">
-        <div class="card ironlog-panel">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <span class="label">⚡ IronLog — Today</span>
-            ${ironlog.last_synced ? `<span style="font-size:11px;color:var(--text-faint)">${ironlog._stale ? '⚠ cached · ' : ''}${timeAgo(ironlog.last_synced)}</span>` : ''}
+        <button id="ironlog-toggle" class="card" style="width:100%;display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:12px">
+          <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+            ${ironlog ? '<span style="font-size:12px;color:var(--accent)">⚡</span>' : '<span style="font-size:12px">📊</span>'}
+            <span style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              ${burned > 0 ? `Burned ${fmtE(burned)} ${ul} · ` : ''}${phaseLabel}
+            </span>
           </div>
-          <div class="ironlog-row">
-            <span class="muted">Calories burned</span>
-            <span class="num">${fmtE(burned)} ${unitLabel()}</span>
-          </div>
-          <div class="ironlog-row">
-            <span class="muted">Net calories</span>
-            <span class="num" style="color:${net < 0 ? 'var(--success)' : 'var(--text)'}">${fmtE(net)} ${unitLabel()}</span>
-          </div>
-          ${recProtein ? `<div class="ironlog-row">
-            <span class="muted">Rec. protein (${bodyweight}kg × ${multiplier})</span>
-            <span class="num">${recProtein}g</span>
+          <span style="color:var(--text-faint);font-size:13px;flex-shrink:0">${ironlogExpanded ? '▲' : '▼'}</span>
+        </button>
+        <div id="ironlog-details" style="display:${ironlogExpanded ? 'block' : 'none'}">
+          ${phaseProgressCard(settings, t, burned)}
+          ${ironlog ? `
+          <div class="card ironlog-panel" style="margin-top:4px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+              <span class="label">⚡ IronLog</span>
+              ${ironlog.last_synced ? `<span style="font-size:11px;color:var(--text-faint)">${ironlog._stale ? '⚠ cached · ' : ''}${timeAgo(ironlog.last_synced)}</span>` : ''}
+            </div>
+            <div class="ironlog-row">
+              <span class="muted">Burned</span>
+              <span class="num">${fmtE(burned)} ${ul}</span>
+            </div>
+            <div class="ironlog-row">
+              <span class="muted">Net</span>
+              <span class="num">${fmtE(net)} ${ul}</span>
+            </div>
           </div>` : ''}
         </div>
       </div>` : ''}
 
-      <!-- Meal sessions -->
+      <!-- Meals -->
       <div class="section-header">
-        <h2>Meals</h2>
+        <h2>${isToday ? 'Meals' : 'Meals on ' + fmtDateNav(viewDate)}</h2>
       </div>
+      ${showMorningPrompt ? `
+      <div style="padding:0 16px 12px">
+        <div class="card" style="text-align:center;border-color:var(--accent-dim)">
+          <div style="font-size:28px;margin-bottom:8px">🌅</div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:4px">Good morning!</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Ready to log breakfast?</div>
+          <button class="btn btn-primary" id="morning-breakfast-btn" style="width:100%">Log Breakfast</button>
+        </div>
+      </div>` : ''}
       <div id="meals-list"></div>
       <div style="display:flex;gap:10px;margin:8px 16px 16px">
         <button class="new-meal-btn" id="new-meal-btn" style="margin:0;flex:1">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
           New Meal
         </button>
@@ -199,78 +439,115 @@ export function renderToday(container) {
     // Render macro bar
     renderMacroBar(document.getElementById('macro-bar-root'), t, goals);
 
-    // Render meal sessions
+    // Render sessions
     const mealsList = document.getElementById('meals-list');
-    if (mealData.sessions.length === 0) {
-      mealsList.innerHTML = '<div class="empty-state"><div class="empty-icon">🍽</div><div class="empty-text">No meals yet — tap New Meal to start</div></div>';
+    if (mealData.sessions.length === 0 && !showMorningPrompt) {
+      mealsList.innerHTML = '<div class="empty-state"><div class="empty-icon">🍽</div><div class="empty-text">No meals yet</div></div>';
     } else {
       mealData.sessions.forEach(session => renderSession(mealsList, session));
     }
 
-    // Water add buttons
+    // Date nav
+    document.getElementById('nav-prev').addEventListener('click', () => {
+      viewDate = addDays(viewDate, -1); load();
+    });
+    document.getElementById('nav-next')?.addEventListener('click', () => {
+      const next = addDays(viewDate, 1);
+      if (next <= localDate()) { viewDate = next; load(); }
+    });
+
+    // IronLog toggle
+    document.getElementById('ironlog-toggle')?.addEventListener('click', () => {
+      ironlogExpanded = !ironlogExpanded;
+      const det = document.getElementById('ironlog-details');
+      const chev = document.getElementById('ironlog-toggle').querySelector('span:last-child');
+      if (det) det.style.display = ironlogExpanded ? 'block' : 'none';
+      if (chev) chev.textContent = ironlogExpanded ? '▲' : '▼';
+    });
+
+    // Water
     document.getElementById('water-btns').addEventListener('click', async e => {
       const btn = e.target.closest('[data-ml]');
       if (!btn) return;
       const ml = btn.dataset.ml;
       if (ml === 'custom') {
-        const amount = prompt('Enter amount in ml:');
-        if (!amount || isNaN(amount) || amount <= 0) return;
-        await logWater(parseInt(amount));
+        const a = prompt('Enter amount in ml:');
+        if (!a || isNaN(a) || a <= 0) return;
+        await logWater(parseInt(a));
       } else {
         await logWater(parseInt(ml));
       }
       load();
     });
 
-    // Water chip remove buttons
+    // Water chip removes
     document.querySelectorAll('[data-water-id]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        try {
-          await api.delete(`/api/water/${btn.dataset.waterId}`);
-          load();
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
+        try { await api.delete(`/api/water/${btn.dataset.waterId}`); load(); }
+        catch (err) { showToast(err.message, 'error'); }
       });
     });
 
-    // New meal
-    document.getElementById('new-meal-btn').addEventListener('click', async () => {
-      try {
-        await api.post('/api/meals/sessions', { date: today });
-        load();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+    // Water "show all"
+    document.getElementById('water-show-all')?.addEventListener('click', () => {
+      const chips = document.getElementById('water-chips');
+      chips.innerHTML = entries.map(e => waterChip(e)).join('');
+      chips.querySelectorAll('[data-water-id]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          try { await api.delete(`/api/water/${btn.dataset.waterId}`); load(); }
+          catch (err) { showToast(err.message, 'error'); }
+        });
+      });
     });
 
-    // Standalone Quick Log — creates a session then opens quick log
+    // Morning prompt
+    document.getElementById('morning-breakfast-btn')?.addEventListener('click', async () => {
+      try {
+        const session = await api.post('/api/meals/sessions', { date: viewDate, name: 'Breakfast' });
+        openFoodEntry(session.id, () => load());
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+
+    // New meal / quick log
+    document.getElementById('new-meal-btn').addEventListener('click', async () => {
+      try { await api.post('/api/meals/sessions', { date: viewDate }); load(); }
+      catch (err) { showToast(err.message, 'error'); }
+    });
     document.getElementById('quick-log-standalone').addEventListener('click', async () => {
       try {
-        const session = await api.post('/api/meals/sessions', { date: today });
+        const session = await api.post('/api/meals/sessions', { date: viewDate });
         openQuickLog(session.id, () => load());
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+      } catch (err) { showToast(err.message, 'error'); }
     });
   }
 
-  function renderSession(container, session) {
-    const sessionEl = document.createElement('div');
-    sessionEl.className = 'meal-session';
+  function waterChip(e) {
+    return `<span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;font-variant-numeric:tabular-nums">
+      ${e.amount_ml}ml
+      <button data-water-id="${e.id}" style="color:var(--text-faint);font-size:14px;line-height:1;margin-left:2px">×</button>
+    </span>`;
+  }
 
+  function renderSession(container, session) {
+    const sessionEl  = document.createElement('div');
+    sessionEl.className = 'meal-session';
     const sessionKcal = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
-    const timeStr = formatTime(session.logged_at);
+    const timeStr     = formatTime(session.logged_at);
+    const ul          = unitLabel();
 
     sessionEl.innerHTML = `
       <div class="meal-session-header">
-        <div>
-          <div class="meal-session-title">${session.name}</div>
+        <button class="session-rename-btn" style="text-align:left;flex:1;min-width:0">
+          <div class="meal-session-title" style="display:flex;align-items:center;gap:6px">
+            ${session.name}
+            <span style="font-size:11px;color:var(--text-faint)">✎</span>
+          </div>
           ${timeStr ? `<div class="meal-session-kcal">${timeStr}</div>` : ''}
-        </div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <span class="meal-session-kcal num">${fmt(sessionKcal)} kcal</span>
-          <button class="session-del-btn" data-id="${session.id}" style="color:var(--text-faint);padding:4px">
+        </button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="meal-session-kcal num">${fmtE(sessionKcal)} ${ul}</span>
+          <button class="session-copy-btn" title="Copy past meal" style="color:var(--text-faint);padding:4px;font-size:15px">♻️</button>
+          <button class="session-del-btn" title="Delete" style="color:var(--text-faint);padding:4px">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
             </svg>
@@ -279,107 +556,100 @@ export function renderToday(container) {
       </div>
     `;
 
+    // Entry rows
     session.entries.forEach(entry => {
       const entryEl = document.createElement('div');
       entryEl.className = 'meal-entry';
       entryEl.innerHTML = `
-        <div style="font-size:22px;flex-shrink:0;width:32px;text-align:center">${getFoodIcon(entry.food_name)}</div>
+        <div style="font-size:20px;flex-shrink:0;width:30px;text-align:center">${getFoodIcon(entry.food_name)}</div>
         <div class="meal-entry-info">
-          <div class="meal-entry-name">${entry.food_name}${entry.food_brand ? ` <span style="color:var(--text-muted);font-size:12px">${entry.food_brand}</span>` : ''}</div>
+          <div class="meal-entry-name">${entry.food_name}</div>
           <div class="meal-entry-sub">${fmt(entry.quantity_g)}g &nbsp;
-            <span style="color:var(--protein);font-variant-numeric:tabular-nums">${fmt(entry.protein,1)}P</span> ·
-            <span style="color:var(--carbs);font-variant-numeric:tabular-nums">${fmt(entry.carbs,1)}C</span> ·
-            <span style="color:var(--fat);font-variant-numeric:tabular-nums">${fmt(entry.fat,1)}F</span>
+            <span style="color:var(--protein)">${fmt(entry.protein,1)}P</span> ·
+            <span style="color:var(--carbs)">${fmt(entry.carbs,1)}C</span> ·
+            <span style="color:var(--fat)">${fmt(entry.fat,1)}F</span>
           </div>
         </div>
-        <div class="meal-entry-kcal">${fmt(entry.calories)}</div>
-        <div style="display:flex;gap:6px;flex-shrink:0">
-          <button class="entry-edit-btn" data-id="${entry.id}" title="Edit quantity" style="
-            width:32px;height:32px;border-radius:50%;
-            background:var(--surface-2);color:var(--text-muted);
-            display:flex;align-items:center;justify-content:center;font-size:13px">✏️</button>
-          <button class="entry-del-btn" data-id="${entry.id}" title="Delete" style="
-            width:32px;height:32px;border-radius:50%;
-            background:rgba(255,107,107,.1);color:var(--error);
-            display:flex;align-items:center;justify-content:center;
-            font-size:16px">×</button>
+        <div class="meal-entry-kcal">${fmtE(entry.calories)}</div>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button class="entry-edit-btn" title="Edit" style="width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:12px">✏️</button>
+          <button class="entry-del-btn" title="Delete" style="width:30px;height:30px;border-radius:50%;background:rgba(255,107,107,.1);color:var(--error);display:flex;align-items:center;justify-content:center;font-size:15px">×</button>
         </div>
       `;
-      entryEl.querySelector('.entry-edit-btn').addEventListener('click', () => {
-        openEditEntry(entry, () => load());
-      });
+
+      // Long-press to duplicate
+      let lpTimer = null;
+      entryEl.addEventListener('touchstart', () => {
+        lpTimer = setTimeout(async () => {
+          try {
+            await api.post(`/api/meals/sessions/${session.id}/entries`, {
+              food_id: entry.food_id, quantity_g: entry.quantity_g,
+            });
+            showToast(`${entry.food_name} duplicated`, 'success');
+            load();
+          } catch (err) { showToast(err.message, 'error'); }
+        }, 600);
+      }, { passive: true });
+      ['touchend','touchmove','touchcancel'].forEach(ev =>
+        entryEl.addEventListener(ev, () => clearTimeout(lpTimer), { passive: true })
+      );
+
+      entryEl.querySelector('.entry-edit-btn').addEventListener('click', () => openEditEntry(entry, () => load()));
       entryEl.querySelector('.entry-del-btn').addEventListener('click', async () => {
         try {
           await api.delete(`/api/meals/entries/${entry.id}`);
-          entryEl.style.opacity = '0';
-          entryEl.style.transition = 'opacity .2s';
+          entryEl.style.opacity = '0'; entryEl.style.transition = 'opacity .2s';
           setTimeout(() => load(), 200);
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
+        } catch (err) { showToast(err.message, 'error'); }
       });
       sessionEl.appendChild(entryEl);
     });
 
+    // Footer
     const footer = document.createElement('div');
     footer.style.cssText = 'display:flex;border-top:1px solid var(--border)';
-
     const addBtn = document.createElement('button');
-    addBtn.className = 'meal-session-add';
-    addBtn.style.flex = '1';
-    addBtn.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-      </svg>
-      Add Food
-    `;
+    addBtn.className = 'meal-session-add'; addBtn.style.flex = '1';
+    addBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> Add Food`;
     addBtn.addEventListener('click', () => openFoodEntry(session.id, () => load()));
-
-    const quickBtn = document.createElement('button');
-    quickBtn.className = 'meal-session-add';
-    quickBtn.style.cssText = 'flex:0 0 auto;border-left:1px solid var(--border);color:var(--carbs)';
-    quickBtn.innerHTML = `⚡ Quick Log`;
-    quickBtn.addEventListener('click', () => openQuickLog(session.id, () => load()));
-
-    footer.appendChild(addBtn);
-    footer.appendChild(quickBtn);
+    const qlBtn = document.createElement('button');
+    qlBtn.className = 'meal-session-add';
+    qlBtn.style.cssText = 'flex:0 0 auto;border-left:1px solid var(--border);color:var(--carbs)';
+    qlBtn.textContent = '⚡ Quick Log';
+    qlBtn.addEventListener('click', () => openQuickLog(session.id, () => load()));
+    footer.appendChild(addBtn); footer.appendChild(qlBtn);
     sessionEl.appendChild(footer);
     container.appendChild(sessionEl);
 
-    // Delete session
+    // Session events
+    sessionEl.querySelector('.session-rename-btn').addEventListener('click', () =>
+      openRenameSession(session.id, session.name, () => load())
+    );
+    sessionEl.querySelector('.session-copy-btn').addEventListener('click', () =>
+      openCopyPastMeal(session.id, () => load())
+    );
     sessionEl.querySelector('.session-del-btn').addEventListener('click', async () => {
-      if (!confirm(`Delete ${session.name} and all its entries?`)) return;
-      try {
-        await api.delete(`/api/meals/sessions/${session.id}`);
-        showToast('Meal deleted', 'success');
-        load();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+      if (!confirm(`Delete "${session.name}" and all its entries?`)) return;
+      try { await api.delete(`/api/meals/sessions/${session.id}`); showToast('Meal deleted', 'success'); load(); }
+      catch (err) { showToast(err.message, 'error'); }
     });
   }
 
   async function logWater(ml) {
-    try {
-      await api.post('/api/water', { amount_ml: ml });
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+    try { await api.post('/api/water', { amount_ml: ml, date: viewDate }); }
+    catch (err) { showToast(err.message, 'error'); }
   }
 
   const onSettingsChanged = () => load();
   window.addEventListener('plated:settings-changed', onSettingsChanged);
-
+  container.innerHTML = buildSkeleton();
   load();
 
-  return () => {
-    clearTimeout(refreshTimer);
-    window.removeEventListener('plated:settings-changed', onSettingsChanged);
-  };
+  return () => window.removeEventListener('plated:settings-changed', onSettingsChanged);
 }
 
 function phaseBadge(phase) {
-  const map = { cut: ['🔻', '#ff6b6b'], maintain: ['⚖️', '#5dca8a'], bulk: ['📈', '#c8b8ff'] };
+  const map = { cut: ['🔻','#ff6b6b'], maintain: ['⚖️','#5dca8a'], bulk: ['📈','#c8b8ff'] };
   const [icon, color] = map[phase] || map.maintain;
   return `<span style="font-size:11px;font-weight:700;color:${color};background:${color}18;padding:3px 10px;border-radius:999px;border:1px solid ${color}44">${icon} ${(phase||'maintain').toUpperCase()}</span>`;
 }
@@ -387,151 +657,39 @@ function phaseBadge(phase) {
 function phaseProgressCard(settings, totals, burned) {
   const tdee = parseFloat(settings.tdee);
   if (!tdee) return '';
-
-  const phase    = settings.phase || 'maintain';
-  const deficit  = parseInt(settings.cut_deficit)  || 500;
-  const surplus  = parseInt(settings.bulk_surplus) || 300;
-  const consumed = totals.calories || 0;
-  const net      = consumed - burned;
-
-  const target = phase === 'cut'  ? tdee - deficit
-               : phase === 'bulk' ? tdee + surplus
-               : tdee;
-
+  const ul      = unitLabel();
+  const phase   = settings.phase || 'maintain';
+  const deficit = parseInt(settings.cut_deficit)  || 500;
+  const surplus = parseInt(settings.bulk_surplus) || 300;
+  const net     = (totals.calories || 0) - burned;
+  const target  = phase === 'cut' ? tdee - deficit : phase === 'bulk' ? tdee + surplus : tdee;
   const diff    = net - target;
   const onTrack = Math.abs(diff) <= 150;
   const over    = diff > 150;
-  const diffLabel = over
-    ? `+${fmt(Math.abs(diff))} over target`
-    : diff < -150
-    ? `${fmt(Math.abs(diff))} under target`
-    : 'On track ✓';
+  const diffLabel = onTrack ? 'On track ✓' : over ? `+${Math.round(diff)} over` : `${Math.round(-diff)} under`;
   const diffColor = onTrack ? 'var(--success)' : over ? 'var(--warning)' : 'var(--fat)';
-
   const pct = Math.min((net / target) * 100, 110);
-
   return `
-    <div style="padding:0 16px 4px">
-      <div class="card" style="border-color:${onTrack ? 'var(--success)' : 'var(--border)'}44">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <span class="label">${phase.toUpperCase()} TARGET</span>
-          <span class="num" style="font-size:13px;color:${diffColor}">${diffLabel}</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted);margin-bottom:6px">
-          <span>Net <strong class="num" style="color:var(--text)">${fmtE(net)} ${unitLabel()}</strong></span>
-          <span>Target <strong class="num" style="color:var(--text)">${fmtE(target)} ${unitLabel()}</strong></span>
-        </div>
-        <div style="height:6px;background:var(--surface-2);border-radius:999px;overflow:hidden">
-          <div style="height:100%;width:${pct}%;background:${diffColor};border-radius:999px;transition:width .6s ease-out;max-width:100%"></div>
-        </div>
-        <div style="font-size:11px;color:var(--text-faint);margin-top:6px">TDEE ${fmtE(tdee)} · Burned ${fmtE(burned)} · Consumed ${fmtE(consumed)} ${unitLabel()}</div>
+    <div class="card" style="margin-top:4px;border-color:${onTrack?'var(--success)':'var(--border)'}44">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <span class="label">${phase.toUpperCase()} TARGET</span>
+        <span class="num" style="font-size:12px;color:${diffColor}">${diffLabel}</span>
       </div>
-    </div>
-  `;
-}
-
-// ── Quick Log — one-time calorie entry ──────────────────────
-function openQuickLog(sessionId, onSuccess) {
-  const ul = unitLabel();
-  showSheet(content => {
-    content.innerHTML = `
-      <div class="sheet-header">
-        <span class="sheet-title">⚡ Quick Log</span>
-        <button class="sheet-close" id="ql-close">✕</button>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted);margin-bottom:6px">
+        <span>Net <strong style="color:var(--text)">${fmtE(net)} ${ul}</strong></span>
+        <span>Target <strong style="color:var(--text)">${fmtE(target)} ${ul}</strong></span>
       </div>
-      <div style="padding:0 16px">
-        <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.5">
-          For meals out where you know the rough calories but not every ingredient. This won't be saved to your food database.
-        </div>
-        <div class="form-group">
-          <label class="form-label">Meal description *</label>
-          <input class="input" id="ql-name" placeholder="e.g. Burger from Burgerfuel" autocomplete="off" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Calories (${ul}) *</label>
-          <input class="input" id="ql-cal" type="number" placeholder="e.g. 650" inputmode="numeric" />
-        </div>
-        <div class="label" style="margin-bottom:10px">Macros — optional</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
-          <div style="position:relative">
-            <input class="input" id="ql-pro" type="number" placeholder="Protein" inputmode="numeric" style="height:42px;padding-right:20px;border-color:var(--protein)44" />
-            <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:var(--protein)">P</span>
-          </div>
-          <div style="position:relative">
-            <input class="input" id="ql-carb" type="number" placeholder="Carbs" inputmode="numeric" style="height:42px;padding-right:20px;border-color:var(--carbs)44" />
-            <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:var(--carbs)">C</span>
-          </div>
-          <div style="position:relative">
-            <input class="input" id="ql-fat" type="number" placeholder="Fat" inputmode="numeric" style="height:42px;padding-right:20px;border-color:var(--fat)44" />
-            <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:var(--fat)">F</span>
-          </div>
-        </div>
-        <button class="btn btn-primary btn-full" id="ql-submit">Log Meal</button>
+      <div style="height:5px;background:var(--surface-2);border-radius:999px;overflow:hidden">
+        <div style="height:100%;width:${Math.min(pct,100)}%;background:${diffColor};border-radius:999px;transition:width .5s ease-out"></div>
       </div>
-    `;
-
-    document.getElementById('ql-close').addEventListener('click', hideSheet);
-    setTimeout(() => document.getElementById('ql-name')?.focus(), 150);
-
-    document.getElementById('ql-submit').addEventListener('click', async () => {
-      const name    = document.getElementById('ql-name').value.trim();
-      const calDisp = parseFloat(document.getElementById('ql-cal').value) || 0;
-      if (!name)    { showToast('Enter a meal description', 'error'); return; }
-      if (!calDisp) { showToast('Enter the calories', 'error'); return; }
-
-      // Convert display unit back to kcal for storage
-      const { toKcal } = await import('../utils/energy.js');
-      const calKcal = toKcal(calDisp);
-      const pro  = parseFloat(document.getElementById('ql-pro').value)  || null;
-      const carb = parseFloat(document.getElementById('ql-carb').value) || null;
-      const fat  = parseFloat(document.getElementById('ql-fat').value)  || null;
-
-      const btn = document.getElementById('ql-submit');
-      btn.disabled = true; btn.textContent = 'Logging…';
-
-      try {
-        // Create a one-off food (source='quick', qty=100g so macros = exact entered values)
-        const food = await api.post('/api/foods', {
-          name,
-          calories_per_100g: calKcal,
-          protein_per_100g:  pro,
-          carbs_per_100g:    carb,
-          fat_per_100g:      fat,
-          serving_size_g:    100,
-          source:            'quick',
-        });
-        await api.post(`/api/meals/sessions/${sessionId}/entries`, {
-          food_id:    food.id,
-          quantity_g: 100,
-        });
-        hideSheet();
-        showToast('Meal logged', 'success');
-        onSuccess?.();
-      } catch (err) {
-        showToast(err.message, 'error');
-        btn.disabled = false; btn.textContent = 'Log Meal';
-      }
-    });
-  });
+    </div>`;
 }
 
 function buildSkeleton() {
   return `
-    <div style="padding:20px 16px 8px">
-      <div class="skeleton skel-line" style="width:160px;height:24px"></div>
-    </div>
-    <div style="padding:0 16px 8px">
-      <div class="card">
-        <div class="skeleton" style="width:140px;height:140px;border-radius:50%;margin:0 auto 16px"></div>
-        <div class="skeleton skel-line"></div>
-        <div class="skeleton skel-line" style="width:70%;margin-top:6px"></div>
-      </div>
-    </div>
-    <div style="padding:0 16px 8px">
-      <div class="card">
-        <div class="skeleton skel-line" style="width:80px;margin-bottom:10px"></div>
-        <div class="skeleton skel-line"></div>
-      </div>
-    </div>
-  `;
+    <div style="padding:20px 16px 8px"><div class="skeleton skel-line" style="width:160px;height:24px"></div></div>
+    <div style="padding:0 16px 8px"><div class="card">
+      <div class="skeleton" style="width:140px;height:140px;border-radius:50%;margin:0 auto 16px"></div>
+      <div class="skeleton skel-line"></div><div class="skeleton skel-line" style="width:70%;margin-top:6px"></div>
+    </div></div>`;
 }

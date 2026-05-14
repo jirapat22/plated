@@ -102,6 +102,22 @@ router.get('/summary', (req, res) => {
   }
 });
 
+// PATCH /api/meals/sessions/:id — rename a session
+router.patch('/sessions/:id', (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+    const db = getDb();
+    db.prepare('UPDATE meal_sessions SET name = $name WHERE id = $id')
+      .run({ name: name.trim(), id: req.params.id });
+    const session = db.prepare('SELECT * FROM meal_sessions WHERE id = $id').get({ id: req.params.id });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    res.json(session);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/meals/sessions — create new meal session for a date
 router.post('/sessions', (req, res) => {
   try {
