@@ -254,7 +254,6 @@ export function renderToday(container) {
   }, { passive: true });
 
   async function load() {
-    const ul = unitLabel();
     try {
       const [mealData, waterData, settings] = await Promise.all([
         api.get(`/api/meals/day/${viewDate}`),
@@ -286,11 +285,11 @@ export function renderToday(container) {
     const burned    = ironlog?.calories_burned ?? 0;
     const net       = t.calories - burned;
     const remaining = goals.cal - t.calories;
-    const hintText  = t.calories === 0 ? 'Start logging to track progress'
-      : remaining > 50  ? `${fmtE(remaining)} ${ul} remaining`
-      : remaining < -50 ? `${fmtE(-remaining)} ${ul} over goal`
-      : 'Goal reached! ✓';
-    const hintColor = remaining < -50 ? 'var(--warning)' : remaining < 50 ? 'var(--success)' : 'var(--text-muted)';
+    const hintText  = t.calories === 0 ? 'nothing yet'
+      : remaining > 50  ? `${fmtE(remaining)} left`
+      : remaining < -50 ? `+${fmtE(-remaining)} over`
+      : '✓ goal hit';
+    const hintColor = remaining < -50 ? 'var(--warning)' : remaining < 50 ? 'var(--success)' : 'var(--text-faint)';
 
     // Water chips (collapse > 3)
     const entries = waterData.entries;
@@ -371,8 +370,8 @@ export function renderToday(container) {
           </div>
           ${showChips ? `
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px" id="water-chips">
-            ${hiddenCount > 0 ? `<button id="water-show-all" style="background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--text-muted)">+${hiddenCount} more</button>` : ''}
             ${visibleChips.map(e => waterChip(e)).join('')}
+            ${hiddenCount > 0 ? `<button id="water-show-all" style="background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--text-muted)">+${hiddenCount} more</button>` : ''}
           </div>` : ''}
         </div>
       </div>
@@ -387,7 +386,7 @@ export function renderToday(container) {
               ${burned > 0 ? `Burned ${fmtE(burned)} ${ul} · ` : ''}${phaseLabel}
             </span>
           </div>
-          <span style="color:var(--text-faint);font-size:13px;flex-shrink:0">${ironlogExpanded ? '▲' : '▼'}</span>
+          <span class="il-chevron" style="color:var(--text-faint);font-size:13px;flex-shrink:0">${ironlogExpanded ? '▲' : '▼'}</span>
         </button>
         <div id="ironlog-details" style="display:${ironlogExpanded ? 'block' : 'none'}">
           ${phaseProgressCard(settings, t, burned)}
@@ -460,7 +459,7 @@ export function renderToday(container) {
     document.getElementById('ironlog-toggle')?.addEventListener('click', () => {
       ironlogExpanded = !ironlogExpanded;
       const det = document.getElementById('ironlog-details');
-      const chev = document.getElementById('ironlog-toggle').querySelector('span:last-child');
+      const chev = document.getElementById('ironlog-toggle').querySelector('.il-chevron');
       if (det) det.style.display = ironlogExpanded ? 'block' : 'none';
       if (chev) chev.textContent = ironlogExpanded ? '▲' : '▼';
     });

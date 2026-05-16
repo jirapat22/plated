@@ -112,8 +112,8 @@ export function renderFoodSearch(container, onSelect) {
       results.appendChild(countEl);
     }
 
-    // Separate local vs remote rows visually
-    const localRows  = rows.filter(r => r.id && r.source !== 'openfoodfacts' || r.id);
+    // Separate local (have DB id) from remote OFF results (no id yet)
+    const localRows  = rows.filter(r =>  r.id);
     const remoteOnly = rows.filter(r => !r.id);
 
     localRows.forEach(food => results.appendChild(buildFoodRow(food)));
@@ -142,10 +142,11 @@ export function renderFoodSearch(container, onSelect) {
   function buildFoodRow(food) {
     const el = document.createElement('div');
     el.className = 'food-list-item';
-    const kcal = food.calories_per_100g != null ? `${fmtE(food.calories_per_100g)} ${unitLabel()}` : '–';
-    const pro  = food.protein_per_100g  != null ? `${food.protein_per_100g.toFixed(1)}P` : '';
-    const carb = food.carbs_per_100g    != null ? `${food.carbs_per_100g.toFixed(1)}C` : '';
-    const fat  = food.fat_per_100g      != null ? `${food.fat_per_100g.toFixed(1)}F` : '';
+    const ul       = unitLabel();
+    const kcalStr  = food.calories_per_100g != null ? `${fmtE(food.calories_per_100g)} ${ul}/100g` : 'no cal data';
+    const pro      = food.protein_per_100g  != null ? `${food.protein_per_100g.toFixed(1)}P` : '';
+    const carb     = food.carbs_per_100g    != null ? `${food.carbs_per_100g.toFixed(1)}C` : '';
+    const fat      = food.fat_per_100g      != null ? `${food.fat_per_100g.toFixed(1)}F` : '';
     const macroStr = [pro, carb, fat].filter(Boolean).join(' · ');
 
     el.innerHTML = `
@@ -157,7 +158,7 @@ export function renderFoodSearch(container, onSelect) {
         <div class="food-list-name">${food.name}</div>
         <div style="font-size:12px;color:var(--text-muted);margin-top:2px">
           ${food.brand ? `<span>${food.brand} · </span>` : ''}
-          <span style="font-variant-numeric:tabular-nums">${fmtE(food.calories_per_100g)} ${unitLabel()}/100g</span>
+          <span style="font-variant-numeric:tabular-nums">${kcalStr}</span>
           ${macroStr ? `<span style="color:var(--text-faint)"> · ${macroStr}</span>` : ''}
         </div>
       </div>

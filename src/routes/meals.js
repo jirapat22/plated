@@ -130,7 +130,7 @@ router.post('/sessions', (req, res) => {
     `).get({ date });
 
     const meal_index = max_idx + 1;
-    const name = `Meal ${meal_index}`;
+    const name = (req.body.name?.trim()) || `Meal ${meal_index}`;
     const result = db.prepare(
       'INSERT INTO meal_sessions (date, name, meal_index) VALUES ($date, $name, $meal_index)'
     ).run({ date, name, meal_index });

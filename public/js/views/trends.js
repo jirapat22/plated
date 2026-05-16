@@ -1,5 +1,5 @@
-import { api }            from '../api.js';
-import { fmtE, unitLabel } from '../utils/energy.js';
+import { api }                       from '../api.js';
+import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
 
 const CHART_DEFAULTS = {
   responsive: true,
@@ -122,9 +122,8 @@ export function renderTrends(container) {
     const ul     = unitLabel();
 
     const labels   = summary.map(r => { const d = new Date(r.date + 'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; });
-    const cals     = summary.map(r => fmtE(r.calories ?? 0, 0));     // display unit
+    const cals     = summary.map(r => toDisplay(r.calories ?? 0));   // numbers in display unit for Chart.js
     const proteins = summary.map(r => r.protein ?? 0);
-    const goalLine = summary.map(() => parseFloat(fmtE(goal)));       // display unit
 
     const weightMap = {};
     ironlogWeights.forEach(w => { weightMap[w.date] = w.weight_kg; });
