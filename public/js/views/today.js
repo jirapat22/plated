@@ -247,7 +247,9 @@ export function renderToday(container) {
   container.addEventListener('touchend', e => {
     const dx = e.changedTouches[0].clientX - swipeStartX;
     const dy = Math.abs(e.changedTouches[0].clientY - swipeStartY);
-    if (Math.abs(dx) > 55 && dy < 35) {
+    // High threshold (90px) + strict horizontal (dy<20) to avoid accidental
+    // nav while scrolling the long Today list
+    if (Math.abs(dx) > 90 && dy < 20) {
       const next = addDays(viewDate, dx < 0 ? -1 : 1);
       if (next <= localDate()) { viewDate = next; load(); }
     }
@@ -327,6 +329,15 @@ export function renderToday(container) {
           ${phaseBadge(settings.phase)}
         </div>
       </div>
+
+      <!-- Past-day warning banner -->
+      ${!isToday ? `
+      <div style="padding:0 16px 4px">
+        <div style="background:var(--accent-dim);border:1px solid rgba(200,184,255,.25);border-radius:var(--radius-sm);padding:9px 14px;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:var(--accent)">📅 Viewing a past day — not today</span>
+          <button id="go-today-btn" style="font-size:12px;font-weight:700;color:var(--accent)">Today →</button>
+        </div>
+      </div>` : ''}
 
       <!-- Calorie ring -->
       <div style="padding:0 16px 4px">
@@ -453,6 +464,9 @@ export function renderToday(container) {
     document.getElementById('nav-next')?.addEventListener('click', () => {
       const next = addDays(viewDate, 1);
       if (next <= localDate()) { viewDate = next; load(); }
+    });
+    document.getElementById('go-today-btn')?.addEventListener('click', () => {
+      viewDate = localDate(); load();
     });
 
     // IronLog toggle
