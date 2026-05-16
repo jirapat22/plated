@@ -235,7 +235,8 @@ function openQuickLog(sessionId, onSuccess) {
 
 // ── Main render ──────────────────────────────────────────────
 export function renderToday(container) {
-  let viewDate = localDate();
+  let viewDate      = localDate();
+  let userNavigated = false;   // true only when user manually tapped ← › or swiped
   let ironlogExpanded = false;
 
   // Swipe navigation
@@ -251,11 +252,13 @@ export function renderToday(container) {
     // nav while scrolling the long Today list
     if (Math.abs(dx) > 90 && dy < 20) {
       const next = addDays(viewDate, dx < 0 ? -1 : 1);
-      if (next <= localDate()) { viewDate = next; load(); }
+      if (next <= localDate()) { userNavigated = true; viewDate = next; load(); }
     }
   }, { passive: true });
 
   async function load() {
+    // Always snap back to real today unless user deliberately navigated
+    if (!userNavigated) viewDate = localDate();
     try {
       const [mealData, waterData, settings] = await Promise.all([
         api.get(`/api/meals/day/${viewDate}`),
@@ -457,16 +460,16 @@ export function renderToday(container) {
       mealData.sessions.forEach(session => renderSession(mealsList, session));
     }
 
-    // Date nav
+    // Date nav — mark as intentional so load() doesn't auto-snap to today
     document.getElementById('nav-prev').addEventListener('click', () => {
-      viewDate = addDays(viewDate, -1); load();
+      userNavigated = true; viewDate = addDays(viewDate, -1); load();
     });
     document.getElementById('nav-next')?.addEventListener('click', () => {
       const next = addDays(viewDate, 1);
-      if (next <= localDate()) { viewDate = next; load(); }
+      if (next <= localDate()) { userNavigated = true; viewDate = next; load(); }
     });
     document.getElementById('go-today-btn')?.addEventListener('click', () => {
-      viewDate = localDate(); load();
+      userNavigated = false; viewDate = localDate(); load();
     });
 
     // IronLog toggle
