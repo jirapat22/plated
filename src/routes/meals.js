@@ -102,14 +102,21 @@ router.get('/summary', (req, res) => {
   }
 });
 
-// PATCH /api/meals/sessions/:id — rename a session
+// PATCH /api/meals/sessions/:id — rename and/or move date
 router.patch('/sessions/:id', (req, res) => {
   try {
-    const { name } = req.body;
-    if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+    const { name, date } = req.body;
+    if (!name && !date) return res.status(400).json({ error: 'name or date required' });
     const db = getDb();
-    db.prepare('UPDATE meal_sessions SET name = $name WHERE id = $id')
-      .run({ name: name.trim(), id: req.params.id });
+    if (name?.trim()) {
+      db.prepare('UPDATE meal_sessions SET name = $name WHERE id = $id')
+        .run({ name: name.trim(), id: req.params.id });
+    }
+    if (date) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+      db.prepare('UPDATE meal_sessions SET date = $date WHERE id = $id')
+        .run({ date, id: req.params.id });
+    }
     const session = db.prepare('SELECT * FROM meal_sessions WHERE id = $id').get({ id: req.params.id });
     if (!session) return res.status(404).json({ error: 'Session not found' });
     res.json(session);

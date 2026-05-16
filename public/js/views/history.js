@@ -113,15 +113,23 @@ export function renderHistory(container) {
     if (mealData.sessions.length === 0) {
       el.insertAdjacentHTML('beforeend', '<div class="empty-state" style="padding:20px 0"><div class="empty-icon">🍽</div><div class="empty-text">No meals logged</div></div>');
     } else {
+      const today = localDate();
       mealData.sessions.forEach(session => {
         const sessionKcal = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
+        const isPast = date < today;
         const card = document.createElement('div');
         card.className = 'card';
         card.style.marginBottom = '10px';
         card.innerHTML = `
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <span style="font-weight:600">${session.name}</span>
-            <span class="num muted">${fmtE(sessionKcal)} ${ul}</span>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="num muted">${fmtE(sessionKcal)} ${ul}</span>
+              ${isPast ? `<button class="move-today-btn" data-id="${session.id}"
+                style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 10px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">
+                Move to Today
+              </button>` : ''}
+            </div>
           </div>
           ${session.entries.map(e => `
             <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border)">
@@ -133,6 +141,18 @@ export function renderHistory(container) {
             </div>
           `).join('')}
         `;
+
+        // Move to today handler
+        card.querySelector('.move-today-btn')?.addEventListener('click', async () => {
+          try {
+            await api.patch(`/api/meals/sessions/${session.id}`, { date: today });
+            showToast(`"${session.name}" moved to today`, 'success');
+            loadDay(date);       // refresh this past day (now empty or fewer sessions)
+          } catch (err) {
+            showToast(err.message, 'error');
+          }
+        });
+
         el.appendChild(card);
       });
     }
