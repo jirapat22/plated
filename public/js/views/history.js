@@ -108,7 +108,7 @@ export function renderHistory(container) {
         <div id="hist-macro-bar"></div>
       </div>
     `;
-    renderMacroBar(el.querySelector('#hist-macro-bar'), t, goals);
+    renderMacroBar(el.querySelector('#hist-macro-bar'), t, goals, false);
 
     if (mealData.sessions.length === 0) {
       el.insertAdjacentHTML('beforeend', '<div class="empty-state" style="padding:20px 0"><div class="empty-icon">🍽</div><div class="empty-text">No meals logged</div></div>');

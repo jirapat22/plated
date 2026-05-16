@@ -1,4 +1,4 @@
-export function renderMacroBar(container, totals, goals) {
+export function renderMacroBar(container, totals, goals, showRemaining = true) {
   const macros = [
     { key: 'protein', label: 'Protein', color: 'var(--protein)' },
     { key: 'carbs',   label: 'Carbs',   color: 'var(--carbs)'   },
@@ -13,7 +13,7 @@ export function renderMacroBar(container, totals, goals) {
     const remaining = goal - consumed;
     const over      = goal > 0 && consumed > goal;
 
-    const rightLabel = goal > 0
+    const rightLabel = (showRemaining && goal > 0)
       ? over
         ? `<span style="color:var(--warning)">+${(consumed - goal).toFixed(1)}g over</span>`
         : `<span style="color:var(--text-faint)">${remaining.toFixed(1)}g left</span>`

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'plated-v3';
+const CACHE_NAME = 'plated-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -14,8 +14,11 @@ const STATIC_ASSETS = [
   '/js/components/barcode.js',
   '/js/components/foodSearch.js',
   '/js/components/macroBar.js',
-  '/icons/icon-192.svg',
-  '/icons/icon-512.svg',
+  '/js/utils/energy.js',
+  '/js/utils/date.js',
+  '/js/utils/foodIcon.js',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
   '/manifest.json',
 ];
 
