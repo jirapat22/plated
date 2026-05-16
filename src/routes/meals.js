@@ -114,8 +114,12 @@ router.patch('/sessions/:id', (req, res) => {
     }
     if (date) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
-      db.prepare('UPDATE meal_sessions SET date = $date WHERE id = $id')
-        .run({ date, id: req.params.id });
+      // Recalculate meal_index so it doesn't collide with existing sessions on target date
+      const { max_idx } = db.prepare(
+        'SELECT COALESCE(MAX(meal_index), 0) AS max_idx FROM meal_sessions WHERE date = $date AND id != $id'
+      ).get({ date, id: req.params.id });
+      db.prepare('UPDATE meal_sessions SET date = $date, meal_index = $idx WHERE id = $id')
+        .run({ date, idx: max_idx + 1, id: req.params.id });
     }
     const session = db.prepare('SELECT * FROM meal_sessions WHERE id = $id').get({ id: req.params.id });
     if (!session) return res.status(404).json({ error: 'Session not found' });

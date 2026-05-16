@@ -120,6 +120,7 @@ async function openCopyPastMeal(targetSessionId, onSuccess) {
       });
     });
 
+    const ul = unitLabel();
     content.innerHTML = `
       <div class="sheet-header">
         <span class="sheet-title">♻️ Copy past meal</span>
@@ -127,15 +128,15 @@ async function openCopyPastMeal(targetSessionId, onSuccess) {
       </div>
       ${sessions.length === 0
         ? '<div class="empty-state"><div class="empty-text">No past meals to copy from</div></div>'
-        : sessions.map(s => {
+        : sessions.map((s, idx) => {
             const kcal = s.entries.reduce((sum, e) => sum + (e.calories || 0), 0);
             return `
-              <button class="food-list-item cp-session" data-idx="${sessions.indexOf(s)}"
+              <button class="food-list-item cp-session" data-idx="${idx}"
                 style="width:100%;text-align:left">
                 <div style="font-size:20px;width:36px;text-align:center">🍽</div>
                 <div class="food-list-info">
                   <div class="food-list-name">${s.name}</div>
-                  <div style="font-size:12px;color:var(--text-muted)">${s.date} · ${s.entries.length} items · ${Math.round(kcal)} kcal</div>
+                  <div style="font-size:12px;color:var(--text-muted)">${s.date} · ${s.entries.length} items · ${fmtE(kcal)} ${ul}</div>
                 </div>
               </button>`;
           }).join('')
@@ -311,12 +312,10 @@ export function renderToday(container) {
     const diff    = net - target;
     const onTrack = tdee && Math.abs(diff) <= 150;
     const phaseLabel = tdee
-      ? (onTrack ? 'On track ✓' : diff > 150 ? `+${fmt(diff)} over` : `${fmt(-diff)} under`)
+      ? (onTrack ? 'On track ✓' : diff > 150 ? `+${fmtE(diff)} ${ul} over` : `${fmtE(-diff)} ${ul} under`)
       : phase;
 
-    // First meal morning prompt
-    const hour = new Date().getHours();
-    const showMorningPrompt = isToday && mealData.sessions.length === 0 && hour >= 5 && hour <= 11;
+    const showMorningPrompt = false; // removed per user preference
 
     container.innerHTML = `
       <!-- Date navigation -->
