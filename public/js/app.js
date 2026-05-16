@@ -151,6 +151,22 @@ function setupNumpad() {
   });
 
   document.getElementById('lock-action').addEventListener('click', submitPasscode);
+
+  // Physical keyboard input (desktop)
+  window.addEventListener('keydown', e => {
+    const lockVisible = !document.getElementById('lock-screen').classList.contains('hidden');
+    if (!lockVisible) return;
+    if (/^\d$/.test(e.key) && passcode.length < 4) {
+      passcode += e.key;
+      setDots(passcode.length);
+      if (passcode.length === 4) submitPasscode();
+    } else if (e.key === 'Backspace') {
+      passcode = passcode.slice(0, -1);
+      setDots(passcode.length);
+    } else if (e.key === 'Enter' && passcode.length >= 4) {
+      submitPasscode();
+    }
+  });
 }
 
 function showLock(setup = false) {

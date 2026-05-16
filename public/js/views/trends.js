@@ -48,14 +48,30 @@ function makeChart(id, labels, data, color, yLabel) {
 }
 
 function calcStreak(summary, goal) {
-  const sorted = [...summary].sort((a, b) => b.date.localeCompare(a.date));
-  const today  = new Date().toISOString().split('T')[0];
-  let streak   = 0;
-  for (const row of sorted) {
-    if (row.date > today) continue;
-    const cal = row.calories ?? 0;
-    if (cal > 0 && Math.abs(cal - goal) / goal <= 0.10) streak++;
-    else break;
+  // Allow 1 missed (zero-cal / no-log) day per 7-day window.
+  // A day with logged calories outside ±10% of goal still breaks the streak.
+  const byDate = Object.fromEntries(summary.map(r => [r.date, r]));
+  const todayD = new Date();
+  let streak       = 0;
+  let graceUsed    = 0;
+  for (let i = 0; i < 365; i++) {
+    const d = new Date(todayD);
+    d.setDate(d.getDate() - i);
+    const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const cal = byDate[iso]?.calories ?? 0;
+    const hit = cal > 0 && Math.abs(cal - goal) / goal <= 0.10;
+    const noLog = cal === 0;
+
+    if (i > 0 && i % 7 === 0) graceUsed = 0;   // reset grace counter every 7 days back
+
+    if (hit) {
+      streak++;
+    } else if (noLog && graceUsed < 1) {
+      graceUsed++;
+      streak++;                                  // no-log day counts (grace)
+    } else {
+      break;                                     // logged but missed goal = break
+    }
   }
   return streak;
 }

@@ -239,6 +239,7 @@ export function renderToday(container) {
   let viewDate      = localDate();
   let userNavigated = false;   // true only when user manually tapped ← › or swiped
   let ironlogExpanded = false;
+  let loadGen = 0;             // increments on each load; stale responses discarded
 
   // Swipe navigation
   let swipeStartX = 0, swipeStartY = 0;
@@ -258,17 +259,20 @@ export function renderToday(container) {
   }, { passive: true });
 
   async function load() {
-    // Always snap back to real today unless user deliberately navigated
     if (!userNavigated) viewDate = localDate();
+    const myGen = ++loadGen;
     try {
       const [mealData, waterData, settings] = await Promise.all([
         api.get(`/api/meals/day/${viewDate}`),
         api.get(`/api/water/day/${viewDate}`),
         api.get('/api/settings'),
       ]);
+      if (myGen !== loadGen) return;            // a newer load() superseded us
       const ironlog = await fetchIronLog(settings);
+      if (myGen !== loadGen) return;            // and again after the IronLog fetch
       render(mealData, waterData, settings, ironlog);
     } catch (err) {
+      if (myGen !== loadGen) return;
       container.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
     }
   }
@@ -549,6 +553,7 @@ export function renderToday(container) {
     const sessionKcal = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
     const timeStr     = formatTime(session.logged_at);
     const ul          = unitLabel();
+    const isPastDay   = viewDate < localDate();
 
     sessionEl.innerHTML = `
       <div class="meal-session-header">
@@ -559,8 +564,12 @@ export function renderToday(container) {
           </div>
           ${timeStr ? `<div class="meal-session-kcal">${timeStr}</div>` : ''}
         </button>
-        <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
           <span class="meal-session-kcal num">${fmtE(sessionKcal)} ${ul}</span>
+          ${isPastDay ? `<button class="session-move-btn" title="Move to today"
+            style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">
+            → Today
+          </button>` : ''}
           <button class="session-copy-btn" title="Copy past meal" style="color:var(--text-faint);padding:4px;font-size:15px">♻️</button>
           <button class="session-del-btn" title="Delete" style="color:var(--text-faint);padding:4px">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -647,6 +656,14 @@ export function renderToday(container) {
       if (!confirm(`Delete "${session.name}" and all its entries?`)) return;
       try { await api.delete(`/api/meals/sessions/${session.id}`); showToast('Meal deleted', 'success'); load(); }
       catch (err) { showToast(err.message, 'error'); }
+    });
+
+    sessionEl.querySelector('.session-move-btn')?.addEventListener('click', async () => {
+      try {
+        await api.patch(`/api/meals/sessions/${session.id}`, { date: localDate() });
+        showToast(`"${session.name}" moved to today`, 'success');
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
     });
   }
 
