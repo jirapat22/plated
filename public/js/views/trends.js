@@ -23,25 +23,68 @@ const CHART_DEFAULTS = {
 
 function destroyChart(id) { Chart.getChart(id)?.destroy(); }
 
-function makeChart(id, labels, data, color, yLabel) {
+function makeChart(id, labels, data, color, yLabel, opts = {}) {
   destroyChart(id);
   const ctx = document.getElementById(id);
   if (!ctx) return;
+
+  const datasets = [{
+    data,
+    borderColor: color,
+    backgroundColor: color + '22',
+    fill: true,
+    borderWidth: 2,
+  }];
+
+  if (opts.goalLine != null) {
+    datasets.push({
+      data: labels.map(() => opts.goalLine),
+      borderColor: '#5dca8a99',
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      borderDash: [6, 4],
+      pointRadius: 0,
+      tension: 0,
+      fill: false,
+    });
+  }
+
+  if (opts.avgLine != null) {
+    datasets.push({
+      data: labels.map(() => opts.avgLine),
+      borderColor: '#c8b8ff88',
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      borderDash: [3, 3],
+      pointRadius: 0,
+      tension: 0,
+      fill: false,
+    });
+  }
+
   new Chart(ctx, {
     type: 'line',
-    data: {
-      labels,
-      datasets: [{ data, borderColor: color, backgroundColor: color + '22', fill: true, borderWidth: 2 }],
-    },
+    data: { labels, datasets },
     options: {
       ...CHART_DEFAULTS,
       plugins: {
         ...CHART_DEFAULTS.plugins,
-        tooltip: { callbacks: { label: c => `${c.parsed.y.toFixed(1)} ${yLabel}` } },
+        tooltip: {
+          callbacks: {
+            label: c => {
+              const suffix = c.datasetIndex === 1 ? ' (goal)' : c.datasetIndex === 2 ? ' (7d avg)' : '';
+              return `${c.parsed.y.toFixed(1)} ${yLabel}${suffix}`;
+            },
+          },
+        },
       },
       scales: {
         ...CHART_DEFAULTS.scales,
-        y: { ...CHART_DEFAULTS.scales.y, ticks: { ...CHART_DEFAULTS.scales.y.ticks, callback: v => `${Math.round(v)}` } },
+        y: {
+          ...CHART_DEFAULTS.scales.y,
+          title: { display: true, text: yLabel, color: '#8b8a96', font: { size: 10 } },
+          ticks: { ...CHART_DEFAULTS.scales.y.ticks, callback: v => `${Math.round(v)}` },
+        },
       },
     },
   });
@@ -138,7 +181,7 @@ export function renderTrends(container) {
     const ul     = unitLabel();
 
     const labels   = summary.map(r => { const d = new Date(r.date + 'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; });
-    const cals     = summary.map(r => toDisplay(r.calories ?? 0));   // numbers in display unit for Chart.js
+    const cals     = summary.map(r => toDisplay(r.calories ?? 0));
     const proteins = summary.map(r => r.protein ?? 0);
 
     const weightMap = {};
@@ -150,9 +193,12 @@ export function renderTrends(container) {
     const wLabels = weightEntries.map(([d]) => { const dt = new Date(d + 'T00:00:00'); return `${dt.getMonth()+1}/${dt.getDate()}`; });
     const wVals   = weightEntries.map(([, v]) => v);
 
-    const weeklyAvg = summary.length >= 7
-      ? fmtE(summary.slice(-7).reduce((s, r) => s + (r.calories ?? 0), 0) / 7)
+    const weeklyAvgKcal = summary.length >= 7
+      ? summary.slice(-7).reduce((s, r) => s + (r.calories ?? 0), 0) / 7
       : null;
+    const weeklyAvg = weeklyAvgKcal != null ? fmtE(weeklyAvgKcal) : null;
+    const weeklyAvgDisplay = weeklyAvgKcal != null ? toDisplay(weeklyAvgKcal) : null;
+    const goalDisplay = toDisplay(goal);
 
     // Streak messaging
     const streakEl = streak === 0
@@ -182,7 +228,17 @@ export function renderTrends(container) {
 
       <!-- Calories chart -->
       <div class="card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Calories — ${days}d</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div class="label">Calories — ${days}d</div>
+          <div style="display:flex;gap:10px;font-size:10px;color:var(--text-faint)">
+            <span style="display:flex;align-items:center;gap:4px">
+              <span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>goal
+            </span>
+            ${weeklyAvg ? `<span style="display:flex;align-items:center;gap:4px">
+              <span style="width:16px;height:2px;background:#c8b8ff;display:inline-block;border-radius:1px"></span>7d avg
+            </span>` : ''}
+          </div>
+        </div>
         <div style="height:160px;position:relative"><canvas id="chart-cal"></canvas></div>
       </div>
 
@@ -200,7 +256,7 @@ export function renderTrends(container) {
     `;
 
     requestAnimationFrame(() => {
-      makeChart('chart-cal', labels, cals,     '#c8b8ff', ul);
+      makeChart('chart-cal', labels, cals, '#c8b8ff', ul, { goalLine: goalDisplay, avgLine: weeklyAvgDisplay });
       makeChart('chart-pro', labels, proteins, '#1E88E5', 'g');
       if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg');
       else {

@@ -152,7 +152,7 @@ export function renderFoodSearch(container, onSelect) {
     el.innerHTML = `
       <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--surface-2);
         display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">
-        ${food.is_favourite ? '⭐' : getFoodIcon(food.name)}
+        ${getFoodIcon(food.name)}
       </div>
       <div class="food-list-info" style="flex:1;min-width:0">
         <div class="food-list-name">${food.name}</div>
@@ -162,10 +162,31 @@ export function renderFoodSearch(container, onSelect) {
           ${macroStr ? `<span style="color:var(--text-faint)"> · ${macroStr}</span>` : ''}
         </div>
       </div>
+      ${food.id ? `<button class="fav-toggle" data-fav="${food.is_favourite ? 1 : 0}"
+        style="padding:6px 8px;font-size:16px;flex-shrink:0;color:${food.is_favourite ? '#ffd700' : 'var(--text-faint)'}">
+        ${food.is_favourite ? '⭐' : '☆'}
+      </button>` : ''}
       <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style="color:var(--text-faint);flex-shrink:0">
         <path d="M1 1l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     `;
+
+    const favBtn = el.querySelector('.fav-toggle');
+    if (favBtn) {
+      favBtn.addEventListener('click', async e => {
+        e.stopPropagation();
+        try {
+          const res = await api.patch(`/api/foods/${food.id}/favourite`);
+          food.is_favourite = res.is_favourite;
+          favBtn.dataset.fav = res.is_favourite;
+          favBtn.textContent = res.is_favourite ? '⭐' : '☆';
+          favBtn.style.color = res.is_favourite ? '#ffd700' : 'var(--text-faint)';
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    }
+
     el.addEventListener('click', () => handleSelect(food));
     return el;
   }

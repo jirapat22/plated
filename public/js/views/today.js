@@ -105,6 +105,170 @@ function openRenameSession(sessionId, currentName, onSuccess) {
   });
 }
 
+// ── Log weight ───────────────────────────────────────────────
+function openLogWeight(date, existing, onSuccess) {
+  showSheet(content => {
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">⚖️ Log Bodyweight</span>
+        <button class="sheet-close" id="wt-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        <div class="form-group">
+          <label class="form-label">Weight (kg)</label>
+          <input class="input" id="wt-input" type="number" step="0.1" placeholder="e.g. 75.5"
+            value="${existing?.weight_kg || ''}" inputmode="decimal"
+            style="height:52px;font-size:22px;text-align:center;font-weight:700" />
+        </div>
+        <button class="btn btn-primary btn-full" id="wt-save" style="height:48px">Save</button>
+      </div>
+    `;
+    document.getElementById('wt-close').addEventListener('click', hideSheet);
+    setTimeout(() => document.getElementById('wt-input')?.focus(), 200);
+
+    document.getElementById('wt-save').addEventListener('click', async () => {
+      const weight_kg = parseFloat(document.getElementById('wt-input').value);
+      if (!weight_kg || weight_kg <= 0) { showToast('Enter a valid weight', 'error'); return; }
+      const btn = document.getElementById('wt-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        await api.post('/api/weight', { weight_kg, date });
+        hideSheet();
+        showToast('Weight logged', 'success');
+        onSuccess?.();
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Save';
+      }
+    });
+  });
+}
+
+// ── Meal templates ───────────────────────────────────────────
+async function openFromTemplate(date, onSuccess) {
+  showSheet(async content => {
+    content.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-muted)">Loading templates…</div>`;
+
+    let templates;
+    try {
+      templates = await api.get('/api/templates');
+    } catch (err) {
+      content.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
+      return;
+    }
+
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">📋 Meal Templates</span>
+        <button class="sheet-close" id="tmpl-close">✕</button>
+      </div>
+      ${templates.length === 0
+        ? `<div class="empty-state">
+            <div class="empty-icon" style="font-size:32px">📋</div>
+            <div class="empty-text">No templates yet<br/>
+              <span style="font-size:12px;color:var(--text-faint)">Save a meal as a template to reuse it</span>
+            </div>
+           </div>`
+        : templates.map(t => `
+          <div class="food-list-item" data-tmpl-id="${t.id}">
+            <div style="font-size:22px;width:36px;text-align:center;flex-shrink:0">📋</div>
+            <div class="food-list-info" style="flex:1">
+              <div class="food-list-name">${t.name}</div>
+              <div style="font-size:12px;color:var(--text-muted)">${t.item_count} item${t.item_count !== 1 ? 's' : ''}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0">
+              <button class="tmpl-apply btn btn-secondary" data-tmpl-id="${t.id}" data-tmpl-name="${t.name.replace(/"/g,'&quot;')}"
+                style="height:34px;padding:0 14px;font-size:12px;font-weight:700">Use</button>
+              <button class="tmpl-del" data-tmpl-id="${t.id}"
+                style="width:34px;height:34px;border-radius:50%;background:rgba(255,107,107,.1);color:var(--error);font-size:18px">×</button>
+            </div>
+          </div>`).join('')
+      }
+    `;
+
+    document.getElementById('tmpl-close').addEventListener('click', hideSheet);
+
+    content.querySelectorAll('.tmpl-apply').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = 'Loading…';
+        try {
+          const items = await api.get(`/api/templates/${btn.dataset.tmplId}/items`);
+          const session = await api.post('/api/meals/sessions', { date, name: btn.dataset.tmplName });
+          for (const item of items) {
+            await api.post(`/api/meals/sessions/${session.id}/entries`, {
+              food_id: item.food_id, quantity_g: item.quantity_g,
+            });
+          }
+          hideSheet();
+          showToast(`"${btn.dataset.tmplName}" applied`, 'success');
+          onSuccess?.();
+        } catch (err) {
+          showToast(err.message, 'error');
+          btn.disabled = false; btn.textContent = 'Use';
+        }
+      });
+    });
+
+    content.querySelectorAll('.tmpl-del').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this template?')) return;
+        try {
+          await api.delete(`/api/templates/${btn.dataset.tmplId}`);
+          btn.closest('[data-tmpl-id]').remove();
+          showToast('Template deleted', 'success');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  });
+}
+
+function openSaveAsTemplate(session) {
+  if (session.entries.length === 0) {
+    showToast('Add foods to this meal before saving as a template', 'error');
+    return;
+  }
+  showSheet(content => {
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">🔖 Save as Template</span>
+        <button class="sheet-close" id="st-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">
+          Save <strong>${session.name}</strong> (${session.entries.length} foods) as a reusable template.
+        </div>
+        <div class="form-group">
+          <label class="form-label">Template name</label>
+          <input class="input" id="st-name" value="${session.name}" placeholder="e.g. My Breakfast" />
+        </div>
+        <button class="btn btn-primary btn-full" id="st-save">Save Template</button>
+      </div>
+    `;
+    document.getElementById('st-close').addEventListener('click', hideSheet);
+    setTimeout(() => document.getElementById('st-name')?.focus(), 200);
+
+    document.getElementById('st-save').addEventListener('click', async () => {
+      const name = document.getElementById('st-name').value.trim();
+      if (!name) { showToast('Enter a template name', 'error'); return; }
+      const btn = document.getElementById('st-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        await api.post('/api/templates', {
+          name,
+          items: session.entries.map(e => ({ food_id: e.food_id, food_name: e.food_name, quantity_g: e.quantity_g })),
+        });
+        hideSheet();
+        showToast(`Template "${name}" saved`, 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Save Template';
+      }
+    });
+  });
+}
+
 // ── Copy past meal ───────────────────────────────────────────
 async function openCopyPastMeal(targetSessionId, onSuccess) {
   showSheet(async content => {
@@ -262,22 +426,23 @@ export function renderToday(container) {
     if (!userNavigated) viewDate = localDate();
     const myGen = ++loadGen;
     try {
-      const [mealData, waterData, settings] = await Promise.all([
+      const [mealData, waterData, settings, todayWeight] = await Promise.all([
         api.get(`/api/meals/day/${viewDate}`),
         api.get(`/api/water/day/${viewDate}`),
         api.get('/api/settings'),
+        api.get(`/api/weight/day/${viewDate}`).catch(() => null),
       ]);
       if (myGen !== loadGen) return;            // a newer load() superseded us
       const ironlog = await fetchIronLog(settings);
       if (myGen !== loadGen) return;            // and again after the IronLog fetch
-      render(mealData, waterData, settings, ironlog);
+      render(mealData, waterData, settings, ironlog, todayWeight);
     } catch (err) {
       if (myGen !== loadGen) return;
       container.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
     }
   }
 
-  function render(mealData, waterData, settings, ironlog) {
+  function render(mealData, waterData, settings, ironlog, todayWeight) {
     const today  = localDate();
     const isToday = viewDate === today;
     const ul     = unitLabel();
@@ -393,6 +558,22 @@ export function renderToday(container) {
         </div>
       </div>
 
+      <!-- Bodyweight -->
+      <div style="padding:0 16px 4px">
+        <div class="card" style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div class="label">⚖️ Bodyweight</div>
+            ${todayWeight
+              ? `<div class="num" style="font-size:20px;margin-top:2px">${todayWeight.weight_kg} <span style="font-size:12px;color:var(--text-muted)">kg</span></div>`
+              : `<div style="font-size:12px;color:var(--text-faint);margin-top:3px">Not logged today</div>`
+            }
+          </div>
+          <button id="log-weight-btn" class="btn btn-secondary" style="height:36px;padding:0 16px;font-size:13px">
+            ${todayWeight ? 'Update' : 'Log weight'}
+          </button>
+        </div>
+      </div>
+
       <!-- IronLog + Phase (collapsible) -->
       ${(ironlog || tdee) ? `
       <div style="padding:0 16px 4px">
@@ -439,7 +620,7 @@ export function renderToday(container) {
         </div>
       </div>` : ''}
       <div id="meals-list"></div>
-      <div style="display:flex;gap:10px;margin:8px 16px 16px">
+      <div style="display:flex;gap:8px;margin:8px 16px 16px">
         <button class="new-meal-btn" id="new-meal-btn" style="margin:0;flex:1">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -448,6 +629,9 @@ export function renderToday(container) {
         </button>
         <button class="new-meal-btn" id="quick-log-standalone" style="margin:0;flex:1;color:var(--carbs);border-color:var(--carbs)44">
           ⚡ Quick Log
+        </button>
+        <button class="new-meal-btn" id="from-template-btn" style="margin:0;flex:1;color:var(--text-muted)">
+          📋 Template
         </button>
       </div>
     `;
@@ -527,7 +711,12 @@ export function renderToday(container) {
       } catch (err) { showToast(err.message, 'error'); }
     });
 
-    // New meal / quick log
+    // Weight
+    document.getElementById('log-weight-btn').addEventListener('click', () => {
+      openLogWeight(viewDate, todayWeight, () => load());
+    });
+
+    // New meal / quick log / template
     document.getElementById('new-meal-btn').addEventListener('click', async () => {
       try { await api.post('/api/meals/sessions', { date: viewDate }); load(); }
       catch (err) { showToast(err.message, 'error'); }
@@ -537,6 +726,9 @@ export function renderToday(container) {
         const session = await api.post('/api/meals/sessions', { date: viewDate });
         openQuickLog(session.id, () => load());
       } catch (err) { showToast(err.message, 'error'); }
+    });
+    document.getElementById('from-template-btn').addEventListener('click', () => {
+      openFromTemplate(viewDate, () => load());
     });
   }
 
@@ -570,6 +762,7 @@ export function renderToday(container) {
             style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">
             → Today
           </button>` : ''}
+          <button class="session-save-tmpl-btn" title="Save as template" style="color:var(--text-faint);padding:4px;font-size:15px">🔖</button>
           <button class="session-copy-btn" title="Copy past meal" style="color:var(--text-faint);padding:4px;font-size:15px">♻️</button>
           <button class="session-del-btn" title="Delete" style="color:var(--text-faint);padding:4px">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -648,6 +841,9 @@ export function renderToday(container) {
     // Session events
     sessionEl.querySelector('.session-rename-btn').addEventListener('click', () =>
       openRenameSession(session.id, session.name, () => load())
+    );
+    sessionEl.querySelector('.session-save-tmpl-btn').addEventListener('click', () =>
+      openSaveAsTemplate(session)
     );
     sessionEl.querySelector('.session-copy-btn').addEventListener('click', () =>
       openCopyPastMeal(session.id, () => load())

@@ -75,6 +75,20 @@ function initDb() {
       note       TEXT,
       logged_at  TEXT    DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS meal_templates (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT    NOT NULL,
+      created_at TEXT    DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS meal_template_items (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      template_id INTEGER REFERENCES meal_templates(id) ON DELETE CASCADE,
+      food_id     INTEGER REFERENCES foods(id),
+      food_name   TEXT    NOT NULL,
+      quantity_g  REAL    NOT NULL
+    );
   `);
 
   const setDefault = db.prepare(

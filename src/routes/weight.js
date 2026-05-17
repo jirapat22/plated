@@ -27,6 +27,21 @@ router.get('/today', (req, res) => {
   }
 });
 
+router.get('/day/:date', (req, res) => {
+  try {
+    const { date } = req.params;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
+    }
+    const row = getDb().prepare(
+      'SELECT * FROM weight_log WHERE date = $date ORDER BY logged_at DESC LIMIT 1'
+    ).get({ date });
+    res.json(row || null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/', (req, res) => {
   try {
     const { weight_kg, note, date } = req.body;
