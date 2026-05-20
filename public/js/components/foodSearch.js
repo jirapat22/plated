@@ -162,7 +162,7 @@ export function renderFoodSearch(container, onSelect) {
           ${macroStr ? `<span style="color:var(--text-faint)"> · ${macroStr}</span>` : ''}
         </div>
       </div>
-      ${food.id ? `<button class="fav-toggle" data-fav="${food.is_favourite ? 1 : 0}"
+      ${food.id ? `<button class="fav-toggle"
         style="padding:6px 8px;font-size:16px;flex-shrink:0;color:${food.is_favourite ? '#ffd700' : 'var(--text-faint)'}">
         ${food.is_favourite ? '⭐' : '☆'}
       </button>` : ''}
@@ -178,7 +178,6 @@ export function renderFoodSearch(container, onSelect) {
         try {
           const res = await api.patch(`/api/foods/${food.id}/favourite`);
           food.is_favourite = res.is_favourite;
-          favBtn.dataset.fav = res.is_favourite;
           favBtn.textContent = res.is_favourite ? '⭐' : '☆';
           favBtn.style.color = res.is_favourite ? '#ffd700' : 'var(--text-faint)';
         } catch (err) {

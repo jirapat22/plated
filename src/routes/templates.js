@@ -40,14 +40,14 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'name and items[] required' });
     }
     const db = getDb();
-    const result = db.prepare('INSERT INTO meal_templates (name) VALUES ($name)')
-      .run({ name: name.trim() });
-    const id = result.lastInsertRowid;
+    const insertTmpl = db.prepare('INSERT INTO meal_templates (name) VALUES ($name)');
     const insertItem = db.prepare(
       'INSERT INTO meal_template_items (template_id, food_id, food_name, quantity_g) VALUES ($tid, $fid, $fname, $qty)'
     );
+    let id;
     db.exec('BEGIN TRANSACTION');
     try {
+      id = insertTmpl.run({ name: name.trim() }).lastInsertRowid;
       for (const item of items) {
         insertItem.run({ tid: id, fid: item.food_id, fname: item.food_name || '', qty: item.quantity_g });
       }

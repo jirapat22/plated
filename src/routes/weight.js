@@ -15,18 +15,6 @@ router.get('/', (req, res) => {
   }
 });
 
-router.get('/today', (req, res) => {
-  try {
-    const date = new Date().toISOString().split('T')[0];
-    const row = getDb().prepare(
-      'SELECT * FROM weight_log WHERE date = $date ORDER BY logged_at DESC LIMIT 1'
-    ).get({ date });
-    res.json(row || null);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 router.get('/day/:date', (req, res) => {
   try {
     const { date } = req.params;

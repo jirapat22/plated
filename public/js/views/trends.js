@@ -38,6 +38,7 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
 
   if (opts.goalLine != null) {
     datasets.push({
+      label: 'goal',
       data: labels.map(() => opts.goalLine),
       borderColor: '#5dca8a99',
       backgroundColor: 'transparent',
@@ -51,6 +52,7 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
 
   if (opts.avgLine != null) {
     datasets.push({
+      label: '7d avg',
       data: labels.map(() => opts.avgLine),
       borderColor: '#c8b8ff88',
       backgroundColor: 'transparent',
@@ -72,7 +74,8 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
         tooltip: {
           callbacks: {
             label: c => {
-              const suffix = c.datasetIndex === 1 ? ' (goal)' : c.datasetIndex === 2 ? ' (7d avg)' : '';
+              const lbl = c.dataset.label;
+              const suffix = lbl === 'goal' ? ' (goal)' : lbl === '7d avg' ? ' (7d avg)' : '';
               return `${c.parsed.y.toFixed(1)} ${yLabel}${suffix}`;
             },
           },

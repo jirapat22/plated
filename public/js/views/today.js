@@ -194,11 +194,11 @@ async function openFromTemplate(date, onSuccess) {
         try {
           const items = await api.get(`/api/templates/${btn.dataset.tmplId}/items`);
           const session = await api.post('/api/meals/sessions', { date, name: btn.dataset.tmplName });
-          for (const item of items) {
-            await api.post(`/api/meals/sessions/${session.id}/entries`, {
+          await Promise.all(items.map(item =>
+            api.post(`/api/meals/sessions/${session.id}/entries`, {
               food_id: item.food_id, quantity_g: item.quantity_g,
-            });
-          }
+            })
+          ));
           hideSheet();
           showToast(`"${btn.dataset.tmplName}" applied`, 'success');
           onSuccess?.();
@@ -214,7 +214,7 @@ async function openFromTemplate(date, onSuccess) {
         if (!confirm('Delete this template?')) return;
         try {
           await api.delete(`/api/templates/${btn.dataset.tmplId}`);
-          btn.closest('[data-tmpl-id]').remove();
+          btn.closest('.food-list-item').remove();
           showToast('Template deleted', 'success');
         } catch (err) {
           showToast(err.message, 'error');
