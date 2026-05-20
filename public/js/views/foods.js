@@ -103,39 +103,135 @@ export function renderFoods(container) {
 
   function openFoodDetail(food) {
     showSheet(content => {
-      content.innerHTML = `
-        <div class="sheet-header">
-          <span class="sheet-title">${food.name}</span>
-          <button class="sheet-close" id="detail-close">✕</button>
-        </div>
-        <div style="padding:0 16px">
-          ${food.brand ? `<div class="muted" style="margin-bottom:12px">${food.brand}</div>` : ''}
-          <div class="card" style="margin-bottom:12px">
-            <div class="label" style="margin-bottom:10px">Per 100g</div>
-            <div class="macro-totals-row">
-              <div class="macro-total"><div class="macro-total-val num">${food.calories_per_100g?.toFixed(0) ?? '–'}</div><div class="macro-total-lbl label">kcal</div></div>
-              <div class="macro-total"><div class="macro-total-val num" style="color:var(--protein)">${food.protein_per_100g?.toFixed(1) ?? '–'}g</div><div class="macro-total-lbl label">protein</div></div>
-              <div class="macro-total"><div class="macro-total-val num" style="color:var(--carbs)">${food.carbs_per_100g?.toFixed(1) ?? '–'}g</div><div class="macro-total-lbl label">carbs</div></div>
-              <div class="macro-total"><div class="macro-total-val num" style="color:var(--fat)">${food.fat_per_100g?.toFixed(1) ?? '–'}g</div><div class="macro-total-lbl label">fat</div></div>
+      function renderDetail() {
+        content.innerHTML = `
+          <div class="sheet-header">
+            <span class="sheet-title">${food.name}</span>
+            <button class="sheet-close" id="detail-close">✕</button>
+          </div>
+          <div style="padding:0 16px">
+            ${food.brand ? `<div class="muted" style="margin-bottom:12px">${food.brand}</div>` : ''}
+            <div class="card" style="margin-bottom:12px">
+              <div class="label" style="margin-bottom:10px">Per 100g</div>
+              <div class="macro-totals-row">
+                <div class="macro-total"><div class="macro-total-val num">${food.calories_per_100g?.toFixed(0) ?? '–'}</div><div class="macro-total-lbl label">kcal</div></div>
+                <div class="macro-total"><div class="macro-total-val num" style="color:var(--protein)">${food.protein_per_100g?.toFixed(1) ?? '–'}g</div><div class="macro-total-lbl label">protein</div></div>
+                <div class="macro-total"><div class="macro-total-val num" style="color:var(--carbs)">${food.carbs_per_100g?.toFixed(1) ?? '–'}g</div><div class="macro-total-lbl label">carbs</div></div>
+                <div class="macro-total"><div class="macro-total-val num" style="color:var(--fat)">${food.fat_per_100g?.toFixed(1) ?? '–'}g</div><div class="macro-total-lbl label">fat</div></div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-secondary btn-full" id="detail-edit">✏️ Edit</button>
+              <button class="btn btn-danger btn-full" id="detail-delete">Delete</button>
             </div>
           </div>
-          <div style="display:flex;gap:10px">
-            <button class="btn btn-danger btn-full" id="detail-delete">Delete food</button>
+        `;
+        document.getElementById('detail-close').addEventListener('click', hideSheet);
+        document.getElementById('detail-edit').addEventListener('click', renderEdit);
+        document.getElementById('detail-delete').addEventListener('click', async () => {
+          if (!confirm(`Delete "${food.name}"?`)) return;
+          try {
+            await api.delete(`/api/foods/${food.id}`);
+            hideSheet();
+            showToast('Food deleted', 'success');
+            loadList();
+          } catch (err) {
+            showToast(err.message, 'error');
+          }
+        });
+      }
+
+      function renderEdit() {
+        const v = (n) => n != null ? n : '';
+        content.innerHTML = `
+          <div class="sheet-header">
+            <button id="edit-back" style="font-size:13px;color:var(--text-muted);display:flex;align-items:center;gap:4px">‹ Back</button>
+            <span class="sheet-title">Edit food</span>
+            <div style="width:32px"></div>
           </div>
-        </div>
-      `;
-      document.getElementById('detail-close').addEventListener('click', hideSheet);
-      document.getElementById('detail-delete').addEventListener('click', async () => {
-        if (!confirm(`Delete "${food.name}"?`)) return;
-        try {
-          await api.delete(`/api/foods/${food.id}`);
-          hideSheet();
-          showToast('Food deleted', 'success');
-          loadList();
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
+          <div style="padding:0 16px">
+            <div class="form-group">
+              <label class="form-label">Name *</label>
+              <input class="input" id="ef-name" value="" />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Brand</label>
+                <input class="input" id="ef-brand" value="" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Serving (g)</label>
+                <input class="input" id="ef-srv" type="number" value="" />
+              </div>
+            </div>
+            <div class="label" style="margin-bottom:10px">Per 100g</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Calories (kcal)</label>
+                <input class="input" id="ef-cal" type="number" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Protein (g)</label>
+                <input class="input" id="ef-pro" type="number" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Carbs (g)</label>
+                <input class="input" id="ef-crb" type="number" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Fat (g)</label>
+                <input class="input" id="ef-fat" type="number" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Fiber (g)</label>
+              <input class="input" id="ef-fib" type="number" />
+            </div>
+            <button class="btn btn-primary btn-full" id="ef-save">Save Changes</button>
+          </div>
+        `;
+        // Set values via JS to avoid HTML-injection issues with food.name
+        content.querySelector('#ef-name').value = food.name || '';
+        content.querySelector('#ef-brand').value = food.brand || '';
+        content.querySelector('#ef-srv').value = food.serving_size_g ?? 100;
+        content.querySelector('#ef-cal').value = v(food.calories_per_100g);
+        content.querySelector('#ef-pro').value = v(food.protein_per_100g);
+        content.querySelector('#ef-crb').value = v(food.carbs_per_100g);
+        content.querySelector('#ef-fat').value = v(food.fat_per_100g);
+        content.querySelector('#ef-fib').value = v(food.fiber_per_100g);
+
+        document.getElementById('edit-back').addEventListener('click', renderDetail);
+        document.getElementById('ef-save').addEventListener('click', async () => {
+          const name = content.querySelector('#ef-name').value.trim();
+          if (!name) { showToast('Name is required', 'error'); return; }
+          const body = {
+            name,
+            brand:             content.querySelector('#ef-brand').value.trim() || null,
+            serving_size_g:    parseFloat(content.querySelector('#ef-srv').value)  || 100,
+            calories_per_100g: parseFloat(content.querySelector('#ef-cal').value)  || null,
+            protein_per_100g:  parseFloat(content.querySelector('#ef-pro').value)  || null,
+            carbs_per_100g:    parseFloat(content.querySelector('#ef-crb').value)  || null,
+            fat_per_100g:      parseFloat(content.querySelector('#ef-fat').value)  || null,
+            fiber_per_100g:    parseFloat(content.querySelector('#ef-fib').value)  || null,
+          };
+          const btn = document.getElementById('ef-save');
+          btn.disabled = true; btn.textContent = 'Saving…';
+          try {
+            const updated = await api.patch(`/api/foods/${food.id}`, body);
+            Object.assign(food, updated);
+            showToast('Food updated', 'success');
+            loadList();
+            renderDetail();
+          } catch (err) {
+            showToast(err.message, 'error');
+            btn.disabled = false; btn.textContent = 'Save Changes';
+          }
+        });
+      }
+
+      renderDetail();
     });
   }
 

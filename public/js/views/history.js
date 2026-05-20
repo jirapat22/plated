@@ -91,6 +91,16 @@ export function renderHistory(container) {
     const t  = mealData.totals;
     const ul = unitLabel();
 
+    // 7-day rolling average ending at `date`
+    const byDate = Object.fromEntries(summary.map(r => [r.date, r]));
+    const weekRows = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(date + 'T00:00:00');
+      d.setDate(d.getDate() - (6 - i));
+      return byDate[isoDate(d)];
+    }).filter(Boolean);
+    const n = weekRows.length;
+    const wAvg = k => n ? Math.round(weekRows.reduce((s, r) => s + (r[k] ?? 0), 0) / n) : 0;
+
     el.innerHTML = `
       <div class="card" style="margin-bottom:12px">
         <div style="font-size:15px;font-weight:700;margin-bottom:12px">${fmtDateFull(date)}</div>
@@ -106,6 +116,22 @@ export function renderHistory(container) {
           </div>
         </div>
         <div id="hist-macro-bar"></div>
+        ${n >= 2 ? `
+        <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">
+          <div style="font-size:10px;font-weight:700;color:var(--text-faint);letter-spacing:.06em;margin-bottom:6px">
+            7-DAY AVG · ${n} of 7 days logged
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="num" style="font-size:18px">${fmtE(wAvg('calories'))}
+              <span style="font-size:11px;color:var(--text-muted)">${ul}/day</span>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted)">
+              <span style="color:var(--protein)">${wAvg('protein')}g P</span> ·
+              <span style="color:var(--carbs)">${wAvg('carbs')}g C</span> ·
+              <span style="color:var(--fat)">${wAvg('fat')}g F</span>
+            </div>
+          </div>
+        </div>` : ''}
       </div>
     `;
     renderMacroBar(el.querySelector('#hist-macro-bar'), t, goals, false);

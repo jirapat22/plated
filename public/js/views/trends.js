@@ -184,9 +184,14 @@ export function renderTrends(container) {
     const streak = calcStreak(summary, goal);
     const ul     = unitLabel();
 
+    const carbGoal  = parseFloat(settings.carb_goal) || 250;
+    const fatGoal   = parseFloat(settings.fat_goal)  || 65;
+
     const labels   = summary.map(r => { const d = new Date(r.date + 'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; });
     const cals     = summary.map(r => toDisplay(r.calories ?? 0));
     const proteins = summary.map(r => r.protein ?? 0);
+    const carbs    = summary.map(r => r.carbs ?? 0);
+    const fats     = summary.map(r => r.fat ?? 0);
 
     const weightMap = {};
     ironlogWeights.forEach(w => { weightMap[w.date] = w.weight_kg; });
@@ -252,6 +257,18 @@ export function renderTrends(container) {
         <div style="height:160px;position:relative"><canvas id="chart-pro"></canvas></div>
       </div>
 
+      <!-- Carbs chart -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="label" style="margin-bottom:10px">Carbs — ${days}d</div>
+        <div style="height:160px;position:relative"><canvas id="chart-carb"></canvas></div>
+      </div>
+
+      <!-- Fat chart -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="label" style="margin-bottom:10px">Fat — ${days}d</div>
+        <div style="height:160px;position:relative"><canvas id="chart-fat"></canvas></div>
+      </div>
+
       <!-- Weight chart -->
       <div class="card" style="margin-bottom:12px">
         <div class="label" style="margin-bottom:10px">Bodyweight — ${days}d</div>
@@ -261,7 +278,9 @@ export function renderTrends(container) {
 
     requestAnimationFrame(() => {
       makeChart('chart-cal', labels, cals, '#c8b8ff', ul, { goalLine: goalDisplay, avgLine: weeklyAvgDisplay });
-      makeChart('chart-pro', labels, proteins, '#1E88E5', 'g', { goalLine: proteinGoal });
+      makeChart('chart-pro',  labels, proteins, '#1E88E5', 'g', { goalLine: proteinGoal });
+      makeChart('chart-carb', labels, carbs,    '#f97316', 'g', { goalLine: carbGoal });
+      makeChart('chart-fat',  labels, fats,     '#eab308', 'g', { goalLine: fatGoal  });
       if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg');
       else {
         const c = document.getElementById('chart-wt');
