@@ -55,6 +55,61 @@ router.get('/ironlog/test', async (req, res) => {
   }
 });
 
+// Delete all logged data (meals, water, weight, templates) — keeps foods + settings
+router.delete('/data', (req, res) => {
+  try {
+    const db = getDb();
+    db.exec(`
+      DELETE FROM meal_sessions;
+      DELETE FROM water_log;
+      DELETE FROM weight_log;
+      DELETE FROM meal_templates;
+      DELETE FROM daily_overrides;
+    `);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Export meals as CSV
+router.get('/export-csv', (req, res) => {
+  try {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT ms.date, ms.name AS meal_name,
+             f.name AS food_name, me.quantity_g,
+             me.calories, me.protein, me.carbs, me.fat, me.fiber
+      FROM meal_entries me
+      JOIN meal_sessions ms ON ms.id = me.meal_session_id
+      JOIN foods f ON f.id = me.food_id
+      ORDER BY ms.date ASC, ms.meal_index ASC, me.logged_at ASC
+    `).all();
+
+    const esc = v => {
+      if (v == null) return '';
+      const s = String(v);
+      return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const lines = [
+      'Date,Meal,Food,Quantity (g),Calories (kcal),Protein (g),Carbs (g),Fat (g),Fiber (g)',
+      ...rows.map(r => [
+        r.date, esc(r.meal_name), esc(r.food_name),
+        r.quantity_g ?? '', r.calories ?? '', r.protein ?? '',
+        r.carbs ?? '', r.fat ?? '', r.fiber ?? '',
+      ].join(',')),
+    ];
+
+    const filename = `plated-meals-${new Date().toISOString().split('T')[0]}.csv`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'text/csv');
+    res.send(lines.join('\n'));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Export all data as JSON
 router.get('/export', (req, res) => {
   try {

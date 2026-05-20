@@ -179,7 +179,8 @@ export function renderTrends(container) {
   }
 
   function render(summary, localWeights, ironlogWeights, settings) {
-    const goal   = parseFloat(settings.calorie_goal) || 2000;
+    const goal        = parseFloat(settings.calorie_goal) || 2000;
+    const proteinGoal = parseFloat(settings.protein_goal) || 150;
     const streak = calcStreak(summary, goal);
     const ul     = unitLabel();
 
@@ -260,7 +261,7 @@ export function renderTrends(container) {
 
     requestAnimationFrame(() => {
       makeChart('chart-cal', labels, cals, '#c8b8ff', ul, { goalLine: goalDisplay, avgLine: weeklyAvgDisplay });
-      makeChart('chart-pro', labels, proteins, '#1E88E5', 'g');
+      makeChart('chart-pro', labels, proteins, '#1E88E5', 'g', { goalLine: proteinGoal });
       if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg');
       else {
         const c = document.getElementById('chart-wt');

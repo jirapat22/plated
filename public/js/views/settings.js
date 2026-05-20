@@ -129,10 +129,22 @@ export function renderSettings(container) {
       </div>
 
       <!-- Export -->
-      <div class="card" style="margin-bottom:20px;padding:0">
+      <div class="card" style="margin-bottom:12px;padding:0">
         <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">DATA</div>
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:8px">
+          <a class="btn btn-secondary btn-full" href="/api/settings/export-csv" download>📊 Export meals as CSV</a>
+          <a class="btn btn-secondary btn-full" href="/api/settings/export" download>📦 Export all data as JSON</a>
+        </div>
+      </div>
+
+      <!-- Danger zone -->
+      <div class="card" style="margin-bottom:20px;padding:0;border-color:rgba(255,107,107,.3)">
+        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--error);border-bottom:1px solid var(--border)">DANGER ZONE</div>
         <div style="padding:14px 16px">
-          <a class="btn btn-secondary btn-full" href="/api/settings/export" download>Export all data as JSON</a>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
+            Permanently deletes all logged meals, water, weight entries, and templates. Your food database and goal settings are kept.
+          </div>
+          <button class="btn btn-danger btn-full" id="reset-data-btn">🗑 Clear all logged data</button>
         </div>
       </div>
     `;
@@ -319,6 +331,20 @@ export function renderSettings(container) {
     // Lock app
     document.getElementById('lock-app-btn').addEventListener('click', () => {
       lockApp();
+    });
+
+    // Reset all data
+    document.getElementById('reset-data-btn').addEventListener('click', async () => {
+      if (!confirm('This will permanently delete all logged meals, water, weight, and templates.\n\nThis cannot be undone. Continue?')) return;
+      const typed = prompt('Type DELETE to confirm:');
+      if (typed !== 'DELETE') { showToast('Cancelled', 'info'); return; }
+      try {
+        await api.delete('/api/settings/data');
+        showToast('All logged data cleared', 'success');
+        window.dispatchEvent(new CustomEvent('plated:settings-changed'));
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
     });
 
     // Weight log

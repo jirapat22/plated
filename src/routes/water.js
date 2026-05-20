@@ -8,7 +8,14 @@ function dayData(db, date) {
     'SELECT * FROM water_log WHERE date = $date ORDER BY logged_at ASC'
   ).all({ date });
   const total_ml = entries.reduce((s, r) => s + r.amount_ml, 0);
-  return { date, entries, total_ml };
+  const override = db.prepare(
+    "SELECT value FROM daily_overrides WHERE date = $date AND key = 'water_goal_ml'"
+  ).get({ date });
+  const global = db.prepare(
+    "SELECT value FROM settings WHERE key = 'water_goal_ml'"
+  ).get();
+  const goal_ml = parseInt(override?.value || global?.value || 2500);
+  return { date, entries, total_ml, goal_ml };
 }
 
 router.get('/today', (req, res) => {
@@ -42,6 +49,23 @@ router.post('/', (req, res) => {
     const entry = db.prepare('SELECT * FROM water_log WHERE id = $id')
       .get({ id: result.lastInsertRowid });
     res.status(201).json(entry);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/goal/:date', (req, res) => {
+  try {
+    const { date } = req.params;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
+    }
+    const { goal_ml } = req.body;
+    if (!goal_ml || goal_ml < 100) return res.status(400).json({ error: 'goal_ml must be >= 100' });
+    getDb().prepare(
+      "INSERT OR REPLACE INTO daily_overrides (date, key, value) VALUES ($date, 'water_goal_ml', $value)"
+    ).run({ date, value: String(goal_ml) });
+    res.json({ date, goal_ml: parseInt(goal_ml) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

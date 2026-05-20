@@ -89,6 +89,13 @@ function initDb() {
       food_name   TEXT    NOT NULL,
       quantity_g  REAL    NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS daily_overrides (
+      date  TEXT NOT NULL,
+      key   TEXT NOT NULL,
+      value TEXT,
+      PRIMARY KEY (date, key)
+    );
   `);
 
   const setDefault = db.prepare(

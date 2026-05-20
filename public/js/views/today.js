@@ -455,7 +455,8 @@ export function renderToday(container) {
       water:  parseFloat(settings.water_goal_ml)  || 2500,
     };
     const t         = mealData.totals;
-    const waterPct  = Math.min((waterData.total_ml / goals.water) * 100, 100);
+    const waterGoal = waterData.goal_ml || goals.water;
+    const waterPct  = Math.min((waterData.total_ml / waterGoal) * 100, 100);
     const calPct    = Math.min((t.calories / goals.cal) * 100, 100);
     const burned    = ironlog?.calories_burned ?? 0;
     const net       = t.calories - burned;
@@ -536,9 +537,12 @@ export function renderToday(container) {
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
             <span class="label">💧 Water</span>
-            <span class="num" style="font-size:13px">${waterData.total_ml}
-              <span style="font-size:11px;color:var(--text-muted)">/ ${goals.water} ml</span>
-            </span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="num" style="font-size:13px">${waterData.total_ml}
+                <span style="font-size:11px;color:var(--text-muted)">/ ${waterGoal} ml</span>
+              </span>
+              <button id="water-goal-edit" style="font-size:11px;color:var(--text-faint);padding:2px 8px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px">⚙️</button>
+            </div>
           </div>
           <div class="water-bar-outer" style="margin-bottom:10px">
             <div class="water-bar-fill" style="width:${waterPct}%"></div>
@@ -711,6 +715,19 @@ export function renderToday(container) {
       } catch (err) { showToast(err.message, 'error'); }
     });
 
+    // Water goal override
+    document.getElementById('water-goal-edit').addEventListener('click', async () => {
+      const input = prompt(`Water goal for ${viewDate === localDate() ? 'today' : viewDate} (ml):\nCurrent: ${waterGoal} ml`);
+      if (!input) return;
+      const newGoal = parseInt(input);
+      if (isNaN(newGoal) || newGoal < 100) { showToast('Enter a valid goal (e.g. 3000)', 'error'); return; }
+      try {
+        await api.patch(`/api/water/goal/${viewDate}`, { goal_ml: newGoal });
+        showToast(`Water goal → ${newGoal} ml`, 'success');
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+
     // Weight
     document.getElementById('log-weight-btn').addEventListener('click', () => {
       openLogWeight(viewDate, todayWeight, () => load());
@@ -742,8 +759,9 @@ export function renderToday(container) {
   function renderSession(container, session) {
     const sessionEl  = document.createElement('div');
     sessionEl.className = 'meal-session';
-    const sessionKcal = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
-    const timeStr     = formatTime(session.logged_at);
+    const sessionKcal    = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
+    const sessionProtein = Math.round(session.entries.reduce((s, e) => s + (e.protein || 0), 0));
+    const timeStr        = formatTime(session.logged_at);
     const ul          = unitLabel();
     const isPastDay   = viewDate < localDate();
 
@@ -757,7 +775,7 @@ export function renderToday(container) {
           ${timeStr ? `<div class="meal-session-kcal">${timeStr}</div>` : ''}
         </button>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-          <span class="meal-session-kcal num">${fmtE(sessionKcal)} ${ul}</span>
+          <span class="meal-session-kcal num">${fmtE(sessionKcal)} ${ul}${sessionProtein > 0 ? ` · <span style="color:var(--protein);font-weight:600">${sessionProtein}g P</span>` : ''}</span>
           ${isPastDay ? `<button class="session-move-btn" title="Move to today"
             style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">
             → Today
