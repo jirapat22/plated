@@ -30,6 +30,32 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
+
+// Public — registered before express.static and all /api routers
+app.get('/api/orbit-summary', (req, res) => {
+  try {
+    const { getDb } = require('./src/db');
+    const row = getDb().prepare(`
+      SELECT COALESCE(SUM(me.calories), 0) AS calories,
+             COALESCE(SUM(me.protein),  0) AS protein
+      FROM meal_entries me
+      JOIN meal_sessions ms ON ms.id = me.meal_session_id
+      WHERE ms.date = date('now')
+    `).get();
+    const logged = row.calories > 0 || row.protein > 0;
+    res.json({
+      label:     'Today',
+      stat:      logged
+        ? `${Math.round(row.calories)} kcal · ${Math.round(row.protein)}g protein`
+        : 'Nothing logged today',
+      status:    logged ? 'active' : 'warning',
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/health', (req, res) => {
@@ -47,32 +73,6 @@ app.use('/api/weight', authenticateToken, weightRoutes);
 app.use('/api/settings', authenticateToken, settingsRoutes);
 app.use('/api/ironlog',    authenticateToken, ironlogRoutes);
 app.use('/api/templates',  authenticateToken, templatesRoutes);
-
-// Public summary for external dashboards — no auth
-app.get('/api/orbit-summary', (req, res) => {
-  try {
-    const { getDb } = require('./src/db');
-    const row = getDb().prepare(`
-      SELECT COALESCE(SUM(me.calories), 0) AS calories,
-             COALESCE(SUM(me.protein),  0) AS protein
-      FROM meal_entries me
-      JOIN meal_sessions ms ON ms.id = me.meal_session_id
-      WHERE ms.date = date('now')
-    `).get();
-
-    const logged = row.calories > 0 || row.protein > 0;
-    res.json({
-      label:     'Today',
-      stat:      logged
-        ? `${Math.round(row.calories)} kcal · ${Math.round(row.protein)}g protein`
-        : 'Nothing logged today',
-      status:    logged ? 'active' : 'warning',
-      updatedAt: new Date().toISOString(),
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // SPA fallback
 app.get('*', (req, res) => {
