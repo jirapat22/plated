@@ -5,6 +5,8 @@ import { fmtE, unitLabel }  from '../utils/energy.js';
 import { openFoodEntry }    from './log.js';
 import { localDate }        from '../utils/date.js';
 
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
 function isoDate(d) { return localDate(d); }          // local timezone, not UTC
 function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate() + n); return d; }
 
@@ -148,7 +150,7 @@ export function renderHistory(container) {
         card.style.marginBottom = '10px';
         card.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <span style="font-weight:600">${session.name}</span>
+            <span style="font-weight:600">${esc(session.name)}</span>
             <div style="display:flex;align-items:center;gap:10px">
               <span class="num muted">${fmtE(sessionKcal)} ${ul}</span>
               ${isPast ? `<button class="move-today-btn" data-id="${session.id}"
@@ -160,7 +162,7 @@ export function renderHistory(container) {
           ${session.entries.map(e => `
             <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border)">
               <div>
-                <div style="font-size:13px;font-weight:500">${e.food_name}</div>
+                <div style="font-size:13px;font-weight:500">${esc(e.food_name)}</div>
                 <div style="font-size:12px;color:var(--text-muted)">${e.quantity_g}g</div>
               </div>
               <div class="num" style="font-size:13px">${fmtE(e.calories ?? 0)} ${ul}</div>

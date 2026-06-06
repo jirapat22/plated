@@ -2,6 +2,8 @@ import { api }           from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
 import { getFoodIcon }  from '../utils/foodIcon.js';
 
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
 let debounceTimer = null;
 
 function debounce(fn, ms) {
@@ -70,8 +72,8 @@ export function renderFoods(container) {
     el.innerHTML = `
       <div class="food-list-icon" style="font-size:18px">${food.is_favourite ? '⭐' : getFoodIcon(food.name)}</div>
       <div class="food-list-info">
-        <div class="food-list-name">${food.name}</div>
-        <div class="food-list-sub">${food.brand || 'Custom'} · ${food.calories_per_100g != null ? food.calories_per_100g.toFixed(0) + ' kcal/100g' : 'no cal data'}</div>
+        <div class="food-list-name">${esc(food.name)}</div>
+        <div class="food-list-sub">${esc(food.brand || 'Custom')} · ${food.calories_per_100g != null ? food.calories_per_100g.toFixed(0) + ' kcal/100g' : 'no cal data'}</div>
       </div>
       <button class="fav-btn${food.is_favourite ? ' active' : ''}" data-id="${food.id}" title="Toggle favourite">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="${food.is_favourite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.7">
@@ -106,11 +108,11 @@ export function renderFoods(container) {
       function renderDetail() {
         content.innerHTML = `
           <div class="sheet-header">
-            <span class="sheet-title">${food.name}</span>
+            <span class="sheet-title">${esc(food.name)}</span>
             <button class="sheet-close" id="detail-close">✕</button>
           </div>
           <div style="padding:0 16px">
-            ${food.brand ? `<div class="muted" style="margin-bottom:12px">${food.brand}</div>` : ''}
+            ${food.brand ? `<div class="muted" style="margin-bottom:12px">${esc(food.brand)}</div>` : ''}
             <div class="card" style="margin-bottom:12px">
               <div class="label" style="margin-bottom:10px">Per 100g</div>
               <div class="macro-totals-row">

@@ -7,6 +7,7 @@ import { getFoodIcon }                     from '../utils/foodIcon.js';
 import { localDate }                       from '../utils/date.js';
 
 const CIRC = 2 * Math.PI * 60;
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
 function fmt(n, dec = 0) { return n == null ? '–' : Number(n).toFixed(dec); }
 
@@ -77,11 +78,12 @@ function openRenameSession(sessionId, currentName, onSuccess) {
         </div>
         <div class="form-group">
           <label class="form-label">Custom name</label>
-          <input class="input" id="rn-input" value="${currentName}" placeholder="e.g. Late Night Snack" />
+          <input class="input" id="rn-input" placeholder="e.g. Late Night Snack" />
         </div>
         <button class="btn btn-primary btn-full" id="rn-save">Save</button>
       </div>
     `;
+    document.getElementById('rn-input').value = currentName;
     document.getElementById('rn-close').addEventListener('click', hideSheet);
 
     async function doRename(name) {
@@ -173,11 +175,11 @@ async function openFromTemplate(date, onSuccess) {
           <div class="food-list-item" data-tmpl-id="${t.id}">
             <div style="font-size:22px;width:36px;text-align:center;flex-shrink:0">📋</div>
             <div class="food-list-info" style="flex:1">
-              <div class="food-list-name">${t.name}</div>
+              <div class="food-list-name">${esc(t.name)}</div>
               <div style="font-size:12px;color:var(--text-muted)">${t.item_count} item${t.item_count !== 1 ? 's' : ''}</div>
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0">
-              <button class="tmpl-apply btn btn-secondary" data-tmpl-id="${t.id}" data-tmpl-name="${t.name.replace(/"/g,'&quot;')}"
+              <button class="tmpl-apply btn btn-secondary" data-tmpl-id="${t.id}" data-tmpl-name="${esc(t.name)}"
                 style="height:34px;padding:0 14px;font-size:12px;font-weight:700">Use</button>
               <button class="tmpl-del" data-tmpl-id="${t.id}"
                 style="width:34px;height:34px;border-radius:50%;background:rgba(255,107,107,.1);color:var(--error);font-size:18px">×</button>
@@ -237,15 +239,16 @@ function openSaveAsTemplate(session) {
       </div>
       <div style="padding:0 16px">
         <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">
-          Save <strong>${session.name}</strong> (${session.entries.length} foods) as a reusable template.
+          Save <strong>${esc(session.name)}</strong> (${session.entries.length} foods) as a reusable template.
         </div>
         <div class="form-group">
           <label class="form-label">Template name</label>
-          <input class="input" id="st-name" value="${session.name}" placeholder="e.g. My Breakfast" />
+          <input class="input" id="st-name" placeholder="e.g. My Breakfast" />
         </div>
         <button class="btn btn-primary btn-full" id="st-save">Save Template</button>
       </div>
     `;
+    document.getElementById('st-name').value = session.name;
     document.getElementById('st-close').addEventListener('click', hideSheet);
     setTimeout(() => document.getElementById('st-name')?.focus(), 200);
 
@@ -299,7 +302,7 @@ async function openCopyPastMeal(targetSessionId, onSuccess) {
                 style="width:100%;text-align:left">
                 <div style="font-size:20px;width:36px;text-align:center">🍽</div>
                 <div class="food-list-info">
-                  <div class="food-list-name">${s.name}</div>
+                  <div class="food-list-name">${esc(s.name)}</div>
                   <div style="font-size:12px;color:var(--text-muted)">${s.date} · ${s.entries.length} items · ${fmtE(kcal)} ${ul}</div>
                 </div>
               </button>`;
@@ -314,11 +317,11 @@ async function openCopyPastMeal(targetSessionId, onSuccess) {
         const s = sessions[parseInt(btn.dataset.idx)];
         btn.style.opacity = '0.5';
         try {
-          for (const e of s.entries) {
-            await api.post(`/api/meals/sessions/${targetSessionId}/entries`, {
+          await Promise.all(s.entries.map(e =>
+            api.post(`/api/meals/sessions/${targetSessionId}/entries`, {
               food_id: e.food_id, quantity_g: e.quantity_g,
-            });
-          }
+            })
+          ));
           hideSheet();
           showToast(`Copied ${s.entries.length} foods from ${s.name}`, 'success');
           onSuccess?.();
@@ -769,7 +772,7 @@ export function renderToday(container) {
       <div class="meal-session-header">
         <button class="session-rename-btn" style="text-align:left;flex:1;min-width:0">
           <div class="meal-session-title" style="display:flex;align-items:center;gap:6px">
-            ${session.name}
+            ${esc(session.name)}
             <span style="font-size:11px;color:var(--text-faint)">✎</span>
           </div>
           ${timeStr ? `<div class="meal-session-kcal">${timeStr}</div>` : ''}
@@ -798,7 +801,7 @@ export function renderToday(container) {
       entryEl.innerHTML = `
         <div style="font-size:20px;flex-shrink:0;width:30px;text-align:center">${getFoodIcon(entry.food_name)}</div>
         <div class="meal-entry-info">
-          <div class="meal-entry-name">${entry.food_name}</div>
+          <div class="meal-entry-name">${esc(entry.food_name)}</div>
           <div class="meal-entry-sub">${fmt(entry.quantity_g)}g &nbsp;
             <span style="color:var(--protein)">${fmt(entry.protein,1)}P</span> ·
             <span style="color:var(--carbs)">${fmt(entry.carbs,1)}C</span> ·

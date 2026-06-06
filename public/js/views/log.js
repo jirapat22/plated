@@ -3,6 +3,8 @@ import { showToast, showSheet, hideSheet } from '../app.js';
 import { renderFoodSearch }               from '../components/foodSearch.js';
 import { fmtE, unitLabel }                from '../utils/energy.js';
 
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
 export function openFoodEntry(sessionId, onSuccess) {
   showSheet(content => {
     content.innerHTML = `
@@ -27,7 +29,7 @@ export function openEditEntry(entry, onSuccess) {
         <span class="sheet-title">Edit Quantity</span>
         <button class="sheet-close" id="edit-close">✕</button>
       </div>
-      <div class="qty-food-name">${entry.food_name}</div>
+      <div class="qty-food-name">${esc(entry.food_name)}</div>
       <div style="height:8px"></div>
       <div class="qty-input-wrap">
         <input type="number" id="edit-qty" class="qty-input" value="${entry.quantity_g}" min="1" step="1" />
@@ -99,8 +101,8 @@ function showQuantitySheet(food, sessionId, onSuccess) {
         <button id="qty-back" style="color:var(--accent);font-weight:600;font-size:14px">← Back</button>
         <button class="sheet-close" id="qty-close">✕</button>
       </div>
-      <div class="qty-food-name">${food.name}</div>
-      ${food.brand ? `<div class="qty-food-brand">${food.brand}</div>` : '<div style="height:8px"></div>'}
+      <div class="qty-food-name">${esc(food.name)}</div>
+      ${food.brand ? `<div class="qty-food-brand">${esc(food.brand)}</div>` : '<div style="height:8px"></div>'}
 
       <!-- Mode toggle -->
       <div style="display:flex;gap:6px;padding:0 16px 12px;flex-wrap:wrap">
