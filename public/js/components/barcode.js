@@ -14,7 +14,6 @@ function stopScanner() {
  * Calls onScan(barcode) on a successful read.
  */
 export function openBarcodeScanner(onScan) {
-  // html5-qrcode is loaded via CDN as a global
   if (typeof Html5Qrcode === 'undefined') {
     showToast('Barcode library not loaded', 'error');
     return;
@@ -28,16 +27,13 @@ export function openBarcodeScanner(onScan) {
       </div>
       <div style="padding:0 16px 16px">
         <div class="scanner-wrap" id="scanner-container">
-          <div class="scanner-corner tl"></div>
-          <div class="scanner-corner tr"></div>
-          <div class="scanner-corner bl"></div>
-          <div class="scanner-corner br"></div>
+          <div class="scanner-rail"></div>
         </div>
-        <div id="scan-status" style="text-align:center;margin-top:12px;font-size:13px;color:var(--text-muted)">
-          Point camera at a barcode (EAN-13, UPC-A)
+        <div id="scan-status" style="text-align:center;margin-top:10px;font-size:13px;color:var(--text-muted)">
+          Hold barcode horizontally inside the box
         </div>
-        <div style="margin-top:12px;text-align:center">
-          <button class="btn btn-secondary" id="scan-manual" style="width:100%">Enter barcode manually</button>
+        <div style="margin-top:10px;text-align:center">
+          <button class="btn btn-secondary" id="scan-manual" style="width:100%">Enter barcode number manually</button>
         </div>
       </div>
     `;
@@ -56,27 +52,53 @@ export function openBarcodeScanner(onScan) {
       }
     });
 
-    // Start scanner — use facingMode:'environment' directly; avoids the
-    // getCameras() enumeration step that blocks on many browsers before
-    // permission is granted and fails with exact deviceId constraints.
-    scannerInstance = new Html5Qrcode('scanner-container');
+    // Explicitly list barcode formats — without this the library may silently
+    // skip EAN-13/UPC-A or perform poorly on linear barcodes.
+    const formats = typeof Html5QrcodeSupportedFormats !== 'undefined'
+      ? [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.ITF,
+        ]
+      : [];
+
+    scannerInstance = new Html5Qrcode(
+      'scanner-container',
+      formats.length ? { formatsToSupport: formats } : {}
+    );
+
+    // qrbox as a function so the scan zone scales to whatever the container
+    // renders at on the device. 85% wide × 44% tall = wide horizontal strip
+    // that fits EAN-13/UPC-A barcodes without the user needing to step back.
+    const qrboxFn = (w, h) => ({
+      width:  Math.round(w * 0.85),
+      height: Math.round(h * 0.44),
+    });
 
     scannerInstance.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 240, height: 160 } },
+      {
+        fps: 15,
+        qrbox: qrboxFn,
+        aspectRatio: 1.7778,   // 16:9 — fills the container cleanly
+      },
       (decodedText) => {
         stopScanner();
         hideSheet();
         onScan(decodedText);
       },
-      () => { /* per-frame scan miss — ignore */ }
+      () => { /* per-frame miss — normal, ignore */ }
     ).catch(err => {
       const statusEl = document.getElementById('scan-status');
       if (!statusEl) return;
       if (err.name === 'NotAllowedError' || String(err).includes('Permission')) {
         statusEl.innerHTML = `
           <span style="color:var(--error)">Camera permission denied</span><br/>
-          <span>Please allow camera access in your browser settings, then try again.</span>
+          <span>Allow camera access in browser settings, then try again.</span>
         `;
       } else {
         const msg = document.createElement('span');

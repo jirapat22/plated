@@ -631,22 +631,40 @@ img { display: block; max-width: 100%; }
 /* ─── Barcode Scanner ────────────────────────────────────── */
 .scanner-wrap {
   width: 100%;
-  aspect-ratio: 1;
+  aspect-ratio: 16/9;
   background: #000;
   border-radius: var(--radius-md);
   overflow: hidden;
   position: relative;
 }
-.scanner-corner {
+/* Horizontal guide rail — marks where to centre the barcode */
+.scanner-rail {
   position: absolute;
-  width: 24px; height: 24px;
-  border-color: var(--accent);
-  border-style: solid;
+  top: 50%;
+  left: 7%;
+  right: 7%;
+  transform: translateY(-50%);
+  height: 44%;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  pointer-events: none;
 }
-.scanner-corner.tl { top: 20px; left: 20px; border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
-.scanner-corner.tr { top: 20px; right: 20px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
-.scanner-corner.bl { bottom: 20px; left: 20px; border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
-.scanner-corner.br { bottom: 20px; right: 20px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+.scanner-rail::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1.5px;
+  background: var(--accent);
+  opacity: 0.5;
+  transform: translateY(-50%);
+  animation: scan-sweep 1.6s ease-in-out infinite;
+}
+@keyframes scan-sweep {
+  0%,100% { top: 15%; }
+  50%      { top: 85%; }
+}
 
 /* ─── History Calendar Strip ─────────────────────────────── */
 .cal-strip {
