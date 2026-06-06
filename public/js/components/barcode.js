@@ -56,44 +56,35 @@ export function openBarcodeScanner(onScan) {
       }
     });
 
-    // Start scanner
+    // Start scanner — use facingMode:'environment' directly; avoids the
+    // getCameras() enumeration step that blocks on many browsers before
+    // permission is granted and fails with exact deviceId constraints.
     scannerInstance = new Html5Qrcode('scanner-container');
 
-    Html5Qrcode.getCameras()
-      .then(cameras => {
-        if (!cameras || cameras.length === 0) {
-          document.getElementById('scan-status').textContent = 'No camera found';
-          return;
-        }
-
-        const preferBack = cameras.find(c =>
-          c.label.toLowerCase().includes('back') ||
-          c.label.toLowerCase().includes('rear') ||
-          c.label.toLowerCase().includes('environment')
-        ) || cameras[cameras.length - 1];
-
-        return scannerInstance.start(
-          { deviceId: { exact: preferBack.id } },
-          { fps: 10, qrbox: { width: 240, height: 160 } },
-          (decodedText) => {
-            stopScanner();
-            hideSheet();
-            onScan(decodedText);
-          },
-          () => { /* scan failure — ignore per-frame errors */ }
-        );
-      })
-      .catch(err => {
-        const statusEl = document.getElementById('scan-status');
-        if (!statusEl) return;
-        if (err.name === 'NotAllowedError' || String(err).includes('Permission')) {
-          statusEl.innerHTML = `
-            <span style="color:var(--error)">Camera permission denied</span><br/>
-            <span>Please allow camera access in your browser settings, then try again.</span>
-          `;
-        } else {
-          statusEl.innerHTML = `<span style="color:var(--error)">${err.message || err}</span>`;
-        }
-      });
+    scannerInstance.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 240, height: 160 } },
+      (decodedText) => {
+        stopScanner();
+        hideSheet();
+        onScan(decodedText);
+      },
+      () => { /* per-frame scan miss — ignore */ }
+    ).catch(err => {
+      const statusEl = document.getElementById('scan-status');
+      if (!statusEl) return;
+      if (err.name === 'NotAllowedError' || String(err).includes('Permission')) {
+        statusEl.innerHTML = `
+          <span style="color:var(--error)">Camera permission denied</span><br/>
+          <span>Please allow camera access in your browser settings, then try again.</span>
+        `;
+      } else {
+        const msg = document.createElement('span');
+        msg.style.color = 'var(--error)';
+        msg.textContent = err.message || String(err);
+        statusEl.innerHTML = '';
+        statusEl.appendChild(msg);
+      }
+    });
   });
 }

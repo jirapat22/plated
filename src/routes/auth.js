@@ -81,8 +81,8 @@ router.post('/verify', async (req, res) => {
 router.post('/change', authenticateToken, async (req, res) => {
   try {
     const { currentPasscode, newPasscode } = req.body;
-    if (!newPasscode || !/^\d{4,6}$/.test(newPasscode)) {
-      return res.status(400).json({ error: 'New passcode must be 4-6 digits' });
+    if (!newPasscode || !/^\d{4}$/.test(newPasscode)) {
+      return res.status(400).json({ error: 'New passcode must be exactly 4 digits' });
     }
 
     const db = getDb();

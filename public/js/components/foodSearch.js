@@ -4,6 +4,8 @@ import { openBarcodeScanner }           from './barcode.js';
 import { fmtE, unitLabel, parseNutritionLabel } from '../utils/energy.js';
 import { getFoodIcon }                  from '../utils/foodIcon.js';
 
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
 let searchDebounce = null;
 
 export function renderFoodSearch(container, onSelect) {
@@ -155,9 +157,9 @@ export function renderFoodSearch(container, onSelect) {
         ${getFoodIcon(food.name)}
       </div>
       <div class="food-list-info" style="flex:1;min-width:0">
-        <div class="food-list-name">${food.name}</div>
+        <div class="food-list-name">${esc(food.name)}</div>
         <div style="font-size:12px;color:var(--text-muted);margin-top:2px">
-          ${food.brand ? `<span>${food.brand} · </span>` : ''}
+          ${food.brand ? `<span>${esc(food.brand)} · </span>` : ''}
           <span style="font-variant-numeric:tabular-nums">${kcalStr}</span>
           ${macroStr ? `<span style="color:var(--text-faint)"> · ${macroStr}</span>` : ''}
         </div>
@@ -198,8 +200,8 @@ export function renderFoodSearch(container, onSelect) {
     const ul = unitLabel();
     wrap.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="font-size:12px;font-weight:600;color:var(--text-muted)">
-          ${prefill ? `"${prefill}" not found — add it:` : 'Add a custom food:'}
+        <span style="font-size:12px;font-weight:600;color:var(--text-muted)" id="qa-label">
+          ${prefill ? 'Not found — add it:' : 'Add a custom food:'}
         </span>
         <button id="qa-paste-btn" style="font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-dim);padding:3px 10px;border-radius:999px;border:1px solid rgba(200,184,255,.2)">
           📋 Paste label
@@ -214,7 +216,7 @@ export function renderFoodSearch(container, onSelect) {
       </div>
 
       <div style="display:flex;flex-direction:column;gap:8px">
-        <input id="qa-name" class="input" placeholder="Food name *" value="${prefill}" style="height:42px" />
+        <input id="qa-name" class="input" placeholder="Food name *" style="height:42px" />
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div style="position:relative">
             <input id="qa-cal" class="input" type="number" placeholder="${ul}/100g" style="height:42px;padding-right:46px" />
@@ -243,6 +245,7 @@ export function renderFoodSearch(container, onSelect) {
       </div>
     `;
     results.appendChild(wrap);
+    if (prefill) wrap.querySelector('#qa-name').value = prefill;
 
     // Paste label toggle
     const pasteBtn  = wrap.querySelector('#qa-paste-btn');
