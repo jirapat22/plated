@@ -71,20 +71,18 @@ export function openBarcodeScanner(onScan) {
       formats.length ? { formatsToSupport: formats } : {}
     );
 
-    // qrbox as a function so the scan zone scales to whatever the container
-    // renders at on the device. 85% wide × 44% tall = wide horizontal strip
-    // that fits EAN-13/UPC-A barcodes without the user needing to step back.
-    const qrboxFn = (w, h) => ({
-      width:  Math.round(w * 0.85),
-      height: Math.round(h * 0.44),
-    });
-
     scannerInstance.start(
       { facingMode: 'environment' },
       {
         fps: 15,
-        qrbox: qrboxFn,
         aspectRatio: 1.7778,   // 16:9 — fills the container cleanly
+        // No qrbox: html5-qrcode draws ITS OWN shaded scan-region overlay
+        // sized to whatever qrbox returns, and that region is the only area
+        // it actually decodes. A small fixed sub-region forces the whole
+        // barcode (plus quiet zones) to fit inside a tiny box at exactly the
+        // right distance — which is what made every scan fail. Scanning the
+        // full frame removes that constraint; `.scanner-rail` below is purely
+        // a visual aiming aid and doesn't limit what gets decoded.
       },
       (decodedText) => {
         stopScanner();
