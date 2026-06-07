@@ -52,6 +52,7 @@ export function renderFoodSearch(container, onSelect) {
   let filter = 'recent';
   let query  = '';
   let remoteRows = [];
+  let pendingBarcode = null;
 
   // ── Chip filter ─────────────────────────────────────────────
   container.querySelectorAll('.fs-chip').forEach(chip => {
@@ -201,7 +202,7 @@ export function renderFoodSearch(container, onSelect) {
     wrap.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <span style="font-size:12px;font-weight:600;color:var(--text-muted)" id="qa-label">
-          ${prefill ? 'Not found — add it:' : 'Add a custom food:'}
+          ${pendingBarcode ? `Barcode ${esc(pendingBarcode)} not found — add it:` : prefill ? 'Not found — add it:' : 'Add a custom food:'}
         </span>
         <button id="qa-paste-btn" style="font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-dim);padding:3px 10px;border-radius:999px;border:1px solid rgba(200,184,255,.2)">
           📋 Paste label
@@ -245,7 +246,7 @@ export function renderFoodSearch(container, onSelect) {
       </div>
     `;
     results.appendChild(wrap);
-    if (prefill) wrap.querySelector('#qa-name').value = prefill;
+    if (prefill && !pendingBarcode) wrap.querySelector('#qa-name').value = prefill;
 
     // Paste label toggle
     const pasteBtn  = wrap.querySelector('#qa-paste-btn');
@@ -288,6 +289,7 @@ export function renderFoodSearch(container, onSelect) {
 
       const body = {
         name,
+        barcode:           pendingBarcode || null,
         calories_per_100g: calKcal,
         protein_per_100g:  parseFloat(wrap.querySelector('#qa-pro').value)  || null,
         carbs_per_100g:    parseFloat(wrap.querySelector('#qa-carb').value) || null,
@@ -296,6 +298,7 @@ export function renderFoodSearch(container, onSelect) {
       };
       try {
         const saved = await api.post('/api/foods', body);
+        pendingBarcode = null;
         onSelect(saved);
       } catch (err) {
         showToast(err.message, 'error');
@@ -313,6 +316,7 @@ export function renderFoodSearch(container, onSelect) {
   // ── Clear button ─────────────────────────────────────────────
   input.addEventListener('input', e => {
     query = e.target.value;
+    pendingBarcode = null;
     clearBtn.style.display = query ? 'block' : 'none';
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(() => search(false), 280);
@@ -320,6 +324,7 @@ export function renderFoodSearch(container, onSelect) {
   clearBtn.addEventListener('click', () => {
     input.value = '';
     query = '';
+    pendingBarcode = null;
     clearBtn.style.display = 'none';
     input.focus();
     search(false);
@@ -333,11 +338,17 @@ export function renderFoodSearch(container, onSelect) {
         onSelect(food);
       } catch (err) {
         if (err.message.toLowerCase().includes('not found')) {
-          input.value = barcode;
-          query = barcode;
-          clearBtn.style.display = 'block';
-          search();
-          showToast('Barcode not found — fill in the details below', 'info');
+          // Show the quick-add form directly with the barcode tracked separately —
+          // searching by the raw digits would just pollute the food name field
+          // and (without this) the saved food never gets linked to the barcode,
+          // so the same code shows "not found" again next time it's scanned.
+          pendingBarcode = barcode;
+          query = '';
+          input.value = '';
+          clearBtn.style.display = 'none';
+          results.innerHTML = '';
+          appendQuickAdd('');
+          showToast('Barcode not found — add the food below to save it for next time', 'info');
         } else {
           showToast(err.message, 'error');
         }
