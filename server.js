@@ -24,6 +24,7 @@ const weightRoutes = require('./src/routes/weight');
 const settingsRoutes   = require('./src/routes/settings');
 const ironlogRoutes    = require('./src/routes/ironlog');
 const templatesRoutes  = require('./src/routes/templates');
+const notesRoutes      = require('./src/routes/notes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -73,6 +74,7 @@ app.use('/api/weight', authenticateToken, weightRoutes);
 app.use('/api/settings', authenticateToken, settingsRoutes);
 app.use('/api/ironlog',    authenticateToken, ironlogRoutes);
 app.use('/api/templates',  authenticateToken, templatesRoutes);
+app.use('/api/notes',      authenticateToken, notesRoutes);
 
 // SPA fallback
 app.get('*', (req, res) => {

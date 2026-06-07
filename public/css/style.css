@@ -903,6 +903,41 @@ img { display: block; max-width: 100%; }
 }
 .weight-del:active { color: var(--error); }
 
+/* ─── Notes / Ideas checklist ────────────────────────────── */
+.note-list { list-style: none; }
+.note-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.note-entry:last-child { border-bottom: none; }
+.note-check {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.note-text {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.note-entry.done .note-text {
+  text-decoration: line-through;
+  color: var(--text-faint);
+}
+.note-del {
+  color: var(--text-faint);
+  padding: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.note-del:active { color: var(--error); }
+
 /* ─── Favourite star ─────────────────────────────────────── */
 .fav-btn { color: var(--text-faint); padding: 6px; transition: color 0.15s; }
 .fav-btn.active { color: var(--carbs); }

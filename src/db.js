@@ -96,6 +96,13 @@ function initDb() {
       value TEXT,
       PRIMARY KEY (date, key)
     );
+
+    CREATE TABLE IF NOT EXISTS notes (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      text       TEXT    NOT NULL,
+      done       INTEGER DEFAULT 0,
+      created_at TEXT    DEFAULT (datetime('now'))
+    );
   `);
 
   const setDefault = db.prepare(
