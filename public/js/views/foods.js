@@ -13,6 +13,29 @@ function debounce(fn, ms) {
   };
 }
 
+// Wires a kcal/kJ pill toggle next to an energy input. Converts the displayed
+// number when the unit changes (so it keeps representing the same energy),
+// and returns a getter that converts back to kcal for storage on save.
+function wireEnergyUnitToggle(unitWrap, input) {
+  let unit = 'kcal';
+  unitWrap.querySelectorAll('.eunit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.unit === unit) return;
+      const cur = parseFloat(input.value);
+      if (!isNaN(cur)) {
+        input.value = btn.dataset.unit === 'kj' ? Math.round(cur * 4.184) : Math.round(cur / 4.184);
+      }
+      unit = btn.dataset.unit;
+      unitWrap.querySelectorAll('.eunit-btn').forEach(b => b.classList.toggle('active', b === btn));
+    });
+  });
+  return () => {
+    const val = parseFloat(input.value);
+    if (isNaN(val)) return null;
+    return unit === 'kj' ? Math.round(val / 4.184) : val;
+  };
+}
+
 export function renderFoods(container) {
   container.innerHTML = `
     <div class="today-header"><div class="today-date">Foods</div></div>
@@ -167,29 +190,36 @@ export function renderFoods(container) {
               </div>
             </div>
             <div class="label" style="margin-bottom:10px">Per 100g</div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Calories (kcal)</label>
-                <input class="input" id="ef-cal" type="number" />
+            <div class="form-group">
+              <label class="form-label">Energy</label>
+              <div style="display:flex;gap:6px">
+                <input class="input" id="ef-cal" type="number" style="flex:1" />
+                <div style="display:flex;gap:4px" id="ef-cal-unit">
+                  <button type="button" class="eunit-btn active" data-unit="kcal">kcal</button>
+                  <button type="button" class="eunit-btn" data-unit="kj">kJ</button>
+                </div>
               </div>
+              <div class="form-hint">Pick the unit your label shows — it's converted and stored as kcal</div>
+            </div>
+            <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Protein (g)</label>
                 <input class="input" id="ef-pro" type="number" />
               </div>
-            </div>
-            <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Carbs (g)</label>
                 <input class="input" id="ef-crb" type="number" />
               </div>
+            </div>
+            <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Fat (g)</label>
                 <input class="input" id="ef-fat" type="number" />
               </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Fiber (g)</label>
-              <input class="input" id="ef-fib" type="number" />
+              <div class="form-group">
+                <label class="form-label">Fiber (g)</label>
+                <input class="input" id="ef-fib" type="number" />
+              </div>
             </div>
             <button class="btn btn-primary btn-full" id="ef-save">Save Changes</button>
           </div>
@@ -204,6 +234,11 @@ export function renderFoods(container) {
         content.querySelector('#ef-fat').value = v(food.fat_per_100g);
         content.querySelector('#ef-fib').value = v(food.fiber_per_100g);
 
+        const getEditCalKcal = wireEnergyUnitToggle(
+          content.querySelector('#ef-cal-unit'),
+          content.querySelector('#ef-cal')
+        );
+
         document.getElementById('edit-back').addEventListener('click', renderDetail);
         document.getElementById('ef-save').addEventListener('click', async () => {
           const name = content.querySelector('#ef-name').value.trim();
@@ -212,7 +247,7 @@ export function renderFoods(container) {
             name,
             brand:             content.querySelector('#ef-brand').value.trim() || null,
             serving_size_g:    parseFloat(content.querySelector('#ef-srv').value)  || 100,
-            calories_per_100g: parseFloat(content.querySelector('#ef-cal').value)  || null,
+            calories_per_100g: getEditCalKcal(),
             protein_per_100g:  parseFloat(content.querySelector('#ef-pro').value)  || null,
             carbs_per_100g:    parseFloat(content.querySelector('#ef-crb').value)  || null,
             fat_per_100g:      parseFloat(content.querySelector('#ef-fat').value)  || null,
@@ -262,33 +297,45 @@ export function renderFoods(container) {
             <input class="input" id="f-serving" type="number" value="100" />
           </div>
           <div class="label" style="margin-bottom:10px">Nutrition per 100g</div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Calories (kcal)</label>
-              <input class="input" id="f-cal" type="number" placeholder="0" />
+          <div class="form-group">
+            <label class="form-label">Energy</label>
+            <div style="display:flex;gap:6px">
+              <input class="input" id="f-cal" type="number" placeholder="0" style="flex:1" />
+              <div style="display:flex;gap:4px" id="f-cal-unit">
+                <button type="button" class="eunit-btn active" data-unit="kcal">kcal</button>
+                <button type="button" class="eunit-btn" data-unit="kj">kJ</button>
+              </div>
             </div>
+            <div class="form-hint">Pick the unit your label shows — it's converted and stored as kcal</div>
+          </div>
+          <div class="form-row">
             <div class="form-group">
               <label class="form-label">Protein (g)</label>
               <input class="input" id="f-pro" type="number" placeholder="0" />
             </div>
-          </div>
-          <div class="form-row">
             <div class="form-group">
               <label class="form-label">Carbs (g)</label>
               <input class="input" id="f-crb" type="number" placeholder="0" />
             </div>
+          </div>
+          <div class="form-row">
             <div class="form-group">
               <label class="form-label">Fat (g)</label>
               <input class="input" id="f-fat" type="number" placeholder="0" />
             </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Fiber (g)</label>
-            <input class="input" id="f-fib" type="number" placeholder="0" />
+            <div class="form-group">
+              <label class="form-label">Fiber (g)</label>
+              <input class="input" id="f-fib" type="number" placeholder="0" />
+            </div>
           </div>
           <button class="btn btn-primary btn-full" id="custom-save" style="margin-top:4px">Save Food</button>
         </div>
       `;
+      const getCustomCalKcal = wireEnergyUnitToggle(
+        document.getElementById('f-cal-unit'),
+        document.getElementById('f-cal')
+      );
+
       document.getElementById('custom-close').addEventListener('click', hideSheet);
       document.getElementById('custom-save').addEventListener('click', async () => {
         const name = document.getElementById('f-name').value.trim();
@@ -298,7 +345,7 @@ export function renderFoods(container) {
           brand:             document.getElementById('f-brand').value.trim()   || null,
           barcode:           document.getElementById('f-barcode').value.trim() || null,
           serving_size_g:    parseFloat(document.getElementById('f-serving').value) || 100,
-          calories_per_100g: parseFloat(document.getElementById('f-cal').value) || null,
+          calories_per_100g: getCustomCalKcal(),
           protein_per_100g:  parseFloat(document.getElementById('f-pro').value) || null,
           carbs_per_100g:    parseFloat(document.getElementById('f-crb').value) || null,
           fat_per_100g:      parseFloat(document.getElementById('f-fat').value) || null,
