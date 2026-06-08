@@ -1,6 +1,7 @@
 import { api }           from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
 import { getFoodIcon }  from '../utils/foodIcon.js';
+import { wireEnergyUnitToggle } from '../utils/energy.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -10,29 +11,6 @@ function debounce(fn, ms) {
   return (...args) => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => fn(...args), ms);
-  };
-}
-
-// Wires a kcal/kJ pill toggle next to an energy input. Converts the displayed
-// number when the unit changes (so it keeps representing the same energy),
-// and returns a getter that converts back to kcal for storage on save.
-function wireEnergyUnitToggle(unitWrap, input) {
-  let unit = 'kcal';
-  unitWrap.querySelectorAll('.eunit-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (btn.dataset.unit === unit) return;
-      const cur = parseFloat(input.value);
-      if (!isNaN(cur)) {
-        input.value = btn.dataset.unit === 'kj' ? Math.round(cur * 4.184) : Math.round(cur / 4.184);
-      }
-      unit = btn.dataset.unit;
-      unitWrap.querySelectorAll('.eunit-btn').forEach(b => b.classList.toggle('active', b === btn));
-    });
-  });
-  return () => {
-    const val = parseFloat(input.value);
-    if (isNaN(val)) return null;
-    return unit === 'kj' ? Math.round(val / 4.184) : val;
   };
 }
 

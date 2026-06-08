@@ -25,6 +25,32 @@ export function toKcal(displayVal) {
   return _unit === 'kj' ? Math.round(displayVal / 4.184) : displayVal;
 }
 
+// Wires a kcal/kJ pill toggle (two `.eunit-btn[data-unit]` buttons inside
+// `unitWrap`) next to an energy `input`. Converts the displayed number when
+// the unit changes (so it keeps representing the same energy), and returns a
+// getter that converts back to kcal for storage on save. The toggle starts in
+// kcal — the unit a food's stored value is always in — so a freshly-rendered
+// or pre-filled input always matches what's shown.
+export function wireEnergyUnitToggle(unitWrap, input) {
+  let unit = 'kcal';
+  unitWrap.querySelectorAll('.eunit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.unit === unit) return;
+      const cur = parseFloat(input.value);
+      if (!isNaN(cur)) {
+        input.value = btn.dataset.unit === 'kj' ? Math.round(cur * 4.184) : Math.round(cur / 4.184);
+      }
+      unit = btn.dataset.unit;
+      unitWrap.querySelectorAll('.eunit-btn').forEach(b => b.classList.toggle('active', b === btn));
+    });
+  });
+  return () => {
+    const val = parseFloat(input.value);
+    if (isNaN(val)) return null;
+    return unit === 'kj' ? Math.round(val / 4.184) : val;
+  };
+}
+
 // Parse NZ nutrition panel text — returns {calories_per_100g, protein, carbs, fat, fiber, serving_size_g}
 export function parseNutritionLabel(text) {
   const result = {};

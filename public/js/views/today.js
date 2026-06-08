@@ -2,7 +2,7 @@ import { api }                            from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
 import { openFoodEntry, openEditEntry }    from './log.js';
 import { renderMacroBar }                  from '../components/macroBar.js';
-import { fmtE, unitLabel, toKcal }         from '../utils/energy.js';
+import { fmtE, unitLabel, wireEnergyUnitToggle } from '../utils/energy.js';
 import { getFoodIcon }                     from '../utils/foodIcon.js';
 import { localDate }                       from '../utils/date.js';
 
@@ -336,7 +336,6 @@ async function openCopyPastMeal(targetSessionId, onSuccess) {
 
 // ── Quick Log ────────────────────────────────────────────────
 function openQuickLog(sessionId, onSuccess) {
-  const ul = unitLabel();
   showSheet(content => {
     content.innerHTML = `
       <div class="sheet-header">
@@ -352,8 +351,14 @@ function openQuickLog(sessionId, onSuccess) {
           <input class="input" id="ql-name" placeholder="e.g. Burger from Burgerfuel" autocomplete="off" />
         </div>
         <div class="form-group">
-          <label class="form-label">Calories (${ul}) *</label>
-          <input class="input" id="ql-cal" type="number" placeholder="e.g. 650" inputmode="numeric" />
+          <label class="form-label">Calories *</label>
+          <div style="display:flex;gap:6px">
+            <input class="input" id="ql-cal" type="number" placeholder="e.g. 650" inputmode="numeric" style="flex:1;min-width:0" />
+            <div style="display:flex;gap:4px;flex-shrink:0" id="ql-cal-unit">
+              <button type="button" class="eunit-btn active" data-unit="kcal">kcal</button>
+              <button type="button" class="eunit-btn" data-unit="kj">kJ</button>
+            </div>
+          </div>
         </div>
         <div class="label" style="margin-bottom:10px">Macros — optional</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
@@ -372,12 +377,16 @@ function openQuickLog(sessionId, onSuccess) {
     document.getElementById('ql-close').addEventListener('click', hideSheet);
     setTimeout(() => document.getElementById('ql-name')?.focus(), 200);
 
+    const getCalKcal = wireEnergyUnitToggle(
+      document.getElementById('ql-cal-unit'),
+      document.getElementById('ql-cal')
+    );
+
     document.getElementById('ql-submit').addEventListener('click', async () => {
       const name    = document.getElementById('ql-name').value.trim();
-      const calDisp = parseFloat(document.getElementById('ql-cal').value) || 0;
-      if (!name)    { showToast('Enter a meal description', 'error'); return; }
-      if (!calDisp) { showToast('Enter the calories', 'error'); return; }
-      const calKcal = toKcal(calDisp);
+      const calKcal = getCalKcal();
+      if (!name)   { showToast('Enter a meal description', 'error'); return; }
+      if (!calKcal) { showToast('Enter the calories', 'error'); return; }
       const pro  = parseFloat(document.getElementById('ql-pro').value)  || null;
       const carb = parseFloat(document.getElementById('ql-carb').value) || null;
       const fat  = parseFloat(document.getElementById('ql-fat').value)  || null;

@@ -1,7 +1,7 @@
 import { api }                           from '../api.js';
 import { showToast }                    from '../app.js';
 import { openBarcodeScanner }           from './barcode.js';
-import { fmtE, unitLabel, parseNutritionLabel } from '../utils/energy.js';
+import { fmtE, unitLabel, parseNutritionLabel, wireEnergyUnitToggle } from '../utils/energy.js';
 import { getFoodIcon }                  from '../utils/foodIcon.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -198,7 +198,6 @@ export function renderFoodSearch(container, onSelect) {
     const wrap = document.createElement('div');
     wrap.id = 'fs-quick-add';
     wrap.style.cssText = 'padding:12px 16px 8px;border-top:1px solid var(--border);margin-top:4px';
-    const ul = unitLabel();
     wrap.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <span style="font-size:12px;font-weight:600;color:var(--text-muted)" id="qa-label">
@@ -218,15 +217,16 @@ export function renderFoodSearch(container, onSelect) {
 
       <div style="display:flex;flex-direction:column;gap:8px">
         <input id="qa-name" class="input" placeholder="Food name *" style="height:42px" />
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div style="position:relative">
-            <input id="qa-cal" class="input" type="number" placeholder="${ul}/100g" style="height:42px;padding-right:46px" />
-            <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-faint)">${ul}</span>
+        <div style="display:flex;gap:6px">
+          <input id="qa-cal" class="input" type="number" placeholder="Energy/100g" style="height:42px;flex:1;min-width:0" />
+          <div style="display:flex;gap:4px;flex-shrink:0" id="qa-cal-unit">
+            <button type="button" class="eunit-btn active" data-unit="kcal">kcal</button>
+            <button type="button" class="eunit-btn" data-unit="kj">kJ</button>
           </div>
-          <div style="position:relative">
-            <input id="qa-srv" class="input" type="number" placeholder="Serving" value="100" style="height:42px;padding-right:24px" />
-            <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-faint)">g/srv</span>
-          </div>
+        </div>
+        <div style="position:relative">
+          <input id="qa-srv" class="input" type="number" placeholder="Serving" value="100" style="height:42px;padding-right:24px" />
+          <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-faint)">g/srv</span>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
           <div style="position:relative">
@@ -248,6 +248,8 @@ export function renderFoodSearch(container, onSelect) {
     results.appendChild(wrap);
     if (prefill && !pendingBarcode) wrap.querySelector('#qa-name').value = prefill;
 
+    const getCalKcal = wireEnergyUnitToggle(wrap.querySelector('#qa-cal-unit'), wrap.querySelector('#qa-cal'));
+
     // Paste label toggle
     const pasteBtn  = wrap.querySelector('#qa-paste-btn');
     const pasteArea = wrap.querySelector('#qa-paste-area');
@@ -263,12 +265,9 @@ export function renderFoodSearch(container, onSelect) {
     pasteInput.addEventListener('input', () => {
       const parsed = parseNutritionLabel(pasteInput.value);
       if (parsed.calories_per_100g != null) {
-        // Convert kcal to display unit for the input
-        const ul2 = unitLabel();
-        wrap.querySelector('#qa-cal').value =
-          ul2 === 'kj'
-            ? Math.round(parsed.calories_per_100g * 4.184)
-            : parsed.calories_per_100g;
+        // parseNutritionLabel already converts kJ labels to kcal, and the
+        // unit toggle starts in kcal — so the raw value matches as-is.
+        wrap.querySelector('#qa-cal').value = parsed.calories_per_100g;
       }
       if (parsed.protein_per_100g  != null) wrap.querySelector('#qa-pro').value  = parsed.protein_per_100g;
       if (parsed.carbs_per_100g    != null) wrap.querySelector('#qa-carb').value = parsed.carbs_per_100g;
@@ -282,15 +281,10 @@ export function renderFoodSearch(container, onSelect) {
       const name = wrap.querySelector('#qa-name').value.trim();
       if (!name) { showToast('Food name is required', 'error'); return; }
 
-      // Convert energy input back to kcal for storage
-      const calInput = parseFloat(wrap.querySelector('#qa-cal').value) || null;
-      const calKcal  = calInput == null ? null
-        : unitLabel() === 'kj' ? Math.round(calInput / 4.184) : calInput;
-
       const body = {
         name,
         barcode:           pendingBarcode || null,
-        calories_per_100g: calKcal,
+        calories_per_100g: getCalKcal(),
         protein_per_100g:  parseFloat(wrap.querySelector('#qa-pro').value)  || null,
         carbs_per_100g:    parseFloat(wrap.querySelector('#qa-carb').value) || null,
         fat_per_100g:      parseFloat(wrap.querySelector('#qa-fat').value)  || null,
