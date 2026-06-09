@@ -143,7 +143,11 @@ export function renderHistory(container) {
     } else {
       const today = localDate();
       mealData.sessions.forEach(session => {
-        const sessionKcal = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
+        const sessionKcal    = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
+        const sessionProtein = session.entries.reduce((s, e) => s + (e.protein  || 0), 0);
+        const sessionCarbs   = session.entries.reduce((s, e) => s + (e.carbs    || 0), 0);
+        const sessionFat     = session.entries.reduce((s, e) => s + (e.fat      || 0), 0);
+        const hasMacros      = session.entries.some(e => e.protein != null);
         const isPast = date < today;
         const card = document.createElement('div');
         card.className = 'card';
@@ -152,22 +156,38 @@ export function renderHistory(container) {
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <span style="font-weight:600">${esc(session.name)}</span>
             <div style="display:flex;align-items:center;gap:10px">
-              <span class="num muted">${fmtE(sessionKcal)} ${ul}</span>
+              <div style="text-align:right">
+                <div class="num muted" style="font-size:13px">${fmtE(sessionKcal)} ${ul}</div>
+                ${hasMacros ? `<div style="font-size:11px;color:var(--text-faint)">
+                  <span style="color:var(--protein)">${sessionProtein.toFixed(0)}P</span> ·
+                  <span style="color:var(--carbs)">${sessionCarbs.toFixed(0)}C</span> ·
+                  <span style="color:var(--fat)">${sessionFat.toFixed(0)}F</span>
+                </div>` : ''}
+              </div>
               ${isPast ? `<button class="move-today-btn" data-id="${session.id}"
                 style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 10px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">
                 Move to Today
               </button>` : ''}
             </div>
           </div>
-          ${session.entries.map(e => `
-            <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border)">
+          ${session.entries.map(e => {
+            const macros = [
+              e.protein != null ? `<span style="color:var(--protein)">${e.protein.toFixed(1)}P</span>` : null,
+              e.carbs   != null ? `<span style="color:var(--carbs)">${e.carbs.toFixed(1)}C</span>`   : null,
+              e.fat     != null ? `<span style="color:var(--fat)">${e.fat.toFixed(1)}F</span>`       : null,
+            ].filter(Boolean).join('<span style="color:var(--text-faint)"> · </span>');
+            return `
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;border-top:1px solid var(--border)">
               <div>
                 <div style="font-size:13px;font-weight:500">${esc(e.food_name)}</div>
                 <div style="font-size:12px;color:var(--text-muted)">${e.quantity_g}g</div>
               </div>
-              <div class="num" style="font-size:13px">${fmtE(e.calories ?? 0)} ${ul}</div>
-            </div>
-          `).join('')}
+              <div style="text-align:right">
+                <div class="num" style="font-size:13px">${fmtE(e.calories ?? 0)} ${ul}</div>
+                ${macros ? `<div style="font-size:11px;margin-top:2px">${macros}</div>` : ''}
+              </div>
+            </div>`;
+          }).join('')}
         `;
 
         // Move to today handler
