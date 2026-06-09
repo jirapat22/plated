@@ -30,26 +30,59 @@ export function openEditEntry(entry, onSuccess) {
         <button class="sheet-close" id="edit-close">✕</button>
       </div>
       <div class="qty-food-name">${esc(entry.food_name)}</div>
-      <div style="height:8px"></div>
-      <div class="qty-input-wrap">
-        <input type="number" id="edit-qty" class="qty-input" value="${entry.quantity_g}" min="1" step="1" />
-        <span class="qty-unit">g</span>
+      <div style="display:flex;gap:6px;padding:4px 16px 12px;flex-wrap:wrap">
+        <button class="qty-mode-btn active" data-mode="g">by weight</button>
+        <button class="qty-mode-btn" data-mode="srv">by serving (${srv}g)</button>
       </div>
-      <div style="display:flex;gap:6px;padding:8px 16px;flex-wrap:wrap">
-        ${[50,75,100,150,200,250,300].map(g =>
-          `<button class="water-btn quick-edit-g" data-g="${g}">${g}g</button>`
-        ).join('')}
+
+      <div id="edit-mode-g">
+        <div class="qty-input-wrap">
+          <input type="number" id="edit-qty" class="qty-input" value="${entry.quantity_g}" min="1" step="1" />
+          <span class="qty-unit">g</span>
+        </div>
+        <div style="display:flex;gap:6px;padding:8px 16px;flex-wrap:wrap">
+          ${[50,75,100,150,200,250,300].map(g =>
+            `<button class="water-btn quick-edit-g" data-g="${g}">${g}g</button>`
+          ).join('')}
+        </div>
       </div>
+
+      <div id="edit-mode-srv" style="display:none">
+        <div class="qty-input-wrap">
+          <input type="number" id="edit-qty-srv" class="qty-input" value="${(entry.quantity_g / srv).toFixed(1)}" min="0.5" step="0.5" />
+          <span class="qty-unit" style="font-size:13px">srv × ${srv}g</span>
+        </div>
+        <div style="display:flex;gap:6px;padding:8px 16px;flex-wrap:wrap">
+          ${[0.5,1,1.5,2,2.5,3].map(n =>
+            `<button class="water-btn quick-edit-srv" data-s="${n}">${n}</button>`
+          ).join('')}
+        </div>
+      </div>
+
       <div class="qty-macros" id="edit-macros"></div>
       <div class="qty-confirm">
         <button class="btn btn-primary btn-full" id="edit-confirm">Update</button>
       </div>
     `;
 
-    const qtyInput = document.getElementById('edit-qty');
+    let currentMode = 'g';
+    content.querySelectorAll('.qty-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentMode = btn.dataset.mode;
+        content.querySelectorAll('.qty-mode-btn').forEach(b => b.classList.toggle('active', b === btn));
+        document.getElementById('edit-mode-g').style.display   = currentMode === 'g'   ? '' : 'none';
+        document.getElementById('edit-mode-srv').style.display = currentMode === 'srv' ? '' : 'none';
+        calcMacros();
+      });
+    });
+
+    function getTotalG() {
+      if (currentMode === 'srv') return (parseFloat(document.getElementById('edit-qty-srv')?.value) || 0) * srv;
+      return parseFloat(document.getElementById('edit-qty')?.value) || 0;
+    }
 
     function calcMacros() {
-      const qty = parseFloat(qtyInput.value) || 0;
+      const qty = getTotalG();
       const r   = qty / 100;
       const cal = entry.calories_per_100g != null ? fmtE(entry.calories_per_100g * r) : '–';
       const pro = entry.protein_per_100g  != null ? (entry.protein_per_100g  * r).toFixed(1) : '–';
@@ -64,16 +97,20 @@ export function openEditEntry(entry, onSuccess) {
     }
 
     calcMacros();
-    qtyInput.addEventListener('input', calcMacros);
+    document.getElementById('edit-qty').addEventListener('input', calcMacros);
+    document.getElementById('edit-qty-srv').addEventListener('input', calcMacros);
 
     content.querySelectorAll('.quick-edit-g').forEach(btn => {
-      btn.addEventListener('click', () => { qtyInput.value = btn.dataset.g; calcMacros(); });
+      btn.addEventListener('click', () => { document.getElementById('edit-qty').value = btn.dataset.g; calcMacros(); });
+    });
+    content.querySelectorAll('.quick-edit-srv').forEach(btn => {
+      btn.addEventListener('click', () => { document.getElementById('edit-qty-srv').value = btn.dataset.s; calcMacros(); });
     });
 
     document.getElementById('edit-close').addEventListener('click', hideSheet);
 
     document.getElementById('edit-confirm').addEventListener('click', async () => {
-      const qty = parseFloat(qtyInput.value);
+      const qty = getTotalG();
       if (!qty || qty <= 0) { showToast('Enter a valid quantity', 'error'); return; }
       const btn = document.getElementById('edit-confirm');
       btn.disabled = true; btn.textContent = 'Saving…';

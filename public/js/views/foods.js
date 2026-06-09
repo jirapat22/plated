@@ -1,7 +1,7 @@
 import { api }           from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
 import { getFoodIcon }  from '../utils/foodIcon.js';
-import { wireEnergyUnitToggle } from '../utils/energy.js';
+import { wireEnergyUnitToggle, wireDualNutrition } from '../utils/energy.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -167,37 +167,37 @@ export function renderFoods(container) {
                 <input class="input" id="ef-srv" type="number" value="" />
               </div>
             </div>
-            <div class="label" style="margin-bottom:10px">Per 100g</div>
-            <div class="form-group">
-              <label class="form-label">Energy</label>
-              <div style="display:flex;gap:6px">
-                <input class="input" id="ef-cal" type="number" style="flex:1" />
-                <div style="display:flex;gap:4px" id="ef-cal-unit">
-                  <button type="button" class="eunit-btn active" data-unit="kcal">kcal</button>
-                  <button type="button" class="eunit-btn" data-unit="kj">kJ</button>
-                </div>
+            <div class="label" style="margin-bottom:8px">Nutrition</div>
+            <div class="nutr-table">
+              <div></div>
+              <div class="nutr-col-head">per 100 g</div>
+              <div class="nutr-col-head" id="ef-srv-head">per serving</div>
+
+              <div class="nutr-lbl">Energy</div>
+              <input class="input nutr-input" id="ef-cal" type="number" />
+              <input class="input nutr-input" id="ef-cal-srv" type="number" />
+
+              <div></div>
+              <div style="grid-column:span 2;display:flex;gap:4px;padding-top:2px" id="ef-cal-unit">
+                <button type="button" class="eunit-btn active" data-unit="kcal">kcal</button>
+                <button type="button" class="eunit-btn" data-unit="kj">kJ</button>
               </div>
-              <div class="form-hint">Pick the unit your label shows — it's converted and stored as kcal</div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Protein (g)</label>
-                <input class="input" id="ef-pro" type="number" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Carbs (g)</label>
-                <input class="input" id="ef-crb" type="number" />
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Fat (g)</label>
-                <input class="input" id="ef-fat" type="number" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Fiber (g)</label>
-                <input class="input" id="ef-fib" type="number" />
-              </div>
+
+              <div class="nutr-lbl">Protein</div>
+              <input class="input nutr-input" id="ef-pro" type="number" placeholder="g" />
+              <input class="input nutr-input" id="ef-pro-srv" type="number" placeholder="g" />
+
+              <div class="nutr-lbl">Carbs</div>
+              <input class="input nutr-input" id="ef-crb" type="number" placeholder="g" />
+              <input class="input nutr-input" id="ef-crb-srv" type="number" placeholder="g" />
+
+              <div class="nutr-lbl">Fat</div>
+              <input class="input nutr-input" id="ef-fat" type="number" placeholder="g" />
+              <input class="input nutr-input" id="ef-fat-srv" type="number" placeholder="g" />
+
+              <div class="nutr-lbl">Fiber</div>
+              <input class="input nutr-input" id="ef-fib" type="number" placeholder="g" />
+              <input class="input nutr-input" id="ef-fib-srv" type="number" placeholder="g" />
             </div>
             <button class="btn btn-primary btn-full" id="ef-save">Save Changes</button>
           </div>
@@ -205,7 +205,8 @@ export function renderFoods(container) {
         // Set values via JS to avoid HTML-injection issues with food.name
         content.querySelector('#ef-name').value = food.name || '';
         content.querySelector('#ef-brand').value = food.brand || '';
-        content.querySelector('#ef-srv').value = food.serving_size_g ?? 100;
+        const efSrvInput = content.querySelector('#ef-srv');
+        efSrvInput.value = food.serving_size_g ?? 100;
         content.querySelector('#ef-cal').value = v(food.calories_per_100g);
         content.querySelector('#ef-pro').value = v(food.protein_per_100g);
         content.querySelector('#ef-crb').value = v(food.carbs_per_100g);
@@ -216,6 +217,20 @@ export function renderFoods(container) {
           content.querySelector('#ef-cal-unit'),
           content.querySelector('#ef-cal')
         );
+        const efSrvHead = content.querySelector('#ef-srv-head');
+        const updateEfSrvHead = () => {
+          efSrvHead.textContent = `per serving (${parseFloat(efSrvInput.value) || 100}g)`;
+        };
+        updateEfSrvHead();
+        efSrvInput.addEventListener('input', updateEfSrvHead);
+        const refreshEfSrv = wireDualNutrition(efSrvInput, [
+          { per100: content.querySelector('#ef-cal'), srv: content.querySelector('#ef-cal-srv') },
+          { per100: content.querySelector('#ef-pro'), srv: content.querySelector('#ef-pro-srv') },
+          { per100: content.querySelector('#ef-crb'), srv: content.querySelector('#ef-crb-srv') },
+          { per100: content.querySelector('#ef-fat'), srv: content.querySelector('#ef-fat-srv') },
+          { per100: content.querySelector('#ef-fib'), srv: content.querySelector('#ef-fib-srv') },
+        ]);
+        refreshEfSrv();
 
         document.getElementById('edit-back').addEventListener('click', renderDetail);
         document.getElementById('ef-save').addEventListener('click', async () => {
@@ -274,37 +289,37 @@ export function renderFoods(container) {
             <label class="form-label">Serving size (g)</label>
             <input class="input" id="f-serving" type="number" value="100" />
           </div>
-          <div class="label" style="margin-bottom:10px">Nutrition per 100g</div>
-          <div class="form-group">
-            <label class="form-label">Energy</label>
-            <div style="display:flex;gap:6px">
-              <input class="input" id="f-cal" type="number" placeholder="0" style="flex:1" />
-              <div style="display:flex;gap:4px" id="f-cal-unit">
-                <button type="button" class="eunit-btn active" data-unit="kcal">kcal</button>
-                <button type="button" class="eunit-btn" data-unit="kj">kJ</button>
-              </div>
+          <div class="label" style="margin-bottom:8px">Nutrition</div>
+          <div class="nutr-table">
+            <div></div>
+            <div class="nutr-col-head">per 100 g</div>
+            <div class="nutr-col-head" id="f-srv-head">per serving</div>
+
+            <div class="nutr-lbl">Energy</div>
+            <input class="input nutr-input" id="f-cal" type="number" placeholder="0" />
+            <input class="input nutr-input" id="f-cal-srv" type="number" placeholder="0" />
+
+            <div></div>
+            <div style="grid-column:span 2;display:flex;gap:4px;padding-top:2px" id="f-cal-unit">
+              <button type="button" class="eunit-btn active" data-unit="kcal">kcal</button>
+              <button type="button" class="eunit-btn" data-unit="kj">kJ</button>
             </div>
-            <div class="form-hint">Pick the unit your label shows — it's converted and stored as kcal</div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Protein (g)</label>
-              <input class="input" id="f-pro" type="number" placeholder="0" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Carbs (g)</label>
-              <input class="input" id="f-crb" type="number" placeholder="0" />
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Fat (g)</label>
-              <input class="input" id="f-fat" type="number" placeholder="0" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Fiber (g)</label>
-              <input class="input" id="f-fib" type="number" placeholder="0" />
-            </div>
+
+            <div class="nutr-lbl">Protein</div>
+            <input class="input nutr-input" id="f-pro" type="number" placeholder="g" />
+            <input class="input nutr-input" id="f-pro-srv" type="number" placeholder="g" />
+
+            <div class="nutr-lbl">Carbs</div>
+            <input class="input nutr-input" id="f-crb" type="number" placeholder="g" />
+            <input class="input nutr-input" id="f-crb-srv" type="number" placeholder="g" />
+
+            <div class="nutr-lbl">Fat</div>
+            <input class="input nutr-input" id="f-fat" type="number" placeholder="g" />
+            <input class="input nutr-input" id="f-fat-srv" type="number" placeholder="g" />
+
+            <div class="nutr-lbl">Fiber</div>
+            <input class="input nutr-input" id="f-fib" type="number" placeholder="g" />
+            <input class="input nutr-input" id="f-fib-srv" type="number" placeholder="g" />
           </div>
           <button class="btn btn-primary btn-full" id="custom-save" style="margin-top:4px">Save Food</button>
         </div>
@@ -313,6 +328,20 @@ export function renderFoods(container) {
         document.getElementById('f-cal-unit'),
         document.getElementById('f-cal')
       );
+      const fSrvInput = document.getElementById('f-serving');
+      const fSrvHead  = document.getElementById('f-srv-head');
+      const updateFSrvHead = () => {
+        fSrvHead.textContent = `per serving (${parseFloat(fSrvInput.value) || 100}g)`;
+      };
+      updateFSrvHead();
+      fSrvInput.addEventListener('input', updateFSrvHead);
+      wireDualNutrition(fSrvInput, [
+        { per100: document.getElementById('f-cal'), srv: document.getElementById('f-cal-srv') },
+        { per100: document.getElementById('f-pro'), srv: document.getElementById('f-pro-srv') },
+        { per100: document.getElementById('f-crb'), srv: document.getElementById('f-crb-srv') },
+        { per100: document.getElementById('f-fat'), srv: document.getElementById('f-fat-srv') },
+        { per100: document.getElementById('f-fib'), srv: document.getElementById('f-fib-srv') },
+      ]);
 
       document.getElementById('custom-close').addEventListener('click', hideSheet);
       document.getElementById('custom-save').addEventListener('click', async () => {
@@ -322,7 +351,7 @@ export function renderFoods(container) {
           name,
           brand:             document.getElementById('f-brand').value.trim()   || null,
           barcode:           document.getElementById('f-barcode').value.trim() || null,
-          serving_size_g:    parseFloat(document.getElementById('f-serving').value) || 100,
+          serving_size_g:    parseFloat(fSrvInput.value) || 100,
           calories_per_100g: getCustomCalKcal(),
           protein_per_100g:  parseFloat(document.getElementById('f-pro').value) || null,
           carbs_per_100g:    parseFloat(document.getElementById('f-crb').value) || null,

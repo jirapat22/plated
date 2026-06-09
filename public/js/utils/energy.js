@@ -39,6 +39,7 @@ export function wireEnergyUnitToggle(unitWrap, input) {
       const cur = parseFloat(input.value);
       if (!isNaN(cur)) {
         input.value = btn.dataset.unit === 'kj' ? Math.round(cur * 4.184) : Math.round(cur / 4.184);
+        input.dispatchEvent(new Event('input'));
       }
       unit = btn.dataset.unit;
       unitWrap.querySelectorAll('.eunit-btn').forEach(b => b.classList.toggle('active', b === btn));
@@ -49,6 +50,37 @@ export function wireEnergyUnitToggle(unitWrap, input) {
     if (isNaN(val)) return null;
     return unit === 'kj' ? Math.round(val / 4.184) : val;
   };
+}
+
+// Wires bidirectional sync between per-100g and per-serving nutrition inputs.
+// `pairs` is [{per100, srv}, ...] — one pair per nutrient.
+// `srvInput` is the serving-size input (in grams).
+// Returns a refresh() function to recalculate the /serving column from current /100g values
+// (call after programmatically populating the /100g inputs, e.g. on form load).
+export function wireDualNutrition(srvInput, pairs) {
+  const fmt = v => String(parseFloat(v.toFixed(1)));
+  const getSrv = () => parseFloat(srvInput.value) || 0;
+
+  const syncSrvFrom100 = (per100, srv) => {
+    const s = getSrv(); if (!s) return;
+    const v = parseFloat(per100.value);
+    srv.value = isNaN(v) ? '' : fmt(v * s / 100);
+  };
+  const sync100FromSrv = (srv, per100) => {
+    const s = getSrv(); if (!s) return;
+    const v = parseFloat(srv.value);
+    per100.value = isNaN(v) ? '' : fmt(v * 100 / s);
+  };
+
+  pairs.forEach(({ per100, srv }) => {
+    per100.addEventListener('input', () => syncSrvFrom100(per100, srv));
+    srv.addEventListener('input', () => sync100FromSrv(srv, per100));
+  });
+  srvInput.addEventListener('input', () =>
+    pairs.forEach(({ per100, srv }) => syncSrvFrom100(per100, srv))
+  );
+
+  return () => pairs.forEach(({ per100, srv }) => syncSrvFrom100(per100, srv));
 }
 
 // Parse NZ nutrition panel text — returns {calories_per_100g, protein, carbs, fat, fiber, serving_size_g}

@@ -1,7 +1,7 @@
 import { api }                           from '../api.js';
 import { showToast }                    from '../app.js';
 import { openBarcodeScanner }           from './barcode.js';
-import { fmtE, unitLabel, parseNutritionLabel, wireEnergyUnitToggle } from '../utils/energy.js';
+import { fmtE, unitLabel, parseNutritionLabel, wireEnergyUnitToggle, wireDualNutrition } from '../utils/energy.js';
 import { getFoodIcon }                  from '../utils/foodIcon.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -217,30 +217,39 @@ export function renderFoodSearch(container, onSelect) {
 
       <div style="display:flex;flex-direction:column;gap:8px">
         <input id="qa-name" class="input" placeholder="Food name *" style="height:42px" />
-        <div style="display:flex;gap:6px">
-          <input id="qa-cal" class="input" type="number" placeholder="Energy/100g" style="height:42px;flex:1;min-width:0" />
-          <div style="display:flex;gap:4px;flex-shrink:0" id="qa-cal-unit">
+        <div style="display:flex;gap:6px;align-items:center">
+          <div style="position:relative;flex:1">
+            <input id="qa-srv" class="input" type="number" placeholder="Serving" value="100" style="height:42px;padding-right:26px" />
+            <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-faint)">g</span>
+          </div>
+          <span style="font-size:11px;color:var(--text-faint);flex-shrink:0">serving size</span>
+        </div>
+        <div class="nutr-table" id="qa-nutr">
+          <div></div>
+          <div class="nutr-col-head">per 100 g</div>
+          <div class="nutr-col-head" id="qa-srv-head">per serving</div>
+
+          <div class="nutr-lbl">Energy</div>
+          <input id="qa-cal" class="input nutr-input" type="number" placeholder="0" />
+          <input id="qa-cal-srv" class="input nutr-input" type="number" placeholder="0" />
+
+          <div></div>
+          <div style="grid-column:span 2;display:flex;gap:4px;padding-top:2px" id="qa-cal-unit">
             <button type="button" class="eunit-btn active" data-unit="kcal">kcal</button>
             <button type="button" class="eunit-btn" data-unit="kj">kJ</button>
           </div>
-        </div>
-        <div style="position:relative">
-          <input id="qa-srv" class="input" type="number" placeholder="Serving" value="100" style="height:42px;padding-right:24px" />
-          <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-faint)">g/srv</span>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
-          <div style="position:relative">
-            <input id="qa-pro" class="input" type="number" placeholder="Protein" style="height:38px;font-size:13px;padding-right:18px;border-color:var(--protein)55" />
-            <span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--protein)">P</span>
-          </div>
-          <div style="position:relative">
-            <input id="qa-carb" class="input" type="number" placeholder="Carbs" style="height:38px;font-size:13px;padding-right:18px;border-color:var(--carbs)55" />
-            <span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--carbs)">C</span>
-          </div>
-          <div style="position:relative">
-            <input id="qa-fat" class="input" type="number" placeholder="Fat" style="height:38px;font-size:13px;padding-right:18px;border-color:var(--fat)55" />
-            <span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--fat)">F</span>
-          </div>
+
+          <div class="nutr-lbl" style="color:var(--protein)">Pro</div>
+          <input id="qa-pro" class="input nutr-input" type="number" placeholder="g" style="border-color:var(--protein)55" />
+          <input id="qa-pro-srv" class="input nutr-input" type="number" placeholder="g" style="border-color:var(--protein)55" />
+
+          <div class="nutr-lbl" style="color:var(--carbs)">Crb</div>
+          <input id="qa-carb" class="input nutr-input" type="number" placeholder="g" style="border-color:var(--carbs)55" />
+          <input id="qa-carb-srv" class="input nutr-input" type="number" placeholder="g" style="border-color:var(--carbs)55" />
+
+          <div class="nutr-lbl" style="color:var(--fat)">Fat</div>
+          <input id="qa-fat" class="input nutr-input" type="number" placeholder="g" style="border-color:var(--fat)55" />
+          <input id="qa-fat-srv" class="input nutr-input" type="number" placeholder="g" style="border-color:var(--fat)55" />
         </div>
         <button id="qa-save" class="btn btn-primary btn-full" style="height:44px">Save & Add to Meal</button>
       </div>
@@ -249,6 +258,19 @@ export function renderFoodSearch(container, onSelect) {
     if (prefill && !pendingBarcode) wrap.querySelector('#qa-name').value = prefill;
 
     const getCalKcal = wireEnergyUnitToggle(wrap.querySelector('#qa-cal-unit'), wrap.querySelector('#qa-cal'));
+    const qaSrv = wrap.querySelector('#qa-srv');
+    const qaSrvHead = wrap.querySelector('#qa-srv-head');
+    const updateQaSrvHead = () => {
+      qaSrvHead.textContent = `per serving (${parseFloat(qaSrv.value) || 100}g)`;
+    };
+    updateQaSrvHead();
+    qaSrv.addEventListener('input', updateQaSrvHead);
+    const refreshQaSrv = wireDualNutrition(qaSrv, [
+      { per100: wrap.querySelector('#qa-cal'),  srv: wrap.querySelector('#qa-cal-srv') },
+      { per100: wrap.querySelector('#qa-pro'),  srv: wrap.querySelector('#qa-pro-srv') },
+      { per100: wrap.querySelector('#qa-carb'), srv: wrap.querySelector('#qa-carb-srv') },
+      { per100: wrap.querySelector('#qa-fat'),  srv: wrap.querySelector('#qa-fat-srv') },
+    ]);
 
     // Paste label toggle
     const pasteBtn  = wrap.querySelector('#qa-paste-btn');
@@ -272,8 +294,8 @@ export function renderFoodSearch(container, onSelect) {
       if (parsed.protein_per_100g  != null) wrap.querySelector('#qa-pro').value  = parsed.protein_per_100g;
       if (parsed.carbs_per_100g    != null) wrap.querySelector('#qa-carb').value = parsed.carbs_per_100g;
       if (parsed.fat_per_100g      != null) wrap.querySelector('#qa-fat').value  = parsed.fat_per_100g;
-      if (parsed.serving_size_g    != null) wrap.querySelector('#qa-srv').value  = parsed.serving_size_g;
-      if (Object.keys(parsed).length > 0)   pasteArea.style.display = 'none';
+      if (parsed.serving_size_g    != null) { wrap.querySelector('#qa-srv').value = parsed.serving_size_g; updateQaSrvHead(); }
+      if (Object.keys(parsed).length > 0)   { refreshQaSrv(); pasteArea.style.display = 'none'; }
     });
 
     // Save

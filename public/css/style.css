@@ -903,6 +903,30 @@ img { display: block; max-width: 100%; }
 }
 .weight-del:active { color: var(--error); }
 
+/* ─── Dual-column nutrition table (per 100g | per serving) ── */
+.nutr-table {
+  display: grid;
+  grid-template-columns: 56px 1fr 1fr;
+  gap: 6px 8px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.nutr-col-head {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-faint);
+  text-align: center;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding-bottom: 2px;
+}
+.nutr-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.nutr-input { height: 40px !important; }
+
 /* ─── Energy unit toggle (Add/Edit food forms) ───────────── */
 .eunit-btn {
   height: 38px;
