@@ -1,13 +1,8 @@
 import { api }                        from '../api.js';
-import { showToast, showSheet, hideSheet, reloadEnergyUnit } from '../app.js';
+import { showToast, reloadEnergyUnit } from '../app.js';
 import { setEnergyUnit }             from '../utils/energy.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-
-function lockApp() {
-  try { localStorage.removeItem('plated_token'); } catch {}
-  location.reload();
-}
 
 export function renderSettings(container) {
   container.innerHTML = `
@@ -106,15 +101,6 @@ export function renderSettings(container) {
           </button>
           <div id="ironlog-status" style="margin-top:10px;font-size:12px;color:var(--text-muted);user-select:text;-webkit-user-select:text"></div>
           <pre id="ironlog-raw-box" style="display:none;margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;user-select:text;-webkit-user-select:text;max-height:300px;overflow-y:auto"></pre>
-        </div>
-      </div>
-
-      <!-- Passcode / Security -->
-      <div class="card" style="margin-bottom:12px;padding:0">
-        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">SECURITY</div>
-        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
-          <button class="btn btn-secondary btn-full" id="change-passcode-btn">Change Passcode</button>
-          <button class="btn btn-danger btn-full" id="lock-app-btn">🔒 Lock App</button>
         </div>
       </div>
 
@@ -341,16 +327,6 @@ export function renderSettings(container) {
       }
     });
 
-    // Passcode change
-    document.getElementById('change-passcode-btn').addEventListener('click', () => {
-      openChangePasscode();
-    });
-
-    // Lock app
-    document.getElementById('lock-app-btn').addEventListener('click', () => {
-      lockApp();
-    });
-
     // Reset all data
     document.getElementById('reset-data-btn').addEventListener('click', async () => {
       if (!confirm('This will permanently delete all logged meals, water, weight, and templates.\n\nThis cannot be undone. Continue?')) return;
@@ -480,47 +456,6 @@ export function renderSettings(container) {
         });
       });
     } catch { /* non-fatal */ }
-  }
-
-  function openChangePasscode() {
-    showSheet(content => {
-      content.innerHTML = `
-        <div class="sheet-header">
-          <span class="sheet-title">Change Passcode</span>
-          <button class="sheet-close" id="pc-close">✕</button>
-        </div>
-        <div style="padding:0 16px">
-          <div class="form-group">
-            <label class="form-label">Current passcode</label>
-            <input class="input" id="pc-current" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="Current 4-digit code" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">New passcode</label>
-            <input class="input" id="pc-new" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="New 4-digit code" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Confirm new passcode</label>
-            <input class="input" id="pc-confirm" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="Confirm new code" />
-          </div>
-          <button class="btn btn-primary btn-full" id="pc-save">Update Passcode</button>
-        </div>
-      `;
-      document.getElementById('pc-close').addEventListener('click', hideSheet);
-      document.getElementById('pc-save').addEventListener('click', async () => {
-        const current = document.getElementById('pc-current').value;
-        const next    = document.getElementById('pc-new').value;
-        const confirm = document.getElementById('pc-confirm').value;
-        if (next !== confirm) { showToast('Passcodes do not match', 'error'); return; }
-        if (!/^\d{4}$/.test(next)) { showToast('Passcode must be exactly 4 digits', 'error'); return; }
-        try {
-          await api.post('/api/auth/change', { currentPasscode: current, newPasscode: next });
-          hideSheet();
-          showToast('Passcode updated', 'success');
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
-    });
   }
 
   load();

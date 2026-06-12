@@ -1,25 +1,10 @@
-// Fetch wrapper — injects Authorization header and handles common errors
-let _token = null;
-let _onUnauthorized = null;
-
-export function setToken(t) { _token = t; }
-export function getToken() { return _token; }
-export function onUnauthorized(fn) { _onUnauthorized = fn; }
-
+// Fetch wrapper — handles common errors
 async function request(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
-  if (_token) headers['Authorization'] = `Bearer ${_token}`;
-
   const opts = { method, headers };
   if (body !== undefined) opts.body = JSON.stringify(body);
 
   const resp = await fetch(path, opts);
-
-  if (resp.status === 401 || resp.status === 403) {
-    _token = null;
-    _onUnauthorized?.();
-    throw new Error('Session expired');
-  }
 
   let data;
   const ct = resp.headers.get('content-type') || '';

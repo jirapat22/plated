@@ -1,4 +1,4 @@
-import { api, setToken, onUnauthorized } from './api.js';
+import { api } from './api.js';
 import { setEnergyUnit } from './utils/energy.js';
 import { renderToday }    from './views/today.js';
 import { renderHistory }  from './views/history.js';
@@ -82,110 +82,6 @@ export function navigateTo(view) {
   if (typeof cleanup === 'function') cleanupFn = cleanup;
 }
 
-// ─── Token persistence ──────────────────────────────────────
-const TOKEN_KEY = 'plated_token';
-
-function saveToken(t) {
-  setToken(t);
-  try { localStorage.setItem(TOKEN_KEY, t); } catch { /* private mode */ }
-}
-
-function clearToken() {
-  setToken(null);
-  try { localStorage.removeItem(TOKEN_KEY); } catch {}
-}
-
-// ─── Auth / Lock Screen ──────────────────────────────────────
-let passcode = '';
-let isSetup  = false;
-
-function setDots(len, state = 'normal') {
-  document.querySelectorAll('.dot').forEach((d, i) => {
-    d.classList.remove('filled', 'error');
-    if (i < len) d.classList.add(state === 'error' ? 'error' : 'filled');
-  });
-}
-
-function shakeNumpad() {
-  const dots = document.getElementById('lock-dots');
-  dots.style.animation = 'none';
-  dots.getBoundingClientRect();
-  dots.style.animation = 'shake 300ms ease';
-  setTimeout(() => { dots.style.animation = ''; }, 350);
-}
-
-async function submitPasscode() {
-  if (passcode.length < 4) return;
-  try {
-    let data;
-    if (isSetup) {
-      data = await api.post('/api/auth/setup', { passcode });
-    } else {
-      data = await api.post('/api/auth/verify', { passcode });
-    }
-    saveToken(data.token);
-    showApp();
-  } catch {
-    setDots(passcode.length, 'error');
-    shakeNumpad();
-    setTimeout(() => {
-      passcode = '';
-      setDots(0);
-    }, 600);
-  }
-}
-
-function setupNumpad() {
-  document.querySelectorAll('.numpad-key[data-digit]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (passcode.length >= 4) return;
-      passcode += btn.dataset.digit;
-      setDots(passcode.length);
-      if (passcode.length === 4) submitPasscode();
-    });
-  });
-
-  document.getElementById('numpad-back').addEventListener('click', () => {
-    passcode = passcode.slice(0, -1);
-    setDots(passcode.length);
-  });
-
-  document.getElementById('lock-action').addEventListener('click', submitPasscode);
-
-  // Physical keyboard input (desktop)
-  window.addEventListener('keydown', e => {
-    const lockVisible = !document.getElementById('lock-screen').classList.contains('hidden');
-    if (!lockVisible) return;
-    if (/^\d$/.test(e.key) && passcode.length < 4) {
-      passcode += e.key;
-      setDots(passcode.length);
-      if (passcode.length === 4) submitPasscode();
-    } else if (e.key === 'Backspace') {
-      passcode = passcode.slice(0, -1);
-      setDots(passcode.length);
-    } else if (e.key === 'Enter' && passcode.length >= 4) {
-      submitPasscode();
-    }
-  });
-}
-
-function showLock(setup = false) {
-  isSetup = setup;
-  passcode = '';
-  setDots(0);
-  document.getElementById('lock-subtitle').textContent = setup
-    ? 'Choose a 4-digit passcode'
-    : 'Enter passcode';
-  document.getElementById('lock-screen').classList.remove('hidden');
-  document.getElementById('app').classList.add('hidden');
-}
-
-function showApp() {
-  document.getElementById('lock-screen').classList.add('hidden');
-  document.getElementById('app').classList.remove('hidden');
-  reloadEnergyUnit().then(() => navigateTo('today'));
-}
-
 // ─── Service Worker ──────────────────────────────────────────
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(console.warn);
@@ -209,55 +105,14 @@ window.addEventListener('online', () => {
   offlineBanner?.classList.remove('visible');
 });
 
-// ─── Shake animation (inline) ────────────────────────────────
-const style = document.createElement('style');
-style.textContent = `
-  @keyframes shake {
-    0%,100%{transform:translateX(0)}
-    20%{transform:translateX(-8px)}
-    40%{transform:translateX(8px)}
-    60%{transform:translateX(-6px)}
-    80%{transform:translateX(6px)}
-  }
-`;
-document.head.appendChild(style);
-
 // ─── Init ────────────────────────────────────────────────────
-onUnauthorized(() => { clearToken(); showLock(false); });
 
 // Bottom nav routing
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => navigateTo(btn.dataset.view));
 });
 
-setupNumpad();
-
-// Check auth status on load — auto-login if stored token is still valid
-(async () => {
-  try {
-    const stored = localStorage.getItem(TOKEN_KEY);
-    if (stored) {
-      setToken(stored);
-      // Verify token is still accepted by the server
-      await api.get('/api/settings');
-      // Token valid — go straight to app
-      await reloadEnergyUnit();
-      document.getElementById('lock-screen').classList.add('hidden');
-      document.getElementById('app').classList.remove('hidden');
-      navigateTo('today');
-      return;
-    }
-  } catch {
-    clearToken(); // token expired or invalid
-  }
-
-  try {
-    const { hasPasscode } = await api.get('/api/auth/status');
-    showLock(!hasPasscode);
-  } catch {
-    showLock(false);
-  }
-})();
+reloadEnergyUnit().then(() => navigateTo('today'));
 
 // Load energy unit preference once logged in (called by settings view on save too)
 export async function reloadEnergyUnit() {

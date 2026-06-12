@@ -15,8 +15,6 @@ if (!fs.existsSync(dataDir)) {
 process.env.DATA_DIR = dataDir;
 
 const { initDb } = require('./src/db');
-const { authenticateToken } = require('./src/middleware/auth');
-const authRoutes = require('./src/routes/auth');
 const foodsRoutes = require('./src/routes/foods');
 const mealsRoutes = require('./src/routes/meals');
 const waterRoutes = require('./src/routes/water');
@@ -63,18 +61,14 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', uptime: Math.floor(process.uptime()) });
 });
 
-// Auth routes — no token required
-app.use('/api/auth', authRoutes);
-
-// Protected routes
-app.use('/api/foods', authenticateToken, foodsRoutes);
-app.use('/api/meals', authenticateToken, mealsRoutes);
-app.use('/api/water', authenticateToken, waterRoutes);
-app.use('/api/weight', authenticateToken, weightRoutes);
-app.use('/api/settings', authenticateToken, settingsRoutes);
-app.use('/api/ironlog',    authenticateToken, ironlogRoutes);
-app.use('/api/templates',  authenticateToken, templatesRoutes);
-app.use('/api/notes',      authenticateToken, notesRoutes);
+app.use('/api/foods', foodsRoutes);
+app.use('/api/meals', mealsRoutes);
+app.use('/api/water', waterRoutes);
+app.use('/api/weight', weightRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/ironlog',    ironlogRoutes);
+app.use('/api/templates',  templatesRoutes);
+app.use('/api/notes',      notesRoutes);
 
 // SPA fallback
 app.get('*', (req, res) => {
