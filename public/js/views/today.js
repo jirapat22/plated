@@ -40,11 +40,11 @@ function addDays(iso, n) {
   return localDate(d);
 }
 
-async function fetchIronLog(settings) {
-  if (!settings.ironlog_api_url?.trim()) return null;
+async function fetchIronLog() {
   try {
     const data = await api.get('/api/ironlog/today');
-    return data.connected ? data : { ...data, _stale: true };
+    if (data.connected) return data;
+    return data.last_synced ? { ...data, _stale: true } : null;
   } catch { return null; }
 }
 
@@ -445,7 +445,7 @@ export function renderToday(container) {
         api.get(`/api/weight/day/${viewDate}`).catch(() => null),
       ]);
       if (myGen !== loadGen) return;            // a newer load() superseded us
-      const ironlog = await fetchIronLog(settings);
+      const ironlog = await fetchIronLog();
       if (myGen !== loadGen) return;            // and again after the IronLog fetch
       render(mealData, waterData, settings, ironlog, todayWeight);
     } catch (err) {
@@ -469,10 +469,11 @@ export function renderToday(container) {
     const t         = mealData.totals;
     const waterGoal = waterData.goal_ml || goals.water;
     const waterPct  = Math.min((waterData.total_ml / waterGoal) * 100, 100);
-    const calPct    = Math.min((t.calories / goals.cal) * 100, 100);
     const burned    = ironlog?.calories_burned ?? 0;
+    const calGoal   = ironlog?.calorie_target ?? goals.cal;
+    const calPct    = Math.min((t.calories / calGoal) * 100, 100);
     const net       = t.calories - burned;
-    const remaining = goals.cal - t.calories;
+    const remaining = calGoal - t.calories;
     const hintText  = t.calories === 0 ? 'nothing yet'
       : remaining > 50  ? `${fmtE(remaining)} left`
       : remaining < -50 ? `+${fmtE(-remaining)} over`
@@ -530,12 +531,12 @@ export function renderToday(container) {
             <div class="ring-wrap-relative">
               <svg class="calorie-ring" viewBox="0 0 140 140">
                 <circle class="ring-bg" cx="70" cy="70" r="60"/>
-                <circle class="ring-fill ${t.calories > goals.cal ? 'over' : ''}" cx="70" cy="70" r="60"
+                <circle class="ring-fill ${t.calories > calGoal ? 'over' : ''}" cx="70" cy="70" r="60"
                   style="stroke-dasharray:${(calPct/100)*CIRC} ${CIRC}"/>
               </svg>
               <div class="ring-center" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center">
                 <div class="num ring-kcal">${fmtE(t.calories)}</div>
-                <div class="ring-goal muted">/ ${fmtE(goals.cal)} ${ul}</div>
+                <div class="ring-goal muted">/ ${fmtE(calGoal)} ${ul}${burned > 0 ? ' ⚡' : ''}</div>
                 <div style="font-size:11px;margin-top:2px;color:${hintColor};font-weight:600">${hintText}</div>
               </div>
             </div>

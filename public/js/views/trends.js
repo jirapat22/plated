@@ -164,12 +164,10 @@ export function renderTrends(container) {
       ]);
 
       let ironlogWeights = [];
-      if (settings.ironlog_api_url?.trim()) {
-        try {
-          const d = await api.get('/api/ironlog/bodyweight');
-          ironlogWeights = d.entries || (Array.isArray(d) ? d : []);
-        } catch { /* non-fatal */ }
-      }
+      try {
+        const d = await api.get('/api/ironlog/bodyweight');
+        ironlogWeights = d.entries || (Array.isArray(d) ? d : []);
+      } catch { /* non-fatal */ }
 
       render(summary, weights, ironlogWeights, settings);
     } catch (err) {

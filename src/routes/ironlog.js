@@ -16,9 +16,20 @@ function extractProfile(profileData) {
   };
 }
 
+function phaseCalories(tdee, phase, deficit, surplus) {
+  if (phase === 'cut')  return Math.round(tdee - deficit);
+  if (phase === 'bulk') return Math.round(tdee + surplus);
+  return Math.round(tdee);
+}
+
 const router = express.Router();
 
+// Base URL: env var takes precedence, falls back to the DB setting
+// configured via the Settings UI (for backwards compatibility).
 function getBaseUrl() {
+  const envUrl = process.env.IRONLOG_API_URL?.trim();
+  if (envUrl) return envUrl.replace(/\/$/, '');
+
   const row = getDb()
     .prepare("SELECT value FROM settings WHERE key = 'ironlog_api_url'")
     .get();
@@ -28,56 +39,77 @@ function getBaseUrl() {
 }
 
 async function ironFetch(path) {
-  const url = getBaseUrl();
-  const resp = await fetch(`${url}${path}`, { signal: AbortSignal.timeout(6000) });
+  const url    = getBaseUrl();
+  const apiKey = process.env.IRONLOG_API_KEY?.trim();
+  const headers = apiKey ? { 'X-API-Key': apiKey } : {};
+
+  const resp = await fetch(`${url}${path}`, { headers, signal: AbortSignal.timeout(6000) });
+  if (resp.status === 401) throw new Error('IronLog rejected the API key (401 Unauthorized)');
   if (!resp.ok) throw new Error(`IronLog returned ${resp.status} for ${path}`);
-  return resp.json();
+
+  const json = await resp.json();
+  if (json && json.success === false) throw new Error(json.error || `IronLog request failed for ${path}`);
+  return json;
 }
+
+// Typed helpers for the IronLog Plated API
+const getProfile         = ()         => ironFetch('/api/plated/profile');
+const getBodyweight       = (limit = 30) => ironFetch(`/api/plated/bodyweight?limit=${limit}`);
+const getWorkoutCalories  = (date)     => ironFetch(`/api/plated/workouts/calories${date ? `?date=${date}` : ''}`);
+const getRecentWorkouts   = (limit = 7)  => ironFetch(`/api/plated/workouts/recent?limit=${limit}`);
 
 // GET /api/ironlog/today — profile + calories burned for today
 router.get('/today', async (req, res) => {
+  let last_synced = null;
+  try { last_synced = getDb().prepare("SELECT value FROM settings WHERE key='ironlog_last_synced'").get()?.value || null; } catch { /* ignore */ }
+
   try {
     const today = new Date().toISOString().split('T')[0];
 
     const [profileRes, calsRes] = await Promise.allSettled([
-      ironFetch('/api/plated/profile'),
-      ironFetch(`/api/plated/workouts/calories?date=${today}`),
+      getProfile(),
+      getWorkoutCalories(today),
     ]);
 
-    const profile = profileRes.status === 'fulfilled' ? profileRes.value : null;
-    const cals    = calsRes.status    === 'fulfilled' ? calsRes.value    : null;
+    if (profileRes.status !== 'fulfilled') {
+      return res.json({
+        connected: false, error: profileRes.reason?.message,
+        profile: null, calories_burned: 0, calorie_target: null, last_synced,
+      });
+    }
 
-    // Normalise — IronLog may wrap in { success, data } or return flat
-    const profileData = profile?.data ?? profile;
-    const calsData    = cals?.data    ?? cals;
+    const profileData = profileRes.value?.data ?? profileRes.value;
+    const calsData    = calsRes.status === 'fulfilled' ? (calsRes.value?.data ?? calsRes.value) : null;
     const burned      = calsData?.calories_burned ?? calsData?.total ?? calsData?.calories ?? 0;
 
-    // Save last synced timestamp
     const now = new Date().toISOString();
     try {
       getDb().prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('ironlog_last_synced',$v)")
         .run({ v: now });
     } catch { /* non-fatal */ }
 
+    const calorieGoalRow = getDb().prepare("SELECT value FROM settings WHERE key='calorie_goal'").get();
+    const calorieGoal    = parseFloat(calorieGoalRow?.value) || null;
+
     res.json({
       connected:       true,
       profile:         profileData,
       calories_burned: burned,
+      calorie_target:  calorieGoal != null ? Math.round(calorieGoal + burned) : null,
       last_synced:     now,
     });
   } catch (err) {
-    // Return last known sync time even on failure
-    let last_synced = null;
-    try { last_synced = getDb().prepare("SELECT value FROM settings WHERE key='ironlog_last_synced'").get()?.value || null; } catch {}
-    res.json({ connected: false, error: err.message, profile: null, calories_burned: 0, last_synced });
+    res.json({ connected: false, error: err.message, profile: null, calories_burned: 0, calorie_target: null, last_synced });
   }
 });
 
 // GET /api/ironlog/bodyweight — weight history for Trends view
 router.get('/bodyweight', async (req, res) => {
   try {
-    const data = await ironFetch('/api/plated/bodyweight');
-    res.json(data);
+    const limit = parseInt(req.query.limit) || 30;
+    const data    = await getBodyweight(limit);
+    const entries = data?.data ?? data;
+    res.json({ entries: Array.isArray(entries) ? entries : [] });
   } catch {
     res.json({ entries: [] });
   }
@@ -87,15 +119,17 @@ router.get('/bodyweight', async (req, res) => {
 router.get('/raw', async (req, res) => {
   try {
     const today = new Date().toISOString().split('T')[0];
-    const [profileRes, calsRes, bwRes] = await Promise.allSettled([
-      ironFetch('/api/plated/profile'),
-      ironFetch(`/api/plated/workouts/calories?date=${today}`),
-      ironFetch('/api/plated/bodyweight'),
+    const [profileRes, calsRes, bwRes, recentRes] = await Promise.allSettled([
+      getProfile(),
+      getWorkoutCalories(today),
+      getBodyweight(30),
+      getRecentWorkouts(7),
     ]);
     res.json({
-      profile:    profileRes.status === 'fulfilled' ? profileRes.value : { error: profileRes.reason?.message },
-      calories:   calsRes.status    === 'fulfilled' ? calsRes.value    : { error: calsRes.reason?.message    },
-      bodyweight: bwRes.status      === 'fulfilled' ? bwRes.value      : { error: bwRes.reason?.message      },
+      profile:         profileRes.status === 'fulfilled' ? profileRes.value : { error: profileRes.reason?.message },
+      calories:        calsRes.status    === 'fulfilled' ? calsRes.value    : { error: calsRes.reason?.message    },
+      bodyweight:      bwRes.status      === 'fulfilled' ? bwRes.value      : { error: bwRes.reason?.message      },
+      recent_workouts: recentRes.status  === 'fulfilled' ? recentRes.value  : { error: recentRes.reason?.message  },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -107,7 +141,7 @@ router.post('/sync', async (req, res) => {
   try {
     const db = getDb();
 
-    const profileRaw  = await ironFetch('/api/plated/profile');
+    const profileRaw  = await getProfile();
     const profileData = profileRaw?.data ?? profileRaw;
     const p           = extractProfile(profileData);
 
@@ -183,13 +217,7 @@ router.post('/phase', (req, res) => {
 // GET /api/ironlog/test — used by Settings page
 router.get('/test', async (req, res) => {
   try {
-    // Try /api/plated first (known to work), fall back to /health
-    let data;
-    try {
-      data = await ironFetch('/api/plated');
-    } catch {
-      data = await ironFetch('/health');
-    }
+    const data = await getProfile();
     res.json({ connected: true, data });
   } catch (err) {
     res.json({ connected: false, error: err.message });
