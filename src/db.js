@@ -157,6 +157,11 @@ function seedNzFoods(db) {
     { name:'Dumplings / Gyoza (frozen)', cal:220, pro:9,   carb:25,  fat:9,   fib:1.5, srv:100 },
     { name:'Nutritional Yeast',          cal:325, pro:50,  carb:38,  fat:5,   fib:26,  srv:10  },
     { name:'Stir Fry (veg + protein)',   cal:130, pro:12,  carb:8,   fat:6,   fib:2.5, srv:200 },
+    { name:'Cottage Cheese',             cal:98,  pro:11,  carb:3.4, fat:4.3, fib:0,   srv:100 },
+    { name:'Collagen Powder',            cal:370, pro:90,  carb:0,   fat:0,   fib:0,   srv:10  },
+    { name:'Electrolyte Powder',         cal:5,   pro:0,   carb:1,   fat:0,   fib:0,   srv:5   },
+    { name:'Beef Jerky',                 cal:410, pro:33,  carb:11,  fat:25,  fib:1,   srv:30  },
+    { name:'Mass Gainer Powder',         cal:400, pro:30,  carb:55,  fat:5,   fib:2,   srv:100 },
   ];
 
   const ALCOHOL_RE = /beer|wine|spirit|cider|whisky|vodka|rum|\bgin\b|liqueur|champagne|brandy|sake|mead/i;
@@ -203,5 +208,59 @@ function seedNzFoods(db) {
     throw e;
   }
   if (added > 0) console.log('Seeded ' + added + ' foods (NZFCD 14th Ed. + AUSNUT 2023 + extras)');
+
+  removeUnwantedSeeds(db);
 }
+
+// One-off cleanup of seeded foods that shouldn't be in a personal tracker
+// (infant/toddler products, stray "Insect, raw" entry). Only removes
+// rows that have never been logged, so it's safe to run on every startup.
+const UNWANTED_SEED_NAMES = [
+  'Insect, raw',
+  "Babyccino, from cow's milk",
+  'Babyccino, from dairy milk alternative',
+  'Infant formula, 6-12 months, made with water',
+  'Infant formula, 6-12 months, added omega-3 fatty acids, made with water',
+  'Toddler milk, added omega-3 fatty acids, made with water',
+  'Toddler milk, S26 Gold, made with water',
+  'Toddler milk, soy, made with water',
+  'Toddler milk, goat milk, made with water',
+  'Toddler milk, goat milk, added omega-3 fatty acids, made with water',
+  'Infant cereal, mixed grain, added vitamins & minerals',
+  'Infant cereal, mixed grains, added vitamins & minerals, made with water',
+  'Infant cereal, rice, added vitamin C & Fe',
+  'Infant cereal, rice, added vitamin C & Fe, made with water',
+  'Infant cereal, flavoured, added vitamins & minerals',
+  'Infant cereal, flavoured, added vitamins & minerals, made with water',
+  'Infant cereal, flavoured, purchased ready to eat',
+  'Infant custard or yoghurt, dairy, commercial',
+  'Infant custard or yoghurt, dairy, no added sugar, commercial',
+  'Infant food, fruit, puree or stewed',
+  'Infant food, fruit & vegetable, puree or stewed',
+  'Infant pasta, added Fe, all grain types, uncooked',
+  'Infant pasta, added Fe, all grain types, cooked',
+  'Infant rusk, teething',
+  'Infant snack, bar, grain based',
+  'Infant snack, sweet biscuits',
+  'Infant snack, bar, fruit based',
+  'Infant food, fruit, vegetable & grain, puree or stewed',
+  'Infant food, meat & vegetable, puree or mash',
+  'Infant food, meat, vegetable & fruit, puree or mash',
+  'Infant food, meat, vegetable & grain, puree or mash',
+  'Infant food, pasta dish',
+  'Infant food, rice dish',
+  'Infant food, vegetables, puree or mash',
+];
+
+function removeUnwantedSeeds(db) {
+  const del = db.prepare(
+    "DELETE FROM foods WHERE name = $name AND source = 'nz_seed' AND use_count = 0"
+  );
+  let removed = 0;
+  for (const name of UNWANTED_SEED_NAMES) {
+    removed += del.run({ name }).changes;
+  }
+  if (removed > 0) console.log(`Removed ${removed} unwanted seed foods (infant/toddler products, etc.)`);
+}
+
 module.exports = { initDb, getDb };
