@@ -108,7 +108,10 @@ export function renderSettings(container) {
       <div class="card" style="margin-bottom:12px;padding:0">
         <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">IRONLOG INTEGRATION</div>
         <div style="padding:14px 16px">
-          <div style="font-size:11px;color:var(--text-faint);margin-bottom:10px">The IRONLOG_API_URL / IRONLOG_API_KEY server env vars override the fields below when set.</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;line-height:1.5">
+            <strong>How to connect:</strong> in IronLog, go to <em>Settings → API Key</em>, tap Copy, then paste it below.
+            The URL is your IronLog web address (e.g. https://ironlog-production-….up.railway.app). Each person uses their own IronLog key.
+          </div>
           <label class="form-label">IronLog API URL</label>
           <input class="input" id="ironlog-url" value="${s.ironlog_api_url || ''}" placeholder="https://ironlog.railway.app" style="margin-bottom:10px"/>
           <label class="form-label">IronLog API Key</label>

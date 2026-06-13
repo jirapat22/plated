@@ -11,6 +11,16 @@ const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 
 function fmt(n, dec = 0) { return n == null ? '–' : Number(n).toFixed(dec); }
 
+// Build one calorie ring SVG. variant: '' (goal, accent) | 'workout' | 'target'.
+function calRingSvg(pct, variant = '', over = false, small = false) {
+  return `
+    <svg class="calorie-ring${small ? ' ring-sm' : ''}" viewBox="0 0 140 140">
+      <circle class="ring-bg" cx="70" cy="70" r="60"/>
+      <circle class="ring-fill ${variant}${over ? ' over' : ''}" cx="70" cy="70" r="60"
+        style="stroke-dasharray:${(pct / 100) * CIRC} ${CIRC}"/>
+    </svg>`;
+}
+
 function fmtDateNav(iso) {
   const today = localDate();
   if (iso === today) return 'Today';
@@ -469,12 +479,27 @@ export function renderToday(container) {
     const t         = mealData.totals;
     const waterGoal = waterData.goal_ml || goals.water;
     const waterPct  = Math.min((waterData.total_ml / waterGoal) * 100, 100);
-    const burned    = ironlog?.calories_burned ?? 0;
-    const calGoal   = ironlog?.calorie_target ?? goals.cal;
-    const calPct    = Math.min((t.calories / calGoal) * 100, 100);
-    const net       = t.calories - burned;
-    const remaining = calGoal - t.calories;
-    const hintText  = t.calories === 0 ? 'nothing yet'
+
+    // ── Calorie rings ────────────────────────────────────────
+    // Middle = base goal; right = workout earned; left = goal + workout.
+    // Eaten fills the base goal first, then spills into the workout ring.
+    const burned      = ironlog?.calories_burned ?? 0;
+    const baseGoal    = goals.cal;                  // phase calorie goal (e.g. 2207)
+    const combined    = baseGoal + burned;          // eat target incl. workout
+    const hasWorkout  = burned > 0;
+    const eaten       = t.calories;
+    const net         = eaten - burned;
+
+    const midPct   = Math.min(eaten / baseGoal, 1) * 100;            // middle: eaten vs goal
+    const rightFill= Math.max(0, Math.min(eaten - baseGoal, burned)); // overflow into workout
+    const rightPct = burned > 0 ? (rightFill / burned) * 100 : 0;     // right: overflow vs burned
+    const leftPct  = Math.min(eaten / combined, 1) * 100;            // left: eaten vs combined
+    const overEat  = eaten > combined;
+
+    // Hint speaks to the real budget (combined when a workout exists)
+    const budget    = hasWorkout ? combined : baseGoal;
+    const remaining = budget - eaten;
+    const hintText  = eaten === 0 ? 'nothing yet'
       : remaining > 50  ? `${fmtE(remaining)} left`
       : remaining < -50 ? `+${fmtE(-remaining)} over`
       : '✓ goal hit';
@@ -524,23 +549,55 @@ export function renderToday(container) {
         </div>
       </div>` : ''}
 
-      <!-- Calorie ring -->
+      <!-- Calorie ring(s) -->
       <div style="padding:0 16px 4px">
         <div class="card">
+          ${hasWorkout ? `
+          <div class="tri-rings">
+            <div class="ring-col">
+              <div class="ring-title">Eat Target</div>
+              <div class="ring-wrap-relative">
+                ${calRingSvg(leftPct, 'target', overEat, true)}
+                <div class="ring-center">
+                  <div class="num ring-kcal-sm">${fmtE(eaten)}</div>
+                  <div class="ring-goal-sm">/ ${fmtE(combined)}</div>
+                </div>
+              </div>
+            </div>
+            <div class="ring-col">
+              <div class="ring-title">Daily Goal</div>
+              <div class="ring-wrap-relative">
+                ${calRingSvg(midPct, '', false, false)}
+                <div class="ring-center">
+                  <div class="num ring-kcal">${fmtE(eaten)}</div>
+                  <div class="ring-goal muted">/ ${fmtE(baseGoal)} ${ul}</div>
+                  <div style="font-size:11px;margin-top:2px;color:${hintColor};font-weight:600">${hintText}</div>
+                </div>
+              </div>
+            </div>
+            <div class="ring-col">
+              <div class="ring-title">Workout</div>
+              <div class="ring-wrap-relative">
+                ${calRingSvg(rightPct, 'workout', false, true)}
+                <div class="ring-center">
+                  <div class="num ring-kcal-sm">${fmtE(burned)}🔥</div>
+                  <div class="ring-goal-sm">burned</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          ` : `
           <div class="summary-row">
             <div class="ring-wrap-relative">
-              <svg class="calorie-ring" viewBox="0 0 140 140">
-                <circle class="ring-bg" cx="70" cy="70" r="60"/>
-                <circle class="ring-fill ${t.calories > calGoal ? 'over' : ''}" cx="70" cy="70" r="60"
-                  style="stroke-dasharray:${(calPct/100)*CIRC} ${CIRC}"/>
-              </svg>
-              <div class="ring-center" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center">
-                <div class="num ring-kcal">${fmtE(t.calories)}</div>
-                <div class="ring-goal muted">/ ${fmtE(calGoal)} ${ul}${burned > 0 ? ' ⚡' : ''}</div>
+              ${calRingSvg(midPct, '', eaten > baseGoal, false)}
+              <div class="ring-center">
+                <div class="num ring-kcal">${fmtE(eaten)}</div>
+                <div class="ring-goal muted">/ ${fmtE(baseGoal)} ${ul}</div>
                 <div style="font-size:11px;margin-top:2px;color:${hintColor};font-weight:600">${hintText}</div>
               </div>
             </div>
           </div>
+          `}
           <div id="macro-bar-root" style="margin-top:12px"></div>
         </div>
       </div>
