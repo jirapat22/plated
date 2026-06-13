@@ -118,7 +118,7 @@ function openLogWeight(date, existing, onSuccess) {
       <div style="padding:0 16px">
         <div class="form-group">
           <label class="form-label">Weight (kg)</label>
-          <input class="input" id="wt-input" type="number" step="0.1" placeholder="e.g. 75.5"
+          <input class="input" id="wt-input" type="text" step="0.1" placeholder="e.g. 75.5"
             value="${existing?.weight_kg || ''}" inputmode="decimal"
             style="height:52px;font-size:22px;text-align:center;font-weight:700" />
         </div>
@@ -353,7 +353,7 @@ function openQuickLog(sessionId, onSuccess) {
         <div class="form-group">
           <label class="form-label">Calories *</label>
           <div style="display:flex;gap:6px">
-            <input class="input" id="ql-cal" type="number" placeholder="e.g. 650" inputmode="numeric" style="flex:1;min-width:0" />
+            <input class="input" id="ql-cal" type="text" placeholder="e.g. 650" inputmode="decimal" style="flex:1;min-width:0" />
             <div style="display:flex;gap:4px;flex-shrink:0" id="ql-cal-unit">
               <button type="button" class="eunit-btn active" data-unit="kcal">kcal</button>
               <button type="button" class="eunit-btn" data-unit="kj">kJ</button>
@@ -365,7 +365,7 @@ function openQuickLog(sessionId, onSuccess) {
           ${['pro','carb','fat'].map((id, i) => {
             const [label, color] = [['Protein','var(--protein)'],['Carbs','var(--carbs)'],['Fat','var(--fat)']][i];
             return `<div style="position:relative">
-              <input class="input" id="ql-${id}" type="number" placeholder="${label}" inputmode="numeric"
+              <input class="input" id="ql-${id}" type="text" placeholder="${label}" inputmode="decimal"
                 style="height:42px;padding-right:20px;border-color:${color}44"/>
               <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:${color}">${label[0]}</span>
             </div>`;

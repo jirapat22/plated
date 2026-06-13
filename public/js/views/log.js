@@ -37,7 +37,7 @@ export function openEditEntry(entry, onSuccess) {
 
       <div id="edit-mode-g">
         <div class="qty-input-wrap">
-          <input type="number" id="edit-qty" class="qty-input" value="${entry.quantity_g}" min="1" step="1" />
+          <input type="text" inputmode="decimal" id="edit-qty" class="qty-input" value="${entry.quantity_g}" min="1" step="1" />
           <span class="qty-unit">g</span>
         </div>
         <div style="display:flex;gap:6px;padding:8px 16px;flex-wrap:wrap">
@@ -49,7 +49,7 @@ export function openEditEntry(entry, onSuccess) {
 
       <div id="edit-mode-srv" style="display:none">
         <div class="qty-input-wrap">
-          <input type="number" id="edit-qty-srv" class="qty-input" value="${(entry.quantity_g / srv).toFixed(1)}" min="0.5" step="0.5" />
+          <input type="text" inputmode="decimal" id="edit-qty-srv" class="qty-input" value="${(entry.quantity_g / srv).toFixed(1)}" min="0.5" step="0.5" />
           <span class="qty-unit" style="font-size:13px">srv × ${srv}g</span>
         </div>
         <div style="display:flex;gap:6px;padding:8px 16px;flex-wrap:wrap">
@@ -151,7 +151,7 @@ function showQuantitySheet(food, sessionId, onSuccess) {
       <!-- Weight mode -->
       <div id="mode-g">
         <div class="qty-input-wrap">
-          <input type="number" id="qty-g" class="qty-input" value="${srv}" min="1" step="1" />
+          <input type="text" inputmode="decimal" id="qty-g" class="qty-input" value="${srv}" min="1" step="1" />
           <span class="qty-unit">g</span>
         </div>
         <div style="display:flex;gap:6px;padding:8px 16px;flex-wrap:wrap">
@@ -165,7 +165,7 @@ function showQuantitySheet(food, sessionId, onSuccess) {
       <!-- Serving mode -->
       <div id="mode-srv" style="display:none">
         <div class="qty-input-wrap">
-          <input type="number" id="qty-srv" class="qty-input" value="1" min="0.5" step="0.5" />
+          <input type="text" inputmode="decimal" id="qty-srv" class="qty-input" value="1" min="0.5" step="0.5" />
           <span class="qty-unit" style="font-size:13px">srv × ${srv}g</span>
         </div>
         <div style="display:flex;gap:6px;padding:8px 16px;flex-wrap:wrap">
@@ -181,11 +181,11 @@ function showQuantitySheet(food, sessionId, onSuccess) {
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
             <div>
               <label class="form-label">Grams per piece</label>
-              <input type="number" id="qty-g-per-pc" class="input" value="${(srv/3).toFixed(1)}" min="0.1" step="0.1" style="height:42px" />
+              <input type="text" inputmode="decimal" id="qty-g-per-pc" class="input" value="${(srv/3).toFixed(1)}" min="0.1" step="0.1" style="height:42px" />
             </div>
             <div>
               <label class="form-label">Number of pieces</label>
-              <input type="number" id="qty-pcs" class="input" value="3" min="1" step="1" style="height:42px" />
+              <input type="text" inputmode="decimal" id="qty-pcs" class="input" value="3" min="1" step="1" style="height:42px" />
             </div>
           </div>
           <div id="pcs-total-g" style="font-size:12px;color:var(--text-muted)"></div>

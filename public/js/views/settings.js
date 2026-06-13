@@ -42,7 +42,7 @@ export function renderSettings(container) {
           <div style="margin-top:10px">
             <label class="form-label">TDEE (manual override if IronLog doesn't send it)</label>
             <div style="display:flex;gap:8px;align-items:center">
-              <input class="input settings-row-input" type="number" value="${s.tdee || ''}"
+              <input class="input settings-row-input" type="text" inputmode="decimal" value="${s.tdee || ''}"
                 data-key="tdee" placeholder="e.g. 2400" style="height:40px;flex:1;width:auto" />
               <span style="font-size:12px;color:var(--text-muted)">kcal</span>
               <button class="btn btn-secondary" id="manual-tdee-apply" style="height:40px;padding:0 14px;font-size:13px">Apply</button>
@@ -109,7 +109,7 @@ export function renderSettings(container) {
         <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">WEIGHT LOG</div>
         <div style="padding:14px 16px">
           <div style="display:flex;gap:10px;margin-bottom:14px">
-            <input class="input" id="weight-input" type="number" step="0.1" placeholder="e.g. 75.5" style="flex:1"/>
+            <input class="input" id="weight-input" type="text" inputmode="decimal" step="0.1" placeholder="e.g. 75.5" style="flex:1"/>
             <span style="align-self:center;color:var(--text-muted);font-weight:600">kg</span>
             <button class="btn btn-primary" id="weight-log-btn">Log</button>
           </div>
@@ -467,7 +467,7 @@ function goalRow(key, label, value, unit, compact = false) {
       <div class="form-group" style="margin-bottom:0">
         <label class="form-label">${label}</label>
         <div style="display:flex;align-items:center;gap:6px">
-          <input class="input settings-row-input" type="number" value="${value || ''}" data-key="${key}" step="1" style="height:40px;flex:1" />
+          <input class="input settings-row-input" type="text" inputmode="decimal" value="${value || ''}" data-key="${key}" step="1" style="height:40px;flex:1" />
           <span style="font-size:12px;color:var(--text-muted)">${unit}</span>
         </div>
       </div>
@@ -477,7 +477,7 @@ function goalRow(key, label, value, unit, compact = false) {
     <div class="settings-row">
       <span class="settings-row-label">${label}</span>
       <div style="display:flex;align-items:center;gap:6px">
-        <input class="settings-row-input" type="number" value="${value || ''}" data-key="${key}" step="${unit === '×' ? '0.1' : '1'}" />
+        <input class="settings-row-input" type="text" inputmode="decimal" value="${value || ''}" data-key="${key}" step="${unit === '×' ? '0.1' : '1'}" />
         <span style="font-size:12px;color:var(--text-muted)">${unit}</span>
       </div>
     </div>

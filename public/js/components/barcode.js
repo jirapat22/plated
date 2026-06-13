@@ -9,6 +9,22 @@ function stopScanner() {
   }
 }
 
+// Barcode formats to decode. Without this the library may silently skip
+// EAN-13/UPC-A or perform poorly on linear barcodes.
+function supportedFormats() {
+  return typeof Html5QrcodeSupportedFormats !== 'undefined'
+    ? [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.ITF,
+      ]
+    : [];
+}
+
 /**
  * Opens the barcode scanner in a bottom sheet.
  * Calls onScan(barcode) on a successful read.
@@ -29,12 +45,16 @@ export function openBarcodeScanner(onScan) {
         <div class="scanner-wrap" id="scanner-container">
           <div class="scanner-rail"></div>
         </div>
+        <!-- Hidden element used only for decoding a captured photo -->
+        <div id="scanner-file" style="display:none"></div>
         <div id="scan-status" style="text-align:center;margin-top:10px;font-size:13px;color:var(--text-muted)">
           Hold barcode horizontally inside the box
         </div>
-        <div style="margin-top:10px;text-align:center">
+        <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-primary" id="scan-photo" style="width:100%">📷 Trouble scanning? Take a photo</button>
           <button class="btn btn-secondary" id="scan-manual" style="width:100%">Enter barcode number manually</button>
         </div>
+        <input type="file" id="scan-file-input" accept="image/*" capture="environment" style="display:none" />
       </div>
     `;
 
@@ -52,23 +72,51 @@ export function openBarcodeScanner(onScan) {
       }
     });
 
-    // Explicitly list barcode formats — without this the library may silently
-    // skip EAN-13/UPC-A or perform poorly on linear barcodes.
-    const formats = typeof Html5QrcodeSupportedFormats !== 'undefined'
-      ? [
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.UPC_E,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.ITF,
-        ]
-      : [];
+    // ── Photo capture fallback ───────────────────────────────────
+    // On iOS the live video decoder is unreliable for 1D barcodes, but the
+    // native camera produces a sharp, focused still that decodes far better.
+    const fileInput = document.getElementById('scan-file-input');
+    document.getElementById('scan-photo').addEventListener('click', () => fileInput.click());
 
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      const statusEl = document.getElementById('scan-status');
+      if (statusEl) statusEl.textContent = 'Reading photo…';
+
+      const formats = supportedFormats();
+      const fileScanner = new Html5Qrcode(
+        'scanner-file',
+        formats.length ? { formatsToSupport: formats } : {}
+      );
+      try {
+        const decodedText = await fileScanner.scanFile(file, false);
+        stopScanner();
+        hideSheet();
+        onScan(decodedText);
+      } catch {
+        if (statusEl) {
+          statusEl.innerHTML = `
+            <span style="color:var(--warning)">Couldn't read that photo.</span><br/>
+            <span>Fill the frame with the barcode, hold steady, then retake — or enter it manually.</span>
+          `;
+        }
+      } finally {
+        try { await fileScanner.clear(); } catch { /* ignore */ }
+        fileInput.value = ''; // allow re-picking the same file
+      }
+    });
+
+    // ── Live video scan ──────────────────────────────────────────
+    const formats = supportedFormats();
     scannerInstance = new Html5Qrcode(
       'scanner-container',
-      formats.length ? { formatsToSupport: formats } : {}
+      {
+        ...(formats.length ? { formatsToSupport: formats } : {}),
+        // Use the platform's native BarcodeDetector when available (much faster
+        // and more reliable on Android/Chrome). No-op where unsupported (iOS).
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+      }
     );
 
     scannerInstance.start(
@@ -96,7 +144,7 @@ export function openBarcodeScanner(onScan) {
       if (err.name === 'NotAllowedError' || String(err).includes('Permission')) {
         statusEl.innerHTML = `
           <span style="color:var(--error)">Camera permission denied</span><br/>
-          <span>Allow camera access in browser settings, then try again.</span>
+          <span>Allow camera access in browser settings, or use “Take a photo” above.</span>
         `;
       } else {
         const msg = document.createElement('span');

@@ -219,7 +219,7 @@ export function renderFoodSearch(container, onSelect) {
         <input id="qa-name" class="input" placeholder="Food name *" style="height:42px" />
         <div style="display:flex;gap:6px;align-items:center">
           <div style="position:relative;flex:1">
-            <input id="qa-srv" class="input" type="number" placeholder="Serving" value="100" style="height:42px;padding-right:26px" />
+            <input id="qa-srv" class="input" type="text" inputmode="decimal" placeholder="Serving" value="100" style="height:42px;padding-right:26px" />
             <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-faint)">g</span>
           </div>
           <span style="font-size:11px;color:var(--text-faint);flex-shrink:0">serving size</span>
@@ -230,8 +230,8 @@ export function renderFoodSearch(container, onSelect) {
           <div class="nutr-col-head" id="qa-srv-head">per serving</div>
 
           <div class="nutr-lbl">Energy</div>
-          <input id="qa-cal" class="input nutr-input" type="number" placeholder="0" />
-          <input id="qa-cal-srv" class="input nutr-input" type="number" placeholder="0" />
+          <input id="qa-cal" class="input nutr-input" type="text" inputmode="decimal" placeholder="0" />
+          <input id="qa-cal-srv" class="input nutr-input" type="text" inputmode="decimal" placeholder="0" />
 
           <div></div>
           <div style="grid-column:span 2;display:flex;gap:4px;padding-top:2px" id="qa-cal-unit">
@@ -240,16 +240,16 @@ export function renderFoodSearch(container, onSelect) {
           </div>
 
           <div class="nutr-lbl" style="color:var(--protein)">Pro</div>
-          <input id="qa-pro" class="input nutr-input" type="number" placeholder="g" style="border-color:var(--protein)55" />
-          <input id="qa-pro-srv" class="input nutr-input" type="number" placeholder="g" style="border-color:var(--protein)55" />
+          <input id="qa-pro" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:var(--protein)55" />
+          <input id="qa-pro-srv" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:var(--protein)55" />
 
           <div class="nutr-lbl" style="color:var(--carbs)">Crb</div>
-          <input id="qa-carb" class="input nutr-input" type="number" placeholder="g" style="border-color:var(--carbs)55" />
-          <input id="qa-carb-srv" class="input nutr-input" type="number" placeholder="g" style="border-color:var(--carbs)55" />
+          <input id="qa-carb" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:var(--carbs)55" />
+          <input id="qa-carb-srv" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:var(--carbs)55" />
 
           <div class="nutr-lbl" style="color:var(--fat)">Fat</div>
-          <input id="qa-fat" class="input nutr-input" type="number" placeholder="g" style="border-color:var(--fat)55" />
-          <input id="qa-fat-srv" class="input nutr-input" type="number" placeholder="g" style="border-color:var(--fat)55" />
+          <input id="qa-fat" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:var(--fat)55" />
+          <input id="qa-fat-srv" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:var(--fat)55" />
         </div>
         <button id="qa-save" class="btn btn-primary btn-full" style="height:44px">Save & Add to Meal</button>
       </div>

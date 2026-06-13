@@ -164,7 +164,7 @@ export function renderFoods(container) {
               </div>
               <div class="form-group">
                 <label class="form-label">Serving (g)</label>
-                <input class="input" id="ef-srv" type="number" value="" />
+                <input class="input" id="ef-srv" type="text" inputmode="decimal" value="" />
               </div>
             </div>
             <div class="label" style="margin-bottom:8px">Nutrition</div>
@@ -174,8 +174,8 @@ export function renderFoods(container) {
               <div class="nutr-col-head" id="ef-srv-head">per serving</div>
 
               <div class="nutr-lbl">Energy</div>
-              <input class="input nutr-input" id="ef-cal" type="number" />
-              <input class="input nutr-input" id="ef-cal-srv" type="number" />
+              <input class="input nutr-input" id="ef-cal" type="text" inputmode="decimal" />
+              <input class="input nutr-input" id="ef-cal-srv" type="text" inputmode="decimal" />
 
               <div></div>
               <div style="grid-column:span 2;display:flex;gap:4px;padding-top:2px" id="ef-cal-unit">
@@ -184,20 +184,20 @@ export function renderFoods(container) {
               </div>
 
               <div class="nutr-lbl">Protein</div>
-              <input class="input nutr-input" id="ef-pro" type="number" placeholder="g" />
-              <input class="input nutr-input" id="ef-pro-srv" type="number" placeholder="g" />
+              <input class="input nutr-input" id="ef-pro" type="text" inputmode="decimal" placeholder="g" />
+              <input class="input nutr-input" id="ef-pro-srv" type="text" inputmode="decimal" placeholder="g" />
 
               <div class="nutr-lbl">Carbs</div>
-              <input class="input nutr-input" id="ef-crb" type="number" placeholder="g" />
-              <input class="input nutr-input" id="ef-crb-srv" type="number" placeholder="g" />
+              <input class="input nutr-input" id="ef-crb" type="text" inputmode="decimal" placeholder="g" />
+              <input class="input nutr-input" id="ef-crb-srv" type="text" inputmode="decimal" placeholder="g" />
 
               <div class="nutr-lbl">Fat</div>
-              <input class="input nutr-input" id="ef-fat" type="number" placeholder="g" />
-              <input class="input nutr-input" id="ef-fat-srv" type="number" placeholder="g" />
+              <input class="input nutr-input" id="ef-fat" type="text" inputmode="decimal" placeholder="g" />
+              <input class="input nutr-input" id="ef-fat-srv" type="text" inputmode="decimal" placeholder="g" />
 
               <div class="nutr-lbl">Fiber</div>
-              <input class="input nutr-input" id="ef-fib" type="number" placeholder="g" />
-              <input class="input nutr-input" id="ef-fib-srv" type="number" placeholder="g" />
+              <input class="input nutr-input" id="ef-fib" type="text" inputmode="decimal" placeholder="g" />
+              <input class="input nutr-input" id="ef-fib-srv" type="text" inputmode="decimal" placeholder="g" />
             </div>
             <button class="btn btn-primary btn-full" id="ef-save">Save Changes</button>
           </div>
@@ -287,7 +287,7 @@ export function renderFoods(container) {
           </div>
           <div class="form-group">
             <label class="form-label">Serving size (g)</label>
-            <input class="input" id="f-serving" type="number" value="100" />
+            <input class="input" id="f-serving" type="text" inputmode="decimal" value="100" />
           </div>
           <div class="label" style="margin-bottom:8px">Nutrition</div>
           <div class="nutr-table">
@@ -296,8 +296,8 @@ export function renderFoods(container) {
             <div class="nutr-col-head" id="f-srv-head">per serving</div>
 
             <div class="nutr-lbl">Energy</div>
-            <input class="input nutr-input" id="f-cal" type="number" placeholder="0" />
-            <input class="input nutr-input" id="f-cal-srv" type="number" placeholder="0" />
+            <input class="input nutr-input" id="f-cal" type="text" inputmode="decimal" placeholder="0" />
+            <input class="input nutr-input" id="f-cal-srv" type="text" inputmode="decimal" placeholder="0" />
 
             <div></div>
             <div style="grid-column:span 2;display:flex;gap:4px;padding-top:2px" id="f-cal-unit">
@@ -306,20 +306,20 @@ export function renderFoods(container) {
             </div>
 
             <div class="nutr-lbl">Protein</div>
-            <input class="input nutr-input" id="f-pro" type="number" placeholder="g" />
-            <input class="input nutr-input" id="f-pro-srv" type="number" placeholder="g" />
+            <input class="input nutr-input" id="f-pro" type="text" inputmode="decimal" placeholder="g" />
+            <input class="input nutr-input" id="f-pro-srv" type="text" inputmode="decimal" placeholder="g" />
 
             <div class="nutr-lbl">Carbs</div>
-            <input class="input nutr-input" id="f-crb" type="number" placeholder="g" />
-            <input class="input nutr-input" id="f-crb-srv" type="number" placeholder="g" />
+            <input class="input nutr-input" id="f-crb" type="text" inputmode="decimal" placeholder="g" />
+            <input class="input nutr-input" id="f-crb-srv" type="text" inputmode="decimal" placeholder="g" />
 
             <div class="nutr-lbl">Fat</div>
-            <input class="input nutr-input" id="f-fat" type="number" placeholder="g" />
-            <input class="input nutr-input" id="f-fat-srv" type="number" placeholder="g" />
+            <input class="input nutr-input" id="f-fat" type="text" inputmode="decimal" placeholder="g" />
+            <input class="input nutr-input" id="f-fat-srv" type="text" inputmode="decimal" placeholder="g" />
 
             <div class="nutr-lbl">Fiber</div>
-            <input class="input nutr-input" id="f-fib" type="number" placeholder="g" />
-            <input class="input nutr-input" id="f-fib-srv" type="number" placeholder="g" />
+            <input class="input nutr-input" id="f-fib" type="text" inputmode="decimal" placeholder="g" />
+            <input class="input nutr-input" id="f-fib-srv" type="text" inputmode="decimal" placeholder="g" />
           </div>
           <button class="btn btn-primary btn-full" id="custom-save" style="margin-top:4px">Save Food</button>
         </div>
