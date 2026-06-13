@@ -25,6 +25,7 @@ const settingsRoutes   = require('./src/routes/settings');
 const ironlogRoutes    = require('./src/routes/ironlog');
 const templatesRoutes  = require('./src/routes/templates');
 const notesRoutes      = require('./src/routes/notes');
+const orbitRoutes      = require('./src/routes/orbit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -56,6 +57,9 @@ app.get('/api/orbit-summary', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Orbit admin feed — public by default (optional ORBIT_API_KEY gate inside)
+app.use('/api/orbit', orbitRoutes);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
