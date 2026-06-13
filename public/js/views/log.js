@@ -5,7 +5,7 @@ import { fmtE, unitLabel }                from '../utils/energy.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-export function openFoodEntry(sessionId, onSuccess) {
+export function openFoodEntry(sessionId, onSuccess, opts = {}) {
   showSheet(content => {
     content.innerHTML = `
       <div class="sheet-header">
@@ -14,7 +14,15 @@ export function openFoodEntry(sessionId, onSuccess) {
       </div>
     `;
     document.getElementById('close-search').addEventListener('click', hideSheet);
-    renderFoodSearch(content, food => showQuantitySheet(food, sessionId, onSuccess));
+    renderFoodSearch(
+      content,
+      food => showQuantitySheet(food, sessionId, onSuccess),
+      {
+        pendingBarcode: opts.pendingBarcode,
+        // Re-open this sheet fresh (used after a barcode scan replaces it)
+        reopen: (o = {}) => openFoodEntry(sessionId, onSuccess, o),
+      }
+    );
   });
 }
 

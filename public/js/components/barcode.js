@@ -66,10 +66,9 @@ export function openBarcodeScanner(onScan) {
     document.getElementById('scan-manual').addEventListener('click', () => {
       stopScanner();
       const barcode = prompt('Enter barcode number:');
-      if (barcode?.trim()) {
-        hideSheet();
-        onScan(barcode.trim());
-      }
+      // onScan re-opens its own sheet, so don't hideSheet() here (that would
+      // clear the freshly-shown content after its close animation).
+      if (barcode?.trim()) onScan(barcode.trim());
     });
 
     // ── Photo capture fallback ───────────────────────────────────
@@ -92,7 +91,6 @@ export function openBarcodeScanner(onScan) {
       try {
         const decodedText = await fileScanner.scanFile(file, false);
         stopScanner();
-        hideSheet();
         onScan(decodedText);
       } catch {
         if (statusEl) {
@@ -120,7 +118,9 @@ export function openBarcodeScanner(onScan) {
     );
 
     scannerInstance.start(
-      { facingMode: 'environment' },
+      // Request a high-res rear stream — more pixels on the barcode greatly
+      // improves 1D decoding on phones.
+      { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
       {
         fps: 15,
         aspectRatio: 1.7778,   // 16:9 — fills the container cleanly
@@ -134,7 +134,6 @@ export function openBarcodeScanner(onScan) {
       },
       (decodedText) => {
         stopScanner();
-        hideSheet();
         onScan(decodedText);
       },
       () => { /* per-frame miss — normal, ignore */ }

@@ -8,7 +8,7 @@ const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 
 let searchDebounce = null;
 
-export function renderFoodSearch(container, onSelect) {
+export function renderFoodSearch(container, onSelect, opts = {}) {
   container.insertAdjacentHTML('beforeend', `
     <!-- Search bar -->
     <div class="search-bar-wrap" style="position:sticky;top:0;background:var(--surface);z-index:2;padding:0 16px 10px">
@@ -348,31 +348,35 @@ export function renderFoodSearch(container, onSelect) {
 
   // ── Barcode ──────────────────────────────────────────────────
   container.querySelector('#fs-barcode').addEventListener('click', () => {
-    openBarcodeScanner(async barcode => {
-      try {
-        const { food } = await api.get(`/api/foods/barcode/${barcode}`);
-        onSelect(food);
-      } catch (err) {
-        if (err.message.toLowerCase().includes('not found')) {
-          // Show the quick-add form directly with the barcode tracked separately —
-          // searching by the raw digits would just pollute the food name field
-          // and (without this) the saved food never gets linked to the barcode,
-          // so the same code shows "not found" again next time it's scanned.
-          pendingBarcode = barcode;
-          query = '';
-          input.value = '';
-          clearBtn.style.display = 'none';
-          results.innerHTML = '';
-          appendQuickAdd('');
-          showToast('Barcode not found — add the food below to save it for next time', 'info');
-        } else {
-          showToast(err.message, 'error');
-        }
-      }
-    });
+    openBarcodeScanner(handleBarcode);
   });
 
-  // Focus input and load defaults
-  setTimeout(() => input.focus(), 100);
-  search();
+  async function handleBarcode(barcode) {
+    try {
+      const { food } = await api.get(`/api/foods/barcode/${barcode}`);
+      onSelect(food);                     // found → opens the quantity sheet (fresh)
+    } catch (err) {
+      const notFound = /not found|404/i.test(String(err.message || ''));
+      // The scanner opened over this search sheet, so re-open a fresh one with
+      // the quick-add form prefilled for this barcode (the old DOM is gone).
+      if (opts.reopen) { opts.reopen({ pendingBarcode: barcode }); return; }
+      // Legacy in-place fallback
+      pendingBarcode = barcode;
+      query = ''; input.value = ''; clearBtn.style.display = 'none';
+      results.innerHTML = '';
+      appendQuickAdd('');
+      if (!notFound) showToast(err.message, 'error');
+    }
+  }
+
+  // Focus input and load defaults — or jump straight to quick-add for a barcode
+  if (opts.pendingBarcode) {
+    pendingBarcode = opts.pendingBarcode;
+    results.innerHTML = '';
+    appendQuickAdd('');
+    showToast('Barcode not found — add it below to save it for next time', 'info');
+  } else {
+    setTimeout(() => input.focus(), 100);
+    search();
+  }
 }
