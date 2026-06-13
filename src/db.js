@@ -116,6 +116,7 @@ function initDb() {
     { key: 'fiber_goal',        value: '30'   },
     { key: 'water_goal_ml',     value: '2500' },
     { key: 'ironlog_api_url',      value: ''         },
+    { key: 'ironlog_api_key',      value: ''         },
     { key: 'ironlog_last_synced',  value: ''         },
     { key: 'protein_multiplier',value: '2.2'      },
     { key: 'energy_unit',       value: 'kcal'     },

@@ -38,13 +38,40 @@ function getBaseUrl() {
   return url.replace(/\/$/, ''); // strip trailing slash
 }
 
+// API key: env var takes precedence, falls back to the DB setting saved via
+// the Settings UI. Trim whitespace/newlines that sneak in when pasting.
+function getApiKey() {
+  const envKey = process.env.IRONLOG_API_KEY?.trim();
+  if (envKey) return envKey;
+
+  try {
+    const row = getDb()
+      .prepare("SELECT value FROM settings WHERE key = 'ironlog_api_key'")
+      .get();
+    return row?.value?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 async function ironFetch(path) {
   const url    = getBaseUrl();
-  const apiKey = process.env.IRONLOG_API_KEY?.trim();
-  const headers = apiKey ? { 'X-API-Key': apiKey } : {};
+  const apiKey = getApiKey();
+
+  // TEMPORARY debug — logs request URL, whether a key is present, and the
+  // key's length + first 6 chars (never the full key). Remove once verified.
+  console.log('[ironlog] GET %s%s — key:%s len:%d head:%s',
+    url, path,
+    apiKey ? 'yes' : 'NO',
+    apiKey ? apiKey.length : 0,
+    apiKey ? apiKey.slice(0, 6) : '—');
+
+  const headers = apiKey
+    ? { 'X-API-Key': apiKey, 'Authorization': `Bearer ${apiKey}` }
+    : {};
 
   const resp = await fetch(`${url}${path}`, { headers, signal: AbortSignal.timeout(6000) });
-  if (resp.status === 401) throw new Error('IronLog rejected the API key (401 Unauthorized)');
+  if (resp.status === 401) throw new Error('IronLog rejected the API key (401 Unauthorized) — check IRONLOG_API_KEY');
   if (!resp.ok) throw new Error(`IronLog returned ${resp.status} for ${path}`);
 
   const json = await resp.json();

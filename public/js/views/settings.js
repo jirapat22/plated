@@ -88,11 +88,13 @@ export function renderSettings(container) {
       <div class="card" style="margin-bottom:12px;padding:0">
         <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">IRONLOG INTEGRATION</div>
         <div style="padding:14px 16px">
-          <div style="font-size:11px;color:var(--text-faint);margin-bottom:10px">If IRONLOG_API_URL is set as a server environment variable, it overrides the URL below.</div>
+          <div style="font-size:11px;color:var(--text-faint);margin-bottom:10px">The IRONLOG_API_URL / IRONLOG_API_KEY server env vars override the fields below when set.</div>
           <label class="form-label">IronLog API URL</label>
           <input class="input" id="ironlog-url" value="${s.ironlog_api_url || ''}" placeholder="https://ironlog.railway.app" style="margin-bottom:10px"/>
+          <label class="form-label">IronLog API Key</label>
+          <input class="input" id="ironlog-key" type="password" autocomplete="off" value="${esc(s.ironlog_api_key || '')}" placeholder="paste API key" style="margin-bottom:10px"/>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-secondary" id="ironlog-save" style="flex:1;min-width:100px">Save URL</button>
+            <button class="btn btn-secondary" id="ironlog-save" style="flex:1;min-width:100px">Save</button>
             <button class="btn btn-secondary" id="ironlog-test" style="flex:1;min-width:100px">Test</button>
             <button class="btn btn-primary"   id="ironlog-sync" style="flex:1;min-width:120px">⟳ Sync Goals</button>
           </div>
@@ -304,9 +306,10 @@ export function renderSettings(container) {
     // IronLog
     document.getElementById('ironlog-save').addEventListener('click', async () => {
       const url = document.getElementById('ironlog-url').value.trim();
+      const key = document.getElementById('ironlog-key').value.trim();
       try {
-        await api.patch('/api/settings', { ironlog_api_url: url });
-        showToast('URL saved', 'success');
+        await api.patch('/api/settings', { ironlog_api_url: url, ironlog_api_key: key });
+        showToast('Saved', 'success');
       } catch (err) {
         showToast(err.message, 'error');
       }
