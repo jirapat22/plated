@@ -3,6 +3,24 @@ const { getDb } = require('../db');
 
 const router = express.Router();
 
+// Fire-and-forget push of a manual weigh-in to IronLog (two-way sync).
+// IronLog must expose POST /api/plated/bodyweight; until then this no-ops.
+async function pushBodyweight(db, pid, date, weight_kg) {
+  try {
+    const get = k => db.prepare('SELECT value FROM profile_settings WHERE profile_id = $p AND key = $k')
+      .get({ p: pid, k })?.value?.trim();
+    const url = get('ironlog_api_url');
+    const key = get('ironlog_api_key');
+    if (!url || !key) return;
+    await fetch(`${url.replace(/\/$/, '')}/api/plated/bodyweight`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': key, 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({ date, weight_kg }),
+      signal: AbortSignal.timeout(6000),
+    });
+  } catch { /* IronLog may not support POST yet — ignore */ }
+}
+
 router.get('/', (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 30, 365);
@@ -39,10 +57,12 @@ router.post('/', (req, res) => {
     const db = getDb();
     const logDate = date || new Date().toISOString().split('T')[0];
     const result = db.prepare(
-      'INSERT INTO weight_log (date, weight_kg, note, profile_id) VALUES ($date, $weight_kg, $note, $pid)'
+      "INSERT INTO weight_log (date, weight_kg, note, profile_id, source) VALUES ($date, $weight_kg, $note, $pid, 'manual')"
     ).run({ date: logDate, weight_kg, note: note || null, pid: req.profileId });
     const entry = db.prepare('SELECT * FROM weight_log WHERE id = $id')
       .get({ id: result.lastInsertRowid });
+
+    pushBodyweight(db, req.profileId, logDate, weight_kg);  // sync up to IronLog (best-effort)
     res.status(201).json(entry);
   } catch (err) {
     res.status(500).json({ error: err.message });

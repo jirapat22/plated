@@ -1028,3 +1028,18 @@ img { display: block; max-width: 100%; }
 }
 .accent-swatch.selected { border-color: var(--text); transform: scale(1.08); }
 .accent-swatch:active { transform: scale(0.94); }
+
+/* ─── Food source tags ───────────────────────────────────── */
+.food-tag {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.tag-custom  { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(200,184,255,.25); }
+.tag-scanned { background: rgba(126,231,199,.12); color: #7ee7c7; border: 1px solid rgba(126,231,199,.25); }

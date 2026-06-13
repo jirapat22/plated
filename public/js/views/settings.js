@@ -45,6 +45,15 @@ export function renderSettings(container) {
         </div>
       </div>
 
+      ${prof.is_admin ? `
+      <!-- Admin -->
+      <div class="card" style="margin-bottom:12px;padding:0">
+        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">ADMIN · PROFILES</div>
+        <div style="padding:8px 16px 14px" id="admin-list">
+          <div class="skeleton skel-line" style="margin:8px 0"></div>
+        </div>
+      </div>` : ''}
+
       <!-- Phase Selector -->
       <div class="card" style="margin-bottom:12px;padding:0">
         <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">GOAL PHASE</div>
@@ -229,6 +238,37 @@ export function renderSettings(container) {
         showToast(err.message, 'error');
       }
     });
+
+    // ── Admin: grant/revoke admin per profile ────────────────
+    if (prof.is_admin) loadAdminList();
+    async function loadAdminList() {
+      const box = document.getElementById('admin-list');
+      if (!box) return;
+      try {
+        const profiles = await api.get('/api/auth/admin/profiles');
+        box.innerHTML = profiles.map(p => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+            <span style="display:flex;align-items:center;gap:8px">
+              <span style="width:10px;height:10px;border-radius:50%;background:${p.accent_color}"></span>
+              <span style="font-size:14px">${esc(p.name)}</span>
+              ${p.is_admin ? '<span class="food-tag tag-custom">Admin</span>' : ''}
+            </span>
+            <button class="btn btn-secondary admin-toggle" data-id="${p.id}" data-next="${p.is_admin ? 0 : 1}"
+              style="height:32px;padding:0 12px;font-size:12px">${p.is_admin ? 'Revoke' : 'Make admin'}</button>
+          </div>
+        `).join('');
+        box.querySelectorAll('.admin-toggle').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            try {
+              await api.post('/api/auth/admin/set', { profileId: parseInt(btn.dataset.id), is_admin: btn.dataset.next === '1' });
+              loadAdminList();
+            } catch (err) { showToast(err.message, 'error'); }
+          });
+        });
+      } catch (err) {
+        box.innerHTML = `<div style="font-size:12px;color:var(--error)">${esc(err.message)}</div>`;
+      }
+    }
 
     // Energy unit toggle
     body.querySelectorAll('.unit-btn').forEach(btn => {

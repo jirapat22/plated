@@ -186,6 +186,26 @@ router.post('/sync', async (req, res) => {
       updates.phase = p.phase;
     }
 
+    // Import bodyweight history from IronLog into the weight log (dedupe by date)
+    let weightsImported = 0;
+    try {
+      const bwRaw  = await getBodyweight(pid, 60);
+      const bwList = bwRaw?.data ?? bwRaw;
+      if (Array.isArray(bwList)) {
+        const exists = db.prepare('SELECT 1 FROM weight_log WHERE profile_id = $pid AND date = $date');
+        const insert = db.prepare(
+          "INSERT INTO weight_log (date, weight_kg, profile_id, source) VALUES ($date, $kg, $pid, 'ironlog')"
+        );
+        for (const w of bwList) {
+          const date = String(w.date || '').split('T')[0];
+          const kg   = w.weight_kg ?? w.weight;
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || kg == null) continue;
+          if (!exists.get({ pid, date })) { insert.run({ date, kg, pid }); weightsImported++; }
+        }
+      }
+    } catch { /* bodyweight import is best-effort */ }
+    if (weightsImported) updates.bodyweight_entries_imported = weightsImported;
+
     res.json({ synced: true, updates, profile_raw: profileData });
   } catch (err) {
     res.status(500).json({ error: err.message });

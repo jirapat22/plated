@@ -3,6 +3,7 @@ import { showToast }                    from '../app.js';
 import { openBarcodeScanner }           from './barcode.js';
 import { fmtE, unitLabel, parseNutritionLabel, wireEnergyUnitToggle, wireDualNutrition } from '../utils/energy.js';
 import { getFoodIcon }                  from '../utils/foodIcon.js';
+import { foodTagHtml }                  from '../views/foods.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -158,7 +159,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
         ${getFoodIcon(food.name)}
       </div>
       <div class="food-list-info" style="flex:1;min-width:0">
-        <div class="food-list-name">${esc(food.name)}</div>
+        <div class="food-list-name">${esc(food.name)} ${foodTagHtml(food)}</div>
         <div style="font-size:12px;color:var(--text-muted);margin-top:2px">
           ${food.brand ? `<span>${esc(food.brand)} · </span>` : ''}
           <span style="font-variant-numeric:tabular-nums">${kcalStr}</span>

@@ -1,9 +1,21 @@
 import { api }           from '../api.js';
-import { showToast, showSheet, hideSheet } from '../app.js';
+import { showToast, showSheet, hideSheet, getProfile } from '../app.js';
 import { getFoodIcon }  from '../utils/foodIcon.js';
 import { wireEnergyUnitToggle, wireDualNutrition } from '../utils/energy.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+// Badge for user-added foods. Returns '' for the built-in database foods.
+export function foodTagHtml(food) {
+  if (food.source === 'custom')        return '<span class="food-tag tag-custom">Custom</span>';
+  if (food.source === 'openfoodfacts') return '<span class="food-tag tag-scanned">Scanned</span>';
+  return '';
+}
+// Whether the current profile may delete this food (creator or admin).
+export function canDeleteFood(food) {
+  const me = getProfile();
+  return !!me && (me.is_admin || food.created_by_profile === me.id);
+}
 
 let debounceTimer = null;
 
@@ -73,8 +85,8 @@ export function renderFoods(container) {
     el.innerHTML = `
       <div class="food-list-icon" style="font-size:18px">${food.is_favourite ? '⭐' : getFoodIcon(food.name)}</div>
       <div class="food-list-info">
-        <div class="food-list-name">${esc(food.name)}</div>
-        <div class="food-list-sub">${esc(food.brand || 'Custom')} · ${food.calories_per_100g != null ? food.calories_per_100g.toFixed(0) + ' kcal/100g' : 'no cal data'}</div>
+        <div class="food-list-name">${esc(food.name)} ${foodTagHtml(food)}</div>
+        <div class="food-list-sub">${food.brand ? esc(food.brand) + ' · ' : ''}${food.calories_per_100g != null ? food.calories_per_100g.toFixed(0) + ' kcal/100g' : 'no cal data'}</div>
       </div>
       <button class="fav-btn${food.is_favourite ? ' active' : ''}" data-id="${food.id}" title="Toggle favourite">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="${food.is_favourite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.7">
@@ -113,7 +125,7 @@ export function renderFoods(container) {
             <button class="sheet-close" id="detail-close">✕</button>
           </div>
           <div style="padding:0 16px">
-            ${food.brand ? `<div class="muted" style="margin-bottom:12px">${esc(food.brand)}</div>` : ''}
+            <div style="margin-bottom:12px">${food.brand ? `<span class="muted">${esc(food.brand)}</span> ` : ''}${foodTagHtml(food)}</div>
             <div class="card" style="margin-bottom:12px">
               <div class="label" style="margin-bottom:10px">Per 100g</div>
               <div class="macro-totals-row">
@@ -125,14 +137,14 @@ export function renderFoods(container) {
             </div>
             <div style="display:flex;gap:8px">
               <button class="btn btn-secondary btn-full" id="detail-edit">✏️ Edit</button>
-              <button class="btn btn-danger btn-full" id="detail-delete">Delete</button>
+              ${canDeleteFood(food) ? `<button class="btn btn-danger btn-full" id="detail-delete">Delete</button>` : ''}
             </div>
           </div>
         `;
         document.getElementById('detail-close').addEventListener('click', hideSheet);
         document.getElementById('detail-edit').addEventListener('click', renderEdit);
-        document.getElementById('detail-delete').addEventListener('click', async () => {
-          if (!confirm(`Delete "${food.name}"?`)) return;
+        document.getElementById('detail-delete')?.addEventListener('click', async () => {
+          if (!confirm(`Delete "${food.name}"? It'll disappear from search but your past logs stay intact.`)) return;
           try {
             await api.delete(`/api/foods/${food.id}`);
             hideSheet();

@@ -22,7 +22,10 @@ function findProfileByCode(db, code) {
     .find(p => verifyCode(code, p.pass_salt, p.pass_hash)) || null;
 }
 function publicProfile(p) {
-  return { id: p.id, name: p.name, accent_color: p.accent_color };
+  return { id: p.id, name: p.name, accent_color: p.accent_color, is_admin: !!p.is_admin };
+}
+function isAdmin(db, profileId) {
+  return !!db.prepare('SELECT is_admin FROM profiles WHERE id = $id').get({ id: profileId })?.is_admin;
 }
 function createSession(db, profileId) {
   const token = newToken();
@@ -76,7 +79,10 @@ router.post('/profiles', (req, res) => {
 
     const id = result.lastInsertRowid;
     seedProfileDefaults(db, id);
-    if (wasFirst) adoptOrphanData(db, id);   // first profile inherits legacy single-user data
+    if (wasFirst) {
+      adoptOrphanData(db, id);                          // inherits legacy single-user data
+      db.prepare('UPDATE profiles SET is_admin = 1 WHERE id = $id').run({ id }); // first profile = admin
+    }
 
     const profile = db.prepare('SELECT * FROM profiles WHERE id = $id').get({ id });
     res.status(201).json({ token: createSession(db, id), profile: publicProfile(profile) });
@@ -164,6 +170,43 @@ router.delete('/me', requireProfile, (req, res) => {
     res.json({ success: true });
   } catch (err) {
     db.exec('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Admin: manage who is admin ───────────────────────────────────
+// GET /api/auth/admin/profiles — list all profiles (admin only)
+router.get('/admin/profiles', requireProfile, (req, res) => {
+  try {
+    const db = getDb();
+    if (!isAdmin(db, req.profileId)) return res.status(403).json({ error: 'Admin only' });
+    const rows = db.prepare('SELECT id, name, accent_color, is_admin FROM profiles ORDER BY id ASC').all();
+    res.json(rows.map(r => ({ ...r, is_admin: !!r.is_admin })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/auth/admin/set { profileId, is_admin } — grant/revoke admin (admin only)
+router.post('/admin/set', requireProfile, (req, res) => {
+  try {
+    const db = getDb();
+    if (!isAdmin(db, req.profileId)) return res.status(403).json({ error: 'Admin only' });
+
+    const { profileId, is_admin } = req.body;
+    const target = db.prepare('SELECT id FROM profiles WHERE id = $id').get({ id: profileId });
+    if (!target) return res.status(404).json({ error: 'Profile not found' });
+
+    // Don't allow removing the last admin
+    if (!is_admin) {
+      const admins = db.prepare('SELECT COUNT(*) AS c FROM profiles WHERE is_admin = 1').get().c;
+      if (admins <= 1 && isAdmin(db, profileId)) {
+        return res.status(400).json({ error: 'At least one admin is required' });
+      }
+    }
+    db.prepare('UPDATE profiles SET is_admin = $v WHERE id = $id').run({ v: is_admin ? 1 : 0, id: profileId });
+    res.json({ success: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

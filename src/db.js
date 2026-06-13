@@ -177,6 +177,30 @@ function migrateSchema(db) {
       DROP TABLE daily_overrides_old;
     `);
   }
+
+  // Admin flag, food creator + soft-delete, bodyweight source
+  if (!tableHasColumn(db, 'profiles', 'is_admin')) {
+    db.exec('ALTER TABLE profiles ADD COLUMN is_admin INTEGER DEFAULT 0');
+  }
+  if (!tableHasColumn(db, 'foods', 'created_by_profile')) {
+    db.exec('ALTER TABLE foods ADD COLUMN created_by_profile INTEGER');
+  }
+  if (!tableHasColumn(db, 'foods', 'hidden')) {
+    db.exec('ALTER TABLE foods ADD COLUMN hidden INTEGER DEFAULT 0');
+  }
+  if (!tableHasColumn(db, 'weight_log', 'source')) {
+    db.exec("ALTER TABLE weight_log ADD COLUMN source TEXT DEFAULT 'manual'");
+  }
+
+  // Ensure exactly one admin exists — the first profile (e.g. the migrated one).
+  const profileCount = db.prepare('SELECT COUNT(*) AS c FROM profiles').get().c;
+  if (profileCount > 0) {
+    const adminCount = db.prepare('SELECT COUNT(*) AS c FROM profiles WHERE is_admin = 1').get().c;
+    if (adminCount === 0) {
+      const first = db.prepare('SELECT id FROM profiles ORDER BY id ASC LIMIT 1').get();
+      db.prepare('UPDATE profiles SET is_admin = 1 WHERE id = $id').run({ id: first.id });
+    }
+  }
 }
 
 // Default per-profile settings, seeded when a profile is created.
