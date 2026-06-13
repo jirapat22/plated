@@ -1,4 +1,4 @@
-const CACHE_NAME = 'plated-v21';
+const CACHE_NAME = 'plated-v22';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -63,17 +63,18 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Static assets: cache-first
+  // App shell (HTML/JS/CSS): network-first so a new deploy is picked up on the
+  // next online load. Falls back to cache when offline. This prevents the app
+  // from getting stuck on a stale cached version (e.g. an old login screen).
   event.respondWith(
-    caches.match(request).then(cached => {
-      if (cached) return cached;
-      return fetch(request).then(resp => {
+    fetch(request)
+      .then(resp => {
         if (resp.ok) {
           const clone = resp.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
         }
         return resp;
-      });
-    })
+      })
+      .catch(() => caches.match(request).then(cached => cached || caches.match('/index.html')))
   );
 });
