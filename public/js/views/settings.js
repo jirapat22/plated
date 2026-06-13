@@ -1,5 +1,5 @@
 import { api }                        from '../api.js';
-import { showToast, reloadEnergyUnit } from '../app.js';
+import { showToast, reloadEnergyUnit, getProfile, applyProfile, logoutToLock, ACCENTS } from '../app.js';
 import { setEnergyUnit }             from '../utils/energy.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -24,7 +24,27 @@ export function renderSettings(container) {
 
   function render(s) {
     const body = document.getElementById('settings-body');
+    const prof = getProfile() || { name: '', accent_color: ACCENTS[0] };
     body.innerHTML = `
+      <!-- Profile -->
+      <div class="card" style="margin-bottom:12px;padding:0">
+        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">PROFILE</div>
+        <div style="padding:14px 16px">
+          <label class="form-label">Display name</label>
+          <input class="input" id="pf-name" value="${esc(prof.name)}" maxlength="24" style="margin-bottom:12px"/>
+          <label class="form-label">Accent colour</label>
+          <div class="accent-row" id="pf-accents" style="margin-bottom:14px">
+            ${ACCENTS.map(c => `<button type="button" class="accent-swatch${c === prof.accent_color ? ' selected' : ''}" data-color="${c}" style="background:${c}"></button>`).join('')}
+          </div>
+          <button class="btn btn-primary btn-full" id="pf-save" style="margin-bottom:8px">Save profile</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" id="pf-passcode" style="flex:1">Change passcode</button>
+            <button class="btn btn-secondary" id="pf-logout" style="flex:1">Log out</button>
+          </div>
+          <button class="btn btn-danger btn-full" id="pf-delete" style="margin-top:8px;font-size:13px">Delete this profile</button>
+        </div>
+      </div>
+
       <!-- Phase Selector -->
       <div class="card" style="margin-bottom:12px;padding:0">
         <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">GOAL PHASE</div>
@@ -154,6 +174,58 @@ export function renderSettings(container) {
         </div>
       </div>
     `;
+
+    // ── Profile ──────────────────────────────────────────────
+    let pfAccent = prof.accent_color || ACCENTS[0];
+    body.querySelectorAll('#pf-accents .accent-swatch').forEach(b => {
+      b.addEventListener('click', () => {
+        pfAccent = b.dataset.color;
+        body.querySelectorAll('#pf-accents .accent-swatch').forEach(x =>
+          x.classList.toggle('selected', x === b));
+      });
+    });
+
+    document.getElementById('pf-save').addEventListener('click', async () => {
+      const name = document.getElementById('pf-name').value.trim();
+      if (!name) { showToast('Name cannot be empty', 'error'); return; }
+      try {
+        const updated = await api.patch('/api/auth/me', { name, accent_color: pfAccent });
+        applyProfile(updated);
+        showToast('Profile saved', 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+
+    document.getElementById('pf-passcode').addEventListener('click', async () => {
+      const code = prompt('Enter a new 4-digit passcode:');
+      if (code == null) return;
+      if (!/^\d{4}$/.test(code.trim())) { showToast('Passcode must be 4 digits', 'error'); return; }
+      try {
+        await api.post('/api/auth/me/passcode', { newPasscode: code.trim() });
+        showToast('Passcode updated', 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+
+    document.getElementById('pf-logout').addEventListener('click', async () => {
+      try { await api.post('/api/auth/logout'); } catch { /* ignore */ }
+      logoutToLock();
+    });
+
+    document.getElementById('pf-delete').addEventListener('click', async () => {
+      if (!confirm('Delete this profile and ALL its meals, water, weight, goals and templates?\n\nThis cannot be undone.')) return;
+      const typed = prompt('Type DELETE to confirm:');
+      if (typed !== 'DELETE') { showToast('Cancelled', 'info'); return; }
+      try {
+        await api.delete('/api/auth/me');
+        showToast('Profile deleted', 'success');
+        logoutToLock();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
 
     // Energy unit toggle
     body.querySelectorAll('.unit-btn').forEach(btn => {

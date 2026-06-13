@@ -32,10 +32,10 @@ function sumTotals(sessions) {
   );
 }
 
-function loadDay(db, date) {
+function loadDay(db, date, pid) {
   const sessions = db.prepare(`
-    SELECT * FROM meal_sessions WHERE date = $date ORDER BY meal_index ASC
-  `).all({ date });
+    SELECT * FROM meal_sessions WHERE date = $date AND profile_id = $pid ORDER BY meal_index ASC
+  `).all({ date, pid });
 
   return sessions.map(s => {
     const entries = db.prepare(`
@@ -56,7 +56,7 @@ router.get('/today', (req, res) => {
   try {
     const db = getDb();
     const date = new Date().toISOString().split('T')[0];
-    const sessions = loadDay(db, date);
+    const sessions = loadDay(db, date, req.profileId);
     res.json({ date, sessions, totals: sumTotals(sessions) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -71,7 +71,7 @@ router.get('/day/:date', (req, res) => {
       return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
     }
     const db = getDb();
-    const sessions = loadDay(db, date);
+    const sessions = loadDay(db, date, req.profileId);
     res.json({ date, sessions, totals: sumTotals(sessions) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -92,10 +92,10 @@ router.get('/summary', (req, res) => {
         COALESCE(SUM(me.fiber),    0) AS fiber
       FROM meal_sessions ms
       LEFT JOIN meal_entries me ON me.meal_session_id = ms.id
-      WHERE ms.date >= date('now', $offset)
+      WHERE ms.date >= date('now', $offset) AND ms.profile_id = $pid
       GROUP BY ms.date
       ORDER BY ms.date ASC
-    `).all({ offset: `-${days} days` });
+    `).all({ offset: `-${days} days`, pid: req.profileId });
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -108,18 +108,23 @@ router.patch('/sessions/:id', (req, res) => {
     const { name, date } = req.body;
     if (!name && !date) return res.status(400).json({ error: 'name or date required' });
     const db = getDb();
+    const pid = req.profileId;
+    const owned = db.prepare('SELECT 1 FROM meal_sessions WHERE id = $id AND profile_id = $pid')
+      .get({ id: req.params.id, pid });
+    if (!owned) return res.status(404).json({ error: 'Session not found' });
+
     if (name?.trim()) {
-      db.prepare('UPDATE meal_sessions SET name = $name WHERE id = $id')
-        .run({ name: name.trim(), id: req.params.id });
+      db.prepare('UPDATE meal_sessions SET name = $name WHERE id = $id AND profile_id = $pid')
+        .run({ name: name.trim(), id: req.params.id, pid });
     }
     if (date) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
       // Recalculate meal_index so it doesn't collide with existing sessions on target date
       const { max_idx } = db.prepare(
-        'SELECT COALESCE(MAX(meal_index), 0) AS max_idx FROM meal_sessions WHERE date = $date AND id != $id'
-      ).get({ date, id: req.params.id });
-      db.prepare('UPDATE meal_sessions SET date = $date, meal_index = $idx WHERE id = $id')
-        .run({ date, idx: max_idx + 1, id: req.params.id });
+        'SELECT COALESCE(MAX(meal_index), 0) AS max_idx FROM meal_sessions WHERE date = $date AND profile_id = $pid AND id != $id'
+      ).get({ date, id: req.params.id, pid });
+      db.prepare('UPDATE meal_sessions SET date = $date, meal_index = $idx WHERE id = $id AND profile_id = $pid')
+        .run({ date, idx: max_idx + 1, id: req.params.id, pid });
     }
     const session = db.prepare('SELECT * FROM meal_sessions WHERE id = $id').get({ id: req.params.id });
     if (!session) return res.status(404).json({ error: 'Session not found' });
@@ -133,18 +138,19 @@ router.patch('/sessions/:id', (req, res) => {
 router.post('/sessions', (req, res) => {
   try {
     const db = getDb();
+    const pid = req.profileId;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     const { max_idx } = db.prepare(`
       SELECT COALESCE(MAX(meal_index), 0) AS max_idx
-      FROM meal_sessions WHERE date = $date
-    `).get({ date });
+      FROM meal_sessions WHERE date = $date AND profile_id = $pid
+    `).get({ date, pid });
 
     const meal_index = max_idx + 1;
     const name = (req.body.name?.trim()) || `Meal ${meal_index}`;
     const result = db.prepare(
-      'INSERT INTO meal_sessions (date, name, meal_index) VALUES ($date, $name, $meal_index)'
-    ).run({ date, name, meal_index });
+      'INSERT INTO meal_sessions (date, name, meal_index, profile_id) VALUES ($date, $name, $meal_index, $pid)'
+    ).run({ date, name, meal_index, pid });
 
     const session = db.prepare('SELECT * FROM meal_sessions WHERE id = $id')
       .get({ id: result.lastInsertRowid });
@@ -165,7 +171,8 @@ router.post('/sessions/:id/entries', (req, res) => {
       return res.status(400).json({ error: 'food_id and quantity_g > 0 required' });
     }
 
-    const session = db.prepare('SELECT * FROM meal_sessions WHERE id = $id').get({ id });
+    const session = db.prepare('SELECT * FROM meal_sessions WHERE id = $id AND profile_id = $pid')
+      .get({ id, pid: req.profileId });
     if (!session) return res.status(404).json({ error: 'Meal session not found' });
 
     const food = db.prepare('SELECT * FROM foods WHERE id = $id').get({ id: food_id });
@@ -183,8 +190,12 @@ router.post('/sessions/:id/entries', (req, res) => {
       carbs: macros.carbs, fat: macros.fat, fiber: macros.fiber,
     });
 
-    db.prepare('UPDATE foods SET use_count = use_count + 1 WHERE id = $id')
-      .run({ id: food_id });
+    db.prepare(`
+      INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used)
+      VALUES ($pid, $fid, 1, datetime('now'))
+      ON CONFLICT(profile_id, food_id)
+      DO UPDATE SET use_count = use_count + 1, last_used = datetime('now')
+    `).run({ pid: req.profileId, fid: food_id });
 
     const entry = db.prepare(`
       SELECT me.*, f.name AS food_name, f.brand AS food_brand, f.serving_size_g
@@ -210,7 +221,11 @@ router.patch('/entries/:id', (req, res) => {
       return res.status(400).json({ error: 'quantity_g must be > 0' });
     }
 
-    const entry = db.prepare('SELECT * FROM meal_entries WHERE id = $id').get({ id });
+    const entry = db.prepare(`
+      SELECT me.* FROM meal_entries me
+      JOIN meal_sessions ms ON ms.id = me.meal_session_id
+      WHERE me.id = $id AND ms.profile_id = $pid
+    `).get({ id, pid: req.profileId });
     if (!entry) return res.status(404).json({ error: 'Entry not found' });
 
     const food = db.prepare('SELECT * FROM foods WHERE id = $id').get({ id: entry.food_id });
@@ -240,8 +255,12 @@ router.patch('/entries/:id', (req, res) => {
 router.delete('/entries/:id', (req, res) => {
   try {
     const result = getDb()
-      .prepare('DELETE FROM meal_entries WHERE id = $id')
-      .run({ id: req.params.id });
+      .prepare(`
+        DELETE FROM meal_entries WHERE id = $id AND meal_session_id IN (
+          SELECT id FROM meal_sessions WHERE profile_id = $pid
+        )
+      `)
+      .run({ id: req.params.id, pid: req.profileId });
     if (result.changes === 0) return res.status(404).json({ error: 'Entry not found' });
     res.json({ success: true });
   } catch (err) {
@@ -253,8 +272,8 @@ router.delete('/entries/:id', (req, res) => {
 router.delete('/sessions/:id', (req, res) => {
   try {
     const result = getDb()
-      .prepare('DELETE FROM meal_sessions WHERE id = $id')
-      .run({ id: req.params.id });
+      .prepare('DELETE FROM meal_sessions WHERE id = $id AND profile_id = $pid')
+      .run({ id: req.params.id, pid: req.profileId });
     if (result.changes === 0) return res.status(404).json({ error: 'Session not found' });
     res.json({ success: true });
   } catch (err) {

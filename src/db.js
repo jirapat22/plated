@@ -91,10 +91,11 @@ function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS daily_overrides (
+      profile_id INTEGER NOT NULL DEFAULT 0,
       date  TEXT NOT NULL,
       key   TEXT NOT NULL,
       value TEXT,
-      PRIMARY KEY (date, key)
+      PRIMARY KEY (profile_id, date, key)
     );
 
     CREATE TABLE IF NOT EXISTS notes (
@@ -103,33 +104,135 @@ function initDb() {
       done       INTEGER DEFAULT 0,
       created_at TEXT    DEFAULT (datetime('now'))
     );
+
+    -- ── Multi-profile ──────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS profiles (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      name         TEXT    NOT NULL,
+      accent_color TEXT    DEFAULT '#c8b8ff',
+      pass_hash    TEXT    NOT NULL,
+      pass_salt    TEXT    NOT NULL,
+      created_at   TEXT    DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      token      TEXT PRIMARY KEY,
+      profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS profile_settings (
+      profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
+      key        TEXT NOT NULL,
+      value      TEXT,
+      PRIMARY KEY (profile_id, key)
+    );
+
+    CREATE TABLE IF NOT EXISTS profile_food_stats (
+      profile_id   INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
+      food_id      INTEGER REFERENCES foods(id) ON DELETE CASCADE,
+      is_favourite INTEGER DEFAULT 0,
+      use_count    INTEGER DEFAULT 0,
+      last_used    TEXT,
+      PRIMARY KEY (profile_id, food_id)
+    );
   `);
 
-  const setDefault = db.prepare(
-    'INSERT OR IGNORE INTO settings (key, value) VALUES ($key, $value)'
-  );
-  [
-    { key: 'calorie_goal',      value: '2000' },
-    { key: 'protein_goal',      value: '150'  },
-    { key: 'carb_goal',         value: '250'  },
-    { key: 'fat_goal',          value: '65'   },
-    { key: 'fiber_goal',        value: '30'   },
-    { key: 'water_goal_ml',     value: '2500' },
-    { key: 'ironlog_api_url',      value: ''         },
-    { key: 'ironlog_api_key',      value: ''         },
-    { key: 'ironlog_last_synced',  value: ''         },
-    { key: 'protein_multiplier',value: '2.2'      },
-    { key: 'energy_unit',       value: 'kcal'     },
-    { key: 'phase',             value: 'maintain' },
-    { key: 'tdee',              value: ''         },
-    { key: 'cut_deficit',       value: '500'      },
-    { key: 'bulk_surplus',      value: '300'      },
-  ].forEach(d => setDefault.run(d));
+  migrateSchema(db);
 
   seedNzFoods(db);
 
   console.log(`DB ready: ${dbPath}`);
   return db;
+}
+
+// ── Schema migration: add profile_id to per-profile tables ───────
+function tableHasColumn(db, table, col) {
+  return db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === col);
+}
+
+function migrateSchema(db) {
+  // Add nullable profile_id to data tables that predate multi-profile.
+  // NULL marks "orphan" rows adopted by the first profile created.
+  for (const t of ['meal_sessions', 'water_log', 'weight_log', 'meal_templates']) {
+    if (!tableHasColumn(db, t, 'profile_id')) {
+      db.exec(`ALTER TABLE ${t} ADD COLUMN profile_id INTEGER`);
+    }
+  }
+
+  // daily_overrides changed its primary key (now includes profile_id). If the
+  // table still has the old shape, rebuild it and park rows under profile 0.
+  if (!tableHasColumn(db, 'daily_overrides', 'profile_id')) {
+    db.exec(`
+      ALTER TABLE daily_overrides RENAME TO daily_overrides_old;
+      CREATE TABLE daily_overrides (
+        profile_id INTEGER NOT NULL DEFAULT 0,
+        date  TEXT NOT NULL,
+        key   TEXT NOT NULL,
+        value TEXT,
+        PRIMARY KEY (profile_id, date, key)
+      );
+      INSERT INTO daily_overrides (profile_id, date, key, value)
+        SELECT 0, date, key, value FROM daily_overrides_old;
+      DROP TABLE daily_overrides_old;
+    `);
+  }
+}
+
+// Default per-profile settings, seeded when a profile is created.
+const PROFILE_DEFAULTS = [
+  ['calorie_goal', '2000'], ['protein_goal', '150'], ['carb_goal', '250'],
+  ['fat_goal', '65'], ['fiber_goal', '30'], ['water_goal_ml', '2500'],
+  ['ironlog_api_url', ''], ['ironlog_api_key', ''], ['ironlog_last_synced', ''],
+  ['protein_multiplier', '2.2'], ['energy_unit', 'kcal'], ['phase', 'maintain'],
+  ['tdee', ''], ['cut_deficit', '500'], ['bulk_surplus', '300'],
+];
+
+function seedProfileDefaults(db, profileId) {
+  const ins = db.prepare(
+    'INSERT OR IGNORE INTO profile_settings (profile_id, key, value) VALUES ($p, $k, $v)'
+  );
+  for (const [k, v] of PROFILE_DEFAULTS) ins.run({ p: profileId, k, v });
+}
+
+// The first profile created adopts all pre-existing single-user data:
+// orphan meals/water/weight/templates/overrides, the old global settings
+// values, and any favourites / use-counts recorded on the shared foods table.
+function adoptOrphanData(db, profileId) {
+  for (const t of ['meal_sessions', 'water_log', 'weight_log', 'meal_templates']) {
+    db.prepare(`UPDATE ${t} SET profile_id = $p WHERE profile_id IS NULL`).run({ p: profileId });
+  }
+  db.prepare('UPDATE daily_overrides SET profile_id = $p WHERE profile_id = 0').run({ p: profileId });
+
+  // Overlay any saved values from the legacy global settings table.
+  const hasLegacy = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='settings'"
+  ).get();
+  if (hasLegacy) {
+    db.prepare(`
+      INSERT OR REPLACE INTO profile_settings (profile_id, key, value)
+      SELECT $p, key, value FROM settings WHERE key != 'passcode_hash'
+    `).run({ p: profileId });
+  }
+
+  // Carry over favourites / usage from the shared foods table.
+  db.prepare(`
+    INSERT OR IGNORE INTO profile_food_stats (profile_id, food_id, is_favourite, use_count)
+    SELECT $p, id, is_favourite, use_count FROM foods WHERE is_favourite = 1 OR use_count > 0
+  `).run({ p: profileId });
+
+  // Inherit any IronLog connection that was configured via server env vars.
+  const setPref = (key, value) => {
+    if (!value) return;
+    db.prepare('INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($p, $k, $v)')
+      .run({ p: profileId, k: key, v: value });
+  };
+  setPref('ironlog_api_url', process.env.IRONLOG_API_URL?.trim());
+  setPref('ironlog_api_key', process.env.IRONLOG_API_KEY?.trim());
+}
+
+function countProfiles(db) {
+  return db.prepare('SELECT COUNT(*) AS c FROM profiles').get().c;
 }
 
 function seedNzFoods(db) {
@@ -264,4 +367,4 @@ function removeUnwantedSeeds(db) {
   if (removed > 0) console.log(`Removed ${removed} unwanted seed foods (infant/toddler products, etc.)`);
 }
 
-module.exports = { initDb, getDb };
+module.exports = { initDb, getDb, seedProfileDefaults, adoptOrphanData, countProfiles };

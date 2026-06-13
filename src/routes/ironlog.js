@@ -24,54 +24,35 @@ function phaseCalories(tdee, phase, deficit, surplus) {
 
 const router = express.Router();
 
-// Base URL: env var takes precedence, falls back to the DB setting
-// configured via the Settings UI (for backwards compatibility).
-function getBaseUrl() {
-  const envUrl = process.env.IRONLOG_API_URL?.trim();
-  if (envUrl) return envUrl.replace(/\/$/, '');
+// IronLog is configured per profile — the URL and key live in that profile's
+// settings (profile 2210 has its own IronLog, separate from everyone else's).
+function profileSetting(pid, key) {
+  return getDb()
+    .prepare('SELECT value FROM profile_settings WHERE profile_id = $pid AND key = $key')
+    .get({ pid, key })?.value;
+}
 
-  const row = getDb()
-    .prepare("SELECT value FROM settings WHERE key = 'ironlog_api_url'")
-    .get();
-  const url = row?.value?.trim();
+function getBaseUrl(pid) {
+  const url = profileSetting(pid, 'ironlog_api_url')?.trim();
   if (!url) throw new Error('IronLog URL not configured');
   return url.replace(/\/$/, ''); // strip trailing slash
 }
 
-// API key: env var takes precedence, falls back to the DB setting saved via
-// the Settings UI. Trim whitespace/newlines that sneak in when pasting.
-function getApiKey() {
-  const envKey = process.env.IRONLOG_API_KEY?.trim();
-  if (envKey) return envKey;
-
-  try {
-    const row = getDb()
-      .prepare("SELECT value FROM settings WHERE key = 'ironlog_api_key'")
-      .get();
-    return row?.value?.trim() || null;
-  } catch {
-    return null;
-  }
+// Trim whitespace/newlines that sneak in when pasting the key.
+function getApiKey(pid) {
+  return profileSetting(pid, 'ironlog_api_key')?.trim() || null;
 }
 
-async function ironFetch(path) {
-  const url    = getBaseUrl();
-  const apiKey = getApiKey();
-
-  // TEMPORARY debug — logs request URL, whether a key is present, and the
-  // key's length + first 6 chars (never the full key). Remove once verified.
-  console.log('[ironlog] GET %s%s — key:%s len:%d head:%s',
-    url, path,
-    apiKey ? 'yes' : 'NO',
-    apiKey ? apiKey.length : 0,
-    apiKey ? apiKey.slice(0, 6) : '—');
+async function ironFetch(pid, path) {
+  const url    = getBaseUrl(pid);
+  const apiKey = getApiKey(pid);
 
   const headers = apiKey
     ? { 'X-API-Key': apiKey, 'Authorization': `Bearer ${apiKey}` }
     : {};
 
   const resp = await fetch(`${url}${path}`, { headers, signal: AbortSignal.timeout(6000) });
-  if (resp.status === 401) throw new Error('IronLog rejected the API key (401 Unauthorized) — check IRONLOG_API_KEY');
+  if (resp.status === 401) throw new Error('IronLog rejected the API key (401 Unauthorized) — check the key in Settings');
   if (!resp.ok) throw new Error(`IronLog returned ${resp.status} for ${path}`);
 
   const json = await resp.json();
@@ -80,22 +61,23 @@ async function ironFetch(path) {
 }
 
 // Typed helpers for the IronLog Plated API
-const getProfile         = ()         => ironFetch('/api/plated/profile');
-const getBodyweight       = (limit = 30) => ironFetch(`/api/plated/bodyweight?limit=${limit}`);
-const getWorkoutCalories  = (date)     => ironFetch(`/api/plated/workouts/calories${date ? `?date=${date}` : ''}`);
-const getRecentWorkouts   = (limit = 7)  => ironFetch(`/api/plated/workouts/recent?limit=${limit}`);
+const getProfile         = (pid)             => ironFetch(pid, '/api/plated/profile');
+const getBodyweight       = (pid, limit = 30) => ironFetch(pid, `/api/plated/bodyweight?limit=${limit}`);
+const getWorkoutCalories  = (pid, date)       => ironFetch(pid, `/api/plated/workouts/calories${date ? `?date=${date}` : ''}`);
+const getRecentWorkouts   = (pid, limit = 7)  => ironFetch(pid, `/api/plated/workouts/recent?limit=${limit}`);
 
 // GET /api/ironlog/today — profile + calories burned for today
 router.get('/today', async (req, res) => {
+  const pid = req.profileId;
   let last_synced = null;
-  try { last_synced = getDb().prepare("SELECT value FROM settings WHERE key='ironlog_last_synced'").get()?.value || null; } catch { /* ignore */ }
+  try { last_synced = profileSetting(pid, 'ironlog_last_synced') || null; } catch { /* ignore */ }
 
   try {
     const today = new Date().toISOString().split('T')[0];
 
     const [profileRes, calsRes] = await Promise.allSettled([
-      getProfile(),
-      getWorkoutCalories(today),
+      getProfile(pid),
+      getWorkoutCalories(pid, today),
     ]);
 
     if (profileRes.status !== 'fulfilled') {
@@ -111,12 +93,11 @@ router.get('/today', async (req, res) => {
 
     const now = new Date().toISOString();
     try {
-      getDb().prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('ironlog_last_synced',$v)")
-        .run({ v: now });
+      getDb().prepare("INSERT OR REPLACE INTO profile_settings (profile_id,key,value) VALUES ($pid,'ironlog_last_synced',$v)")
+        .run({ pid, v: now });
     } catch { /* non-fatal */ }
 
-    const calorieGoalRow = getDb().prepare("SELECT value FROM settings WHERE key='calorie_goal'").get();
-    const calorieGoal    = parseFloat(calorieGoalRow?.value) || null;
+    const calorieGoal = parseFloat(profileSetting(pid, 'calorie_goal')) || null;
 
     res.json({
       connected:       true,
@@ -134,7 +115,7 @@ router.get('/today', async (req, res) => {
 router.get('/bodyweight', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
-    const data    = await getBodyweight(limit);
+    const data    = await getBodyweight(req.profileId, limit);
     const entries = data?.data ?? data;
     res.json({ entries: Array.isArray(entries) ? entries : [] });
   } catch {
@@ -145,12 +126,13 @@ router.get('/bodyweight', async (req, res) => {
 // GET /api/ironlog/raw — shows exactly what IronLog sends (for debugging)
 router.get('/raw', async (req, res) => {
   try {
+    const pid = req.profileId;
     const today = new Date().toISOString().split('T')[0];
     const [profileRes, calsRes, bwRes, recentRes] = await Promise.allSettled([
-      getProfile(),
-      getWorkoutCalories(today),
-      getBodyweight(30),
-      getRecentWorkouts(7),
+      getProfile(pid),
+      getWorkoutCalories(pid, today),
+      getBodyweight(pid, 30),
+      getRecentWorkouts(pid, 7),
     ]);
     res.json({
       profile:         profileRes.status === 'fulfilled' ? profileRes.value : { error: profileRes.reason?.message },
@@ -167,8 +149,9 @@ router.get('/raw', async (req, res) => {
 router.post('/sync', async (req, res) => {
   try {
     const db = getDb();
+    const pid = req.profileId;
 
-    const profileRaw  = await getProfile();
+    const profileRaw  = await getProfile(pid);
     const profileData = profileRaw?.data ?? profileRaw;
     const p           = extractProfile(profileData);
 
@@ -181,8 +164,8 @@ router.post('/sync', async (req, res) => {
 
     const setSetting = (key, value) => {
       if (value == null) return;
-      db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES ($key, $value)')
-        .run({ key, value: String(value) });
+      db.prepare('INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)')
+        .run({ pid, key, value: String(value) });
     };
 
     const updates = {};
@@ -214,13 +197,11 @@ router.post('/phase', (req, res) => {
     }
 
     const db = getDb();
-    const getSetting = key => {
-      const row = db.prepare('SELECT value FROM settings WHERE key = $key').get({ key });
-      return row?.value;
-    };
+    const pid = req.profileId;
+    const getSetting = key => profileSetting(pid, key);
     const setSetting = (key, value) => {
-      db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES ($key, $value)')
-        .run({ key, value: String(value) });
+      db.prepare('INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)')
+        .run({ pid, key, value: String(value) });
     };
 
     const tdee    = parseFloat(getSetting('tdee'))         || null;
@@ -244,7 +225,7 @@ router.post('/phase', (req, res) => {
 // GET /api/ironlog/test — used by Settings page
 router.get('/test', async (req, res) => {
   try {
-    const data = await getProfile();
+    const data = await getProfile(req.profileId);
     res.json({ connected: true, data });
   } catch (err) {
     res.json({ connected: false, error: err.message });

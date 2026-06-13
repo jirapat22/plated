@@ -15,6 +15,8 @@ if (!fs.existsSync(dataDir)) {
 process.env.DATA_DIR = dataDir;
 
 const { initDb } = require('./src/db');
+const { requireProfile } = require('./src/middleware/auth');
+const authRoutes = require('./src/routes/auth');
 const foodsRoutes = require('./src/routes/foods');
 const mealsRoutes = require('./src/routes/meals');
 const waterRoutes = require('./src/routes/water');
@@ -61,14 +63,18 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', uptime: Math.floor(process.uptime()) });
 });
 
-app.use('/api/foods', foodsRoutes);
-app.use('/api/meals', mealsRoutes);
-app.use('/api/water', waterRoutes);
-app.use('/api/weight', weightRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/ironlog',    ironlogRoutes);
-app.use('/api/templates',  templatesRoutes);
-app.use('/api/notes',      notesRoutes);
+// Auth — public (login / create profile / status); /me etc. self-guard
+app.use('/api/auth', authRoutes);
+
+// Protected — every route below is scoped to the logged-in profile
+app.use('/api/foods', requireProfile, foodsRoutes);
+app.use('/api/meals', requireProfile, mealsRoutes);
+app.use('/api/water', requireProfile, waterRoutes);
+app.use('/api/weight', requireProfile, weightRoutes);
+app.use('/api/settings', requireProfile, settingsRoutes);
+app.use('/api/ironlog',    requireProfile, ironlogRoutes);
+app.use('/api/templates',  requireProfile, templatesRoutes);
+app.use('/api/notes',      notesRoutes); // shared across profiles
 
 // SPA fallback
 app.get('*', (req, res) => {

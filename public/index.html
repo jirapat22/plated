@@ -15,8 +15,72 @@
 </head>
 <body>
 
+<!-- ─── Lock / Login Screen ───────────────────────────────── -->
+<div id="lock-screen" class="lock-screen hidden">
+  <div class="lock-brand">
+    <div class="lock-logo">
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+        <circle cx="24" cy="24" r="20" stroke="#c8b8ff" stroke-width="2.5"/>
+        <circle cx="24" cy="24" r="13" stroke="#c8b8ff" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <circle cx="24" cy="24" r="4" fill="#c8b8ff"/>
+      </svg>
+    </div>
+    <h1 class="lock-title">Plated</h1>
+    <p class="lock-subtitle" id="lock-subtitle">Enter your passcode</p>
+  </div>
+
+  <div class="lock-dots" id="lock-dots">
+    <span class="dot"></span><span class="dot"></span>
+    <span class="dot"></span><span class="dot"></span>
+  </div>
+
+  <div class="numpad" id="numpad">
+    <button class="numpad-key" data-digit="1">1</button>
+    <button class="numpad-key" data-digit="2">2<span>ABC</span></button>
+    <button class="numpad-key" data-digit="3">3<span>DEF</span></button>
+    <button class="numpad-key" data-digit="4">4<span>GHI</span></button>
+    <button class="numpad-key" data-digit="5">5<span>JKL</span></button>
+    <button class="numpad-key" data-digit="6">6<span>MNO</span></button>
+    <button class="numpad-key" data-digit="7">7<span>PQRS</span></button>
+    <button class="numpad-key" data-digit="8">8<span>TUV</span></button>
+    <button class="numpad-key" data-digit="9">9<span>WXYZ</span></button>
+    <button class="numpad-key numpad-empty"></button>
+    <button class="numpad-key" data-digit="0">0</button>
+    <button class="numpad-key numpad-back" id="numpad-back">
+      <svg width="22" height="16" viewBox="0 0 22 16" fill="none">
+        <path d="M8 1L1 8L8 15M1 8H21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  </div>
+
+  <button class="lock-create-link" id="lock-create-link">+ New profile</button>
+</div>
+
+<!-- ─── Create Profile Screen ─────────────────────────────── -->
+<div id="create-screen" class="lock-screen hidden">
+  <div class="lock-brand">
+    <h1 class="lock-title">New profile</h1>
+    <p class="lock-subtitle" id="create-subtitle">Set up your profile</p>
+  </div>
+  <div class="create-form">
+    <label class="form-label">Your name</label>
+    <input class="input" id="create-name" placeholder="e.g. Mike" maxlength="24" style="margin-bottom:14px"/>
+
+    <label class="form-label">4-digit passcode</label>
+    <input class="input" id="create-code" type="text" inputmode="numeric" maxlength="4" placeholder="••••"
+      style="margin-bottom:14px;text-align:center;letter-spacing:8px;font-size:20px"/>
+
+    <label class="form-label">Accent colour</label>
+    <div class="accent-row" id="create-accents"></div>
+
+    <button class="btn btn-primary btn-full" id="create-submit" style="margin-top:18px;height:50px">Create profile</button>
+    <button class="lock-create-link" id="create-cancel" style="margin-top:10px">← Back to login</button>
+  </div>
+</div>
+
 <!-- ─── Main App ──────────────────────────────────────────── -->
-<div id="app" class="app">
+<div id="app" class="app hidden">
+  <div id="profile-bar" class="profile-bar"></div>
   <main id="view-container" class="view-container"></main>
 
   <nav class="bottom-nav" id="bottom-nav">

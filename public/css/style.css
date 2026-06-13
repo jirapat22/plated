@@ -912,3 +912,96 @@ img { display: block; max-width: 100%; }
 /* ─── Favourite star ─────────────────────────────────────── */
 .fav-btn { color: var(--text-faint); padding: 6px; transition: color 0.15s; }
 .fav-btn.active { color: var(--carbs); }
+
+/* ─── Profile top bar ────────────────────────────────────── */
+.profile-bar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: calc(var(--safe-top, 0px) + 8px) 16px 6px;
+}
+.profile-pill {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 5px 16px;
+  border-radius: 999px;
+  border: 1.5px solid;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── Lock / Login screen ────────────────────────────────── */
+.lock-screen {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 30px;
+  padding: 24px 24px calc(24px + var(--safe-bottom));
+  z-index: 1000;
+  overflow-y: auto;
+}
+.lock-brand { text-align: center; }
+.lock-logo { display: flex; justify-content: center; margin-bottom: 12px; }
+.lock-title { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+.lock-subtitle { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
+
+.lock-dots { display: flex; gap: 16px; }
+.dot {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+.dot.filled { background: var(--accent); border-color: var(--accent); }
+.dot.error  { background: var(--error);  border-color: var(--error); }
+
+.numpad {
+  display: grid;
+  grid-template-columns: repeat(3, 80px);
+  gap: 12px;
+}
+.numpad-key {
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 22px;
+  font-weight: 500;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 2px;
+  transition: background 0.1s, transform 0.08s;
+  user-select: none;
+}
+.numpad-key span { font-size: 9px; letter-spacing: 0.1em; color: var(--text-muted); font-weight: 600; }
+.numpad-key:active { background: var(--surface-2); transform: scale(0.94); }
+.numpad-empty { background: transparent; border-color: transparent; cursor: default; }
+.numpad-back { color: var(--text-muted); }
+
+.lock-create-link {
+  background: none;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 16px;
+}
+
+/* ─── Create profile ─────────────────────────────────────── */
+.create-form { width: 100%; max-width: 320px; }
+.accent-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.accent-swatch {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  transition: transform 0.1s;
+}
+.accent-swatch.selected { border-color: var(--text); transform: scale(1.08); }
+.accent-swatch:active { transform: scale(0.94); }

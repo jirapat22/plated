@@ -9,9 +9,10 @@ router.get('/', (req, res) => {
       SELECT t.id, t.name, t.created_at, COUNT(ti.id) AS item_count
       FROM meal_templates t
       LEFT JOIN meal_template_items ti ON ti.template_id = t.id
+      WHERE t.profile_id = $pid
       GROUP BY t.id
       ORDER BY t.created_at DESC
-    `).all();
+    `).all({ pid: req.profileId });
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -26,7 +27,8 @@ router.get('/:id/items', (req, res) => {
       FROM meal_template_items ti
       LEFT JOIN foods f ON f.id = ti.food_id
       WHERE ti.template_id = $id
-    `).all({ id: req.params.id });
+        AND ti.template_id IN (SELECT id FROM meal_templates WHERE profile_id = $pid)
+    `).all({ id: req.params.id, pid: req.profileId });
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -40,14 +42,14 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'name and items[] required' });
     }
     const db = getDb();
-    const insertTmpl = db.prepare('INSERT INTO meal_templates (name) VALUES ($name)');
+    const insertTmpl = db.prepare('INSERT INTO meal_templates (name, profile_id) VALUES ($name, $pid)');
     const insertItem = db.prepare(
       'INSERT INTO meal_template_items (template_id, food_id, food_name, quantity_g) VALUES ($tid, $fid, $fname, $qty)'
     );
     let id;
     db.exec('BEGIN TRANSACTION');
     try {
-      id = insertTmpl.run({ name: name.trim() }).lastInsertRowid;
+      id = insertTmpl.run({ name: name.trim(), pid: req.profileId }).lastInsertRowid;
       for (const item of items) {
         insertItem.run({ tid: id, fid: item.food_id, fname: item.food_name || '', qty: item.quantity_g });
       }
@@ -65,8 +67,8 @@ router.post('/', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const result = getDb()
-      .prepare('DELETE FROM meal_templates WHERE id = $id')
-      .run({ id: req.params.id });
+      .prepare('DELETE FROM meal_templates WHERE id = $id AND profile_id = $pid')
+      .run({ id: req.params.id, pid: req.profileId });
     if (result.changes === 0) return res.status(404).json({ error: 'Template not found' });
     res.json({ success: true });
   } catch (err) {
