@@ -73,7 +73,11 @@ router.get('/today', async (req, res) => {
   try { last_synced = profileSetting(pid, 'ironlog_last_synced') || null; } catch { /* ignore */ }
 
   try {
-    const today = new Date().toISOString().split('T')[0];
+    // Use the caller's local date when supplied — the server's UTC "today" can
+    // be the user's yesterday and pull the wrong day's workout.
+    const today = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '')
+      ? req.query.date
+      : new Date().toISOString().split('T')[0];
 
     const [profileRes, calsRes] = await Promise.allSettled([
       getProfile(pid),

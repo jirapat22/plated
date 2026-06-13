@@ -50,9 +50,9 @@ function addDays(iso, n) {
   return localDate(d);
 }
 
-async function fetchIronLog() {
+async function fetchIronLog(dateStr) {
   try {
-    const data = await api.get('/api/ironlog/today');
+    const data = await api.get(`/api/ironlog/today?date=${dateStr}`);
     if (data.connected) return data;
     return data.last_synced ? { ...data, _stale: true } : null;
   } catch { return null; }
@@ -455,7 +455,8 @@ export function renderToday(container) {
         api.get(`/api/weight/day/${viewDate}`).catch(() => null),
       ]);
       if (myGen !== loadGen) return;            // a newer load() superseded us
-      const ironlog = await fetchIronLog();
+      // Only pull IronLog for the actual current day, using the local date.
+      const ironlog = (viewDate === localDate()) ? await fetchIronLog(viewDate) : null;
       if (myGen !== loadGen) return;            // and again after the IronLog fetch
       render(mealData, waterData, settings, ironlog, todayWeight);
     } catch (err) {
