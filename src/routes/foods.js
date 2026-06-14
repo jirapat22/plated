@@ -178,6 +178,33 @@ router.get('/favourites', (req, res) => {
   }
 });
 
+// List foods by source — powers the Custom / Scanned tabs.
+// source: 'custom' (user-created) or 'scanned' (openfoodfacts). Optional q filter.
+router.get('/by-source', (req, res) => {
+  try {
+    const source = req.query.source === 'scanned' ? 'openfoodfacts'
+                 : req.query.source === 'custom'  ? 'custom'
+                 : null;
+    if (!source) return res.status(400).json({ error: 'source must be custom or scanned' });
+
+    const q = (req.query.q || '').trim();
+    const rows = getDb().prepare(`
+      SELECT ${FCOLS},
+             COALESCE(pfs.is_favourite, 0) AS is_favourite,
+             COALESCE(pfs.use_count, 0)    AS use_count
+      FROM foods f
+      LEFT JOIN profile_food_stats pfs ON pfs.food_id = f.id AND pfs.profile_id = $pid
+      WHERE f.source = $source AND f.hidden = 0
+        ${q ? 'AND (f.name LIKE $like OR f.brand LIKE $like)' : ''}
+      ORDER BY f.name ASC
+      LIMIT 200
+    `).all(q ? { pid: req.profileId, source, like: `%${q}%` } : { pid: req.profileId, source });
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Barcode lookup — local first, then Open Food Facts
 // UPC-A (12 digits) is stored in OFF as EAN-13 (zero-padded to 13 digits),
 // so we try both the raw barcode and the zero-padded variant.

@@ -4,11 +4,15 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 
-// Ensure data directory exists before DB init
+// Ensure data directory exists before DB init.
+// An explicit DATA_DIR wins (used by tests for isolation); otherwise default to
+// the Railway volume in production and a local ./data folder in development.
 const dataDir =
-  process.env.NODE_ENV === 'production'
-    ? '/data'
-    : path.join(__dirname, 'data');
+  process.env.DATA_DIR
+    ? process.env.DATA_DIR
+    : process.env.NODE_ENV === 'production'
+      ? '/data'
+      : path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }

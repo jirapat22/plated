@@ -16,6 +16,11 @@ export function canDeleteFood(food) {
   const me = getProfile();
   return !!me && (me.is_admin || food.created_by_profile === me.id);
 }
+// Whether the current profile created this food.
+export function isMine(food) {
+  const me = getProfile();
+  return !!me && food.created_by_profile === me.id;
+}
 
 let debounceTimer = null;
 
@@ -38,12 +43,14 @@ export function renderFoods(container) {
         <input class="input" id="foods-search" placeholder="Search foods…" autocomplete="off" />
       </div>
     </div>
-    <div style="padding:0 16px 10px;display:flex;justify-content:space-between;align-items:center">
-      <div class="search-tabs" id="foods-tabs" style="padding:0">
+    <div style="padding:0 16px 10px;display:flex;gap:8px;align-items:center">
+      <div class="search-tabs" id="foods-tabs" style="padding:0;flex:1;overflow-x:auto;flex-wrap:nowrap">
         <button class="search-tab active" data-tab="all">All</button>
-        <button class="search-tab" data-tab="favourites">Favourites</button>
+        <button class="search-tab" data-tab="favourites">★ Favourites</button>
+        <button class="search-tab" data-tab="custom">Custom</button>
+        <button class="search-tab" data-tab="scanned">Scanned</button>
       </div>
-      <button class="btn btn-secondary" id="add-custom-btn" style="height:36px;font-size:12px">+ Add Custom</button>
+      <button class="btn btn-secondary" id="add-custom-btn" style="height:36px;font-size:12px;flex-shrink:0">+ Add</button>
     </div>
     <div id="foods-list"></div>
   `;
@@ -57,10 +64,14 @@ export function renderFoods(container) {
 
     try {
       let rows;
+      const q = query.trim();
       if (currentTab === 'favourites') {
         rows = await api.get('/api/foods/favourites');
-      } else if (query.trim()) {
-        rows = await api.get(`/api/foods/search?q=${encodeURIComponent(query)}`);
+        if (q) rows = rows.filter(f => `${f.name} ${f.brand || ''}`.toLowerCase().includes(q.toLowerCase()));
+      } else if (currentTab === 'custom' || currentTab === 'scanned') {
+        rows = await api.get(`/api/foods/by-source?source=${currentTab}${q ? `&q=${encodeURIComponent(q)}` : ''}`);
+      } else if (q) {
+        rows = await api.get(`/api/foods/search?q=${encodeURIComponent(q)}`);
       } else {
         rows = await api.get('/api/foods/recent');
       }
@@ -86,7 +97,7 @@ export function renderFoods(container) {
       <div class="food-list-icon" style="font-size:18px">${food.is_favourite ? '⭐' : getFoodIcon(food.name)}</div>
       <div class="food-list-info">
         <div class="food-list-name">${esc(food.name)} ${foodTagHtml(food)}</div>
-        <div class="food-list-sub">${food.brand ? esc(food.brand) + ' · ' : ''}${food.calories_per_100g != null ? food.calories_per_100g.toFixed(0) + ' kcal/100g' : 'no cal data'}</div>
+        <div class="food-list-sub">${food.brand ? esc(food.brand) + ' · ' : ''}${food.calories_per_100g != null ? food.calories_per_100g.toFixed(0) + ' kcal/100g' : 'no cal data'}${isMine(food) ? ' · <span style="color:var(--accent)">by you</span>' : ''}</div>
       </div>
       <button class="fav-btn${food.is_favourite ? ' active' : ''}" data-id="${food.id}" title="Toggle favourite">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="${food.is_favourite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.7">
@@ -125,7 +136,7 @@ export function renderFoods(container) {
             <button class="sheet-close" id="detail-close">✕</button>
           </div>
           <div style="padding:0 16px">
-            <div style="margin-bottom:12px">${food.brand ? `<span class="muted">${esc(food.brand)}</span> ` : ''}${foodTagHtml(food)}</div>
+            <div style="margin-bottom:12px">${food.brand ? `<span class="muted">${esc(food.brand)}</span> ` : ''}${foodTagHtml(food)}${isMine(food) ? ' <span class="food-tag" style="background:var(--accent-dim);color:var(--accent)">BY YOU</span>' : ''}</div>
             <div class="card" style="margin-bottom:12px">
               <div class="label" style="margin-bottom:10px">Per 100g</div>
               <div class="macro-totals-row">
