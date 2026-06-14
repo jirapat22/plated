@@ -113,6 +113,13 @@ export function renderSettings(container) {
         <div style="padding:10px 16px 14px;font-size:11px;color:var(--text-faint)">These update automatically when you sync from IronLog.</div>
       </div>
 
+      <!-- Target weight -->
+      <div class="card" style="margin-bottom:12px;padding:0">
+        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">TARGET WEIGHT</div>
+        ${goalRow('target_weight_kg', 'Goal weight', s.target_weight_kg, 'kg')}
+        <div style="padding:10px 16px 14px;font-size:11px;color:var(--text-faint)">Used on the Trends page to track progress toward your goal.</div>
+      </div>
+
       <!-- IronLog -->
       <div class="card" style="margin-bottom:12px;padding:0">
         <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">IRONLOG INTEGRATION</div>

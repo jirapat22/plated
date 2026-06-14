@@ -32,6 +32,14 @@ function sumTotals(sessions) {
   );
 }
 
+// Read the per-day logging-completeness override ('confirmed' = user said they
+// genuinely ate light, so the day should count as fully logged).
+function logStatus(db, date, pid) {
+  return db.prepare(
+    "SELECT value FROM daily_overrides WHERE profile_id = $pid AND date = $date AND key = 'log_status'"
+  ).get({ pid, date })?.value || null;
+}
+
 function loadDay(db, date, pid) {
   const sessions = db.prepare(`
     SELECT * FROM meal_sessions WHERE date = $date AND profile_id = $pid ORDER BY meal_index ASC
@@ -72,7 +80,29 @@ router.get('/day/:date', (req, res) => {
     }
     const db = getDb();
     const sessions = loadDay(db, date, req.profileId);
-    res.json({ date, sessions, totals: sumTotals(sessions) });
+    res.json({ date, sessions, totals: sumTotals(sessions), log_status: logStatus(db, date, req.profileId) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/meals/log-status { date, status } — mark a day's logging as
+// 'confirmed' (user genuinely ate light) or clear it (status null/empty).
+router.post('/log-status', (req, res) => {
+  try {
+    const { date, status } = req.body;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) {
+      return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
+    }
+    const db = getDb();
+    if (status == null || status === '') {
+      db.prepare("DELETE FROM daily_overrides WHERE profile_id = $pid AND date = $date AND key = 'log_status'")
+        .run({ pid: req.profileId, date });
+    } else {
+      db.prepare("INSERT OR REPLACE INTO daily_overrides (profile_id, date, key, value) VALUES ($pid, $date, 'log_status', $status)")
+        .run({ pid: req.profileId, date, status: String(status) });
+    }
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -89,9 +119,13 @@ router.get('/summary', (req, res) => {
         COALESCE(SUM(me.protein),  0) AS protein,
         COALESCE(SUM(me.carbs),    0) AS carbs,
         COALESCE(SUM(me.fat),      0) AS fat,
-        COALESCE(SUM(me.fiber),    0) AS fiber
+        COALESCE(SUM(me.fiber),    0) AS fiber,
+        COUNT(DISTINCT me.meal_session_id) AS meal_count,
+        MAX(ovr.value) AS log_status
       FROM meal_sessions ms
       LEFT JOIN meal_entries me ON me.meal_session_id = ms.id
+      LEFT JOIN daily_overrides ovr
+        ON ovr.profile_id = ms.profile_id AND ovr.date = ms.date AND ovr.key = 'log_status'
       WHERE ms.date >= date('now', $offset) AND ms.profile_id = $pid
       GROUP BY ms.date
       ORDER BY ms.date ASC

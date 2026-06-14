@@ -7,6 +7,7 @@ const ALLOWED = new Set([
   'calorie_goal', 'protein_goal', 'carb_goal', 'fat_goal',
   'fiber_goal', 'water_goal_ml', 'ironlog_api_url', 'ironlog_api_key', 'protein_multiplier',
   'phase', 'tdee', 'cut_deficit', 'bulk_surplus', 'energy_unit', 'ironlog_last_synced',
+  'target_weight_kg',
 ]);
 
 function allSettings(db, pid) {

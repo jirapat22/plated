@@ -1,5 +1,11 @@
 import { api }                       from '../api.js';
 import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
+import { localDate }                  from '../utils/date.js';
+import { showToast }                  from '../app.js';
+import { openFoodEntry }              from './log.js';
+import { classifyDay, isFlagged, LOG_STRONG } from '../utils/logCheck.js';
+
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
 const CHART_DEFAULTS = {
   responsive: true,
@@ -23,6 +29,16 @@ const CHART_DEFAULTS = {
 
 function destroyChart(id) { Chart.getChart(id)?.destroy(); }
 
+// Trailing moving average — a smooth trend line over `win` days.
+function movingAvg(arr, win = 7) {
+  return arr.map((_, i) => {
+    const start = Math.max(0, i - win + 1);
+    const slice = arr.slice(start, i + 1).filter(v => v != null);
+    if (!slice.length) return null;
+    return slice.reduce((s, v) => s + v, 0) / slice.length;
+  });
+}
+
 function makeChart(id, labels, data, color, yLabel, opts = {}) {
   destroyChart(id);
   const ctx = document.getElementById(id);
@@ -34,7 +50,26 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
     backgroundColor: color + '22',
     fill: true,
     borderWidth: 2,
+    pointBackgroundColor: opts.pointColors || color,
+    pointBorderColor:     opts.pointColors || color,
+    pointRadius:          opts.pointRadii  || 2,
+    pointHoverRadius:     6,
   }];
+
+  // Smoothed trend line
+  if (opts.trendData) {
+    datasets.push({
+      label: 'trend',
+      data: opts.trendData,
+      borderColor: color,
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      borderDash: [2, 3],
+      pointRadius: 0,
+      tension: 0.4,
+      fill: false,
+    });
+  }
 
   if (opts.goalLine != null) {
     datasets.push({
@@ -75,7 +110,9 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
           callbacks: {
             label: c => {
               const lbl = c.dataset.label;
-              const suffix = lbl === 'goal' ? ' (goal)' : lbl === '7d avg' ? ' (7d avg)' : '';
+              const suffix = lbl === 'goal' ? ' (goal)' : lbl === '7d avg' ? ' (7d avg)'
+                : lbl === 'trend' ? ' (trend)' : '';
+              if (lbl === 'trend' && c.parsed.y == null) return null;
               return `${c.parsed.y.toFixed(1)} ${yLabel}${suffix}`;
             },
           },
@@ -129,8 +166,8 @@ export function renderTrends(container) {
     <div class="today-header">
       <div class="today-date">Trends</div>
       <div style="display:flex;gap:6px">
-        <button class="range-btn active" data-days="7">7d</button>
-        <button class="range-btn" data-days="30">30d</button>
+        <button class="range-btn" data-days="7">7d</button>
+        <button class="range-btn active" data-days="30">30d</button>
         <button class="range-btn" data-days="90">90d</button>
       </div>
     </div>
@@ -179,18 +216,31 @@ export function renderTrends(container) {
   function render(summary, localWeights, ironlogWeights, settings) {
     const goal        = parseFloat(settings.calorie_goal) || 2000;
     const proteinGoal = parseFloat(settings.protein_goal) || 150;
-    const streak = calcStreak(summary, goal);
-    const ul     = unitLabel();
+    const carbGoal    = parseFloat(settings.carb_goal) || 250;
+    const fatGoal     = parseFloat(settings.fat_goal)  || 65;
+    const ul          = unitLabel();
+    const todayISO    = localDate();
+    const streak      = calcStreak(summary, goal);
 
-    const carbGoal  = parseFloat(settings.carb_goal) || 250;
-    const fatGoal   = parseFloat(settings.fat_goal)  || 65;
+    // Tag every day with its logging-completeness status.
+    const rows = summary.map(r => ({ ...r, status: classifyDay(r, goal, todayISO) }));
+    const loggedDays   = rows.filter(r => (r.meal_count || 0) > 0);
+    const flaggedDays  = rows.filter(r => isFlagged(r.status));
+    const completeDays = loggedDays.filter(r => r.status === 'complete');
 
-    const labels   = summary.map(r => { const d = new Date(r.date + 'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; });
-    const cals     = summary.map(r => toDisplay(r.calories ?? 0));
-    const proteins = summary.map(r => r.protein ?? 0);
-    const carbs    = summary.map(r => r.carbs ?? 0);
-    const fats     = summary.map(r => r.fat ?? 0);
+    const labels   = rows.map(r => { const d = new Date(r.date + 'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; });
+    const cals     = rows.map(r => toDisplay(r.calories ?? 0));
+    const proteins = rows.map(r => r.protein ?? 0);
+    const carbs    = rows.map(r => r.carbs ?? 0);
+    const fats     = rows.map(r => r.fat ?? 0);
 
+    // Flagged (likely-incomplete) days get an orange dot so the gap is visible.
+    const FLAG = '#f97316';
+    const pointColors = rows.map(r => isFlagged(r.status) ? FLAG : '#c8b8ff');
+    const pointRadii  = rows.map(r => isFlagged(r.status) ? 5 : 2);
+    const calTrend    = movingAvg(rows.map(r => toDisplay(r.calories ?? 0)), 7);
+
+    // Weight series (IronLog + local merged by date)
     const weightMap = {};
     ironlogWeights.forEach(w => { weightMap[w.date] = w.weight_kg; });
     localWeights.forEach(w   => { weightMap[w.date] = w.weight_kg; });
@@ -199,13 +249,36 @@ export function renderTrends(container) {
       .slice(-days);
     const wLabels = weightEntries.map(([d]) => { const dt = new Date(d + 'T00:00:00'); return `${dt.getMonth()+1}/${dt.getDate()}`; });
     const wVals   = weightEntries.map(([, v]) => v);
+    const wTrend  = movingAvg(wVals, 7);
 
-    const weeklyAvgKcal = summary.length >= 7
-      ? summary.slice(-7).reduce((s, r) => s + (r.calories ?? 0), 0) / 7
+    // ── 7-day average — excludes flagged (likely-incomplete) days ──
+    const recent7  = rows.slice(-7);
+    const valid7   = recent7.filter(r => (r.meal_count || 0) > 0 && !isFlagged(r.status));
+    const skipped7 = recent7.filter(r => isFlagged(r.status)).length;
+    const weeklyAvgKcal = valid7.length
+      ? valid7.reduce((s, r) => s + (r.calories ?? 0), 0) / valid7.length
       : null;
-    const weeklyAvg = weeklyAvgKcal != null ? fmtE(weeklyAvgKcal) : null;
+    const weeklyAvg        = weeklyAvgKcal != null ? fmtE(weeklyAvgKcal) : null;
     const weeklyAvgDisplay = weeklyAvgKcal != null ? toDisplay(weeklyAvgKcal) : null;
     const goalDisplay = toDisplay(goal);
+
+    // ── Consistency over the range ──
+    const loggedCount   = loggedDays.length;
+    const completeCount = completeDays.length;
+    const completePct   = loggedCount ? Math.round((completeCount / loggedCount) * 100) : 0;
+
+    // ── Goal progress ──
+    const validForAvg = loggedDays.filter(r => !isFlagged(r.status));
+    const avgCal = validForAvg.length
+      ? validForAvg.reduce((s, r) => s + (r.calories ?? 0), 0) / validForAvg.length
+      : null;
+    const balance = avgCal != null ? avgCal - goal : null;   // + over / - under goal
+
+    const targetWeight = parseFloat(settings.target_weight_kg) || null;
+    const curWeight    = wVals.length ? wVals[wVals.length - 1] : null;
+    const startWeight  = wVals.length ? wVals[0] : null;
+    const wChange      = (curWeight != null && startWeight != null) ? curWeight - startWeight : null;
+    const toTarget     = (curWeight != null && targetWeight != null) ? curWeight - targetWeight : null;
 
     // Streak messaging
     const streakEl = streak === 0
@@ -224,10 +297,80 @@ export function renderTrends(container) {
         </div>
       </div>
 
+      <!-- Consistency -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="label" style="margin-bottom:10px">Consistency — ${days}d</div>
+        <div class="stat-grid">
+          <div class="stat-cell">
+            <div class="stat-num">${loggedCount}</div>
+            <div class="stat-lbl">days logged</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-num">${completePct}%</div>
+            <div class="stat-lbl">fully logged</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-num" style="color:${flaggedDays.length ? FLAG : 'var(--text)'}">${flaggedDays.length}</div>
+            <div class="stat-lbl">need a look</div>
+          </div>
+        </div>
+      </div>
+
+      ${flaggedDays.length ? `
+      <!-- Needs a look -->
+      <div class="card" style="margin-bottom:12px;padding:0">
+        <div style="padding:14px 16px 8px;font-size:13px;font-weight:700;color:var(--text-muted)">⚠️ NEEDS A LOOK</div>
+        <div style="padding:0 12px 8px">
+          ${flaggedDays.slice().reverse().map(r => {
+            const d = new Date(r.date + 'T00:00:00');
+            const lbl = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            return `
+            <div class="review-row">
+              <div style="min-width:0">
+                <div style="font-size:14px;font-weight:600">${lbl}${r.status === LOG_STRONG ? ' <span style="color:'+FLAG+'">⚠</span>' : ''}</div>
+                <div style="font-size:12px;color:var(--text-muted)">${r.meal_count} meal${r.meal_count === 1 ? '' : 's'} · ${fmtE(r.calories)} ${ul}</div>
+              </div>
+              <div style="display:flex;gap:6px;flex-shrink:0">
+                <button class="review-add"   data-date="${r.date}">Add</button>
+                <button class="review-light" data-date="${r.date}">Ate light</button>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : ''}
+
+      <!-- Goal progress -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="label" style="margin-bottom:10px">Goal progress — ${days}d</div>
+        <div class="gp-row">
+          <span class="gp-lbl">Avg intake ${avgCal != null ? '(complete days)' : ''}</span>
+          <span class="gp-val">${avgCal != null ? `${fmtE(avgCal)} ${ul}` : '–'}
+            ${balance != null ? `<span style="font-size:12px;color:${balance > 0 ? 'var(--warning)' : 'var(--success)'}"> · ${balance > 0 ? '+' : ''}${fmtE(balance)} vs goal</span>` : ''}
+          </span>
+        </div>
+        <div class="gp-row">
+          <span class="gp-lbl">Weight (${days}d change)</span>
+          <span class="gp-val">${curWeight != null ? `${curWeight.toFixed(1)} kg` : '–'}
+            ${wChange != null ? `<span style="font-size:12px;color:var(--text-muted)"> · ${wChange > 0 ? '+' : ''}${wChange.toFixed(1)} kg</span>` : ''}
+          </span>
+        </div>
+        ${targetWeight != null ? `
+        <div class="gp-row">
+          <span class="gp-lbl">To target (${targetWeight} kg)</span>
+          <span class="gp-val">${toTarget != null ? `${toTarget > 0 ? '' : '+'}${(-toTarget).toFixed(1)} kg to go` : '–'}</span>
+        </div>` : `
+        <div class="gp-row">
+          <span class="gp-lbl" style="font-size:12px;color:var(--text-faint)">Set a target weight in Settings to track progress</span>
+        </div>`}
+      </div>
+
       <!-- Weekly avg -->
       ${weeklyAvg ? `
       <div class="card" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
-        <div class="label">7-day avg</div>
+        <div>
+          <div class="label">7-day avg</div>
+          ${skipped7 ? `<div style="font-size:11px;color:var(--text-faint);margin-top:2px">${skipped7} under-logged day${skipped7 === 1 ? '' : 's'} excluded</div>` : ''}
+        </div>
         <div class="num" style="font-size:18px">${weeklyAvg}
           <span style="font-size:12px;color:var(--text-muted)"> / ${fmtE(goal)} ${ul}</span>
         </div>
@@ -241,9 +384,9 @@ export function renderTrends(container) {
             <span style="display:flex;align-items:center;gap:4px">
               <span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>goal
             </span>
-            ${weeklyAvg ? `<span style="display:flex;align-items:center;gap:4px">
-              <span style="width:16px;height:2px;background:#c8b8ff;display:inline-block;border-radius:1px"></span>7d avg
-            </span>` : ''}
+            <span style="display:flex;align-items:center;gap:4px">
+              <span style="width:7px;height:7px;background:${FLAG};display:inline-block;border-radius:50%"></span>under-logged
+            </span>
           </div>
         </div>
         <div style="height:160px;position:relative"><canvas id="chart-cal"></canvas></div>
@@ -274,12 +417,34 @@ export function renderTrends(container) {
       </div>
     `;
 
+    // Review-list actions
+    document.querySelectorAll('.review-add').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          const session = await api.post('/api/meals/sessions', { date: btn.dataset.date });
+          openFoodEntry(session.id, () => load());
+        } catch (err) { showToast(err.message, 'error'); }
+      });
+    });
+    document.querySelectorAll('.review-light').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api.post('/api/meals/log-status', { date: btn.dataset.date, status: 'confirmed' });
+          showToast('Counted as a light day', 'success');
+          load();
+        } catch (err) { showToast(err.message, 'error'); }
+      });
+    });
+
     requestAnimationFrame(() => {
-      makeChart('chart-cal', labels, cals, '#c8b8ff', ul, { goalLine: goalDisplay, avgLine: weeklyAvgDisplay });
+      makeChart('chart-cal', labels, cals, '#c8b8ff', ul, {
+        goalLine: goalDisplay, avgLine: weeklyAvgDisplay,
+        pointColors, pointRadii, trendData: calTrend,
+      });
       makeChart('chart-pro',  labels, proteins, '#1E88E5', 'g', { goalLine: proteinGoal });
       makeChart('chart-carb', labels, carbs,    '#f97316', 'g', { goalLine: carbGoal });
       makeChart('chart-fat',  labels, fats,     '#eab308', 'g', { goalLine: fatGoal  });
-      if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg');
+      if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg', { trendData: wTrend });
       else {
         const c = document.getElementById('chart-wt');
         if (c) c.closest('.card').querySelector('.label').nextElementSibling.innerHTML =

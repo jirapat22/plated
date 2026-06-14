@@ -1054,3 +1054,58 @@ img { display: block; max-width: 100%; }
 }
 .tag-custom  { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(200,184,255,.25); }
 .tag-scanned { background: rgba(126,231,199,.12); color: #7ee7c7; border: 1px solid rgba(126,231,199,.25); }
+
+/* ─── "Did you fully log?" banner (Today) ────────────────── */
+.logcheck-banner {
+  background: rgba(249,115,22,.10);
+  border: 1px solid rgba(249,115,22,.30);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.logcheck-title { font-size: 13px; font-weight: 700; color: #f9a35c; }
+.logcheck-sub   { font-size: 12px; color: var(--text-muted); margin-top: 2px; line-height: 1.4; }
+.logcheck-text  { min-width: 0; flex: 1; }
+.logcheck-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.logcheck-actions .btn { height: 34px; padding: 0 14px; font-size: 13px; }
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+/* ─── Trends: consistency stats + goal progress + review ─── */
+.stat-grid { display: flex; gap: 8px; }
+.stat-cell {
+  flex: 1;
+  text-align: center;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 12px 6px;
+}
+.stat-num { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-lbl { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+.gp-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 0; gap: 12px;
+}
+.gp-row + .gp-row { border-top: 1px solid var(--border); }
+.gp-lbl { font-size: 13px; color: var(--text-muted); }
+.gp-val { font-size: 15px; font-weight: 700; text-align: right; }
+
+.review-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 10px 4px;
+}
+.review-row + .review-row { border-top: 1px solid var(--border); }
+.review-add, .review-light {
+  height: 30px; padding: 0 10px; font-size: 12px; font-weight: 600;
+  border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-muted);
+}
+.review-add { color: var(--accent); border-color: rgba(200,184,255,.3); background: var(--accent-dim); }

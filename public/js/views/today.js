@@ -5,6 +5,7 @@ import { renderMacroBar }                  from '../components/macroBar.js';
 import { fmtE, unitLabel, wireEnergyUnitToggle } from '../utils/energy.js';
 import { getFoodIcon }                     from '../utils/foodIcon.js';
 import { localDate }                       from '../utils/date.js';
+import { classifyDay, isFlagged, LOG_STRONG } from '../utils/logCheck.js';
 
 const CIRC = 2 * Math.PI * 60;
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -481,6 +482,14 @@ export function renderToday(container) {
     const waterGoal = waterData.goal_ml || goals.water;
     const waterPct  = Math.min((waterData.total_ml / waterGoal) * 100, 100);
 
+    // ── "Did you fully log this day?" check (past days only) ──
+    const mealCount = (mealData.sessions || []).filter(s => (s.entries?.length || 0) > 0).length;
+    const dayStatus = classifyDay(
+      { date: viewDate, calories: t.calories, meal_count: mealCount, log_status: mealData.log_status },
+      goals.cal, today
+    );
+    const showLogCheck = isFlagged(dayStatus);   // never true for today/future
+
     // ── Calorie rings ────────────────────────────────────────
     // Middle = base goal; right = workout earned; left = goal + workout.
     // Eaten fills the base goal first, then spills into the workout ring.
@@ -550,10 +559,24 @@ export function renderToday(container) {
         </div>
       </div>` : ''}
 
+      <!-- "Did you forget to log?" check -->
+      ${showLogCheck ? `
+      <div style="padding:0 16px 4px">
+        <div class="logcheck-banner">
+          <div class="logcheck-text">
+            <div class="logcheck-title">${dayStatus === LOG_STRONG ? '⚠️ This day looks under-logged' : '🤔 Did you log everything?'}</div>
+            <div class="logcheck-sub">Only ${mealCount} meal${mealCount === 1 ? '' : 's'} · ${fmtE(t.calories)} ${ul} — that's low for your goal. Forgot something, or just a light day?</div>
+          </div>
+          <div class="logcheck-actions">
+            <button class="btn btn-secondary logcheck-add">Add a meal</button>
+            <button class="btn btn-ghost logcheck-light">I ate light</button>
+          </div>
+        </div>
+      </div>` : ''}
+
       <!-- Calorie ring(s) -->
       <div style="padding:0 16px 4px">
         <div class="card">
-          ${hasWorkout ? `
           <div class="tri-rings">
             <div class="ring-col">
               <div class="ring-title">Eat Target</div>
@@ -568,7 +591,7 @@ export function renderToday(container) {
             <div class="ring-col">
               <div class="ring-title">Daily Goal</div>
               <div class="ring-wrap-relative">
-                ${calRingSvg(midPct, '', false, false)}
+                ${calRingSvg(midPct, '', eaten > baseGoal, false)}
                 <div class="ring-center">
                   <div class="num ring-kcal">${fmtE(eaten)}</div>
                   <div class="ring-goal muted">/ ${fmtE(baseGoal)} ${ul}</div>
@@ -582,23 +605,11 @@ export function renderToday(container) {
                 ${calRingSvg(rightPct, 'workout', false, true)}
                 <div class="ring-center">
                   <div class="num ring-kcal-sm">${fmtE(burned)}🔥</div>
-                  <div class="ring-goal-sm">burned</div>
+                  <div class="ring-goal-sm">${hasWorkout ? 'burned' : 'rest day'}</div>
                 </div>
               </div>
             </div>
           </div>
-          ` : `
-          <div class="summary-row">
-            <div class="ring-wrap-relative">
-              ${calRingSvg(midPct, '', eaten > baseGoal, false)}
-              <div class="ring-center">
-                <div class="num ring-kcal">${fmtE(eaten)}</div>
-                <div class="ring-goal muted">/ ${fmtE(baseGoal)} ${ul}</div>
-                <div style="font-size:11px;margin-top:2px;color:${hintColor};font-weight:600">${hintText}</div>
-              </div>
-            </div>
-          </div>
-          `}
           <div id="macro-bar-root" style="margin-top:12px"></div>
         </div>
       </div>
@@ -732,6 +743,21 @@ export function renderToday(container) {
     });
     document.getElementById('go-today-btn')?.addEventListener('click', () => {
       userNavigated = false; viewDate = localDate(); load();
+    });
+
+    // Log-check banner: add a meal, or confirm "I ate light"
+    document.querySelector('.logcheck-add')?.addEventListener('click', async () => {
+      try {
+        const session = await api.post('/api/meals/sessions', { date: viewDate });
+        openFoodEntry(session.id, () => load());
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+    document.querySelector('.logcheck-light')?.addEventListener('click', async () => {
+      try {
+        await api.post('/api/meals/log-status', { date: viewDate, status: 'confirmed' });
+        showToast('Got it — counted as a light day', 'success');
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
     });
 
     // IronLog toggle
