@@ -63,8 +63,10 @@ async function ironFetch(pid, path) {
 // Typed helpers for the IronLog Plated API
 const getProfile         = (pid)             => ironFetch(pid, '/api/plated/profile');
 const getBodyweight       = (pid, limit = 30) => ironFetch(pid, `/api/plated/bodyweight?limit=${limit}`);
-const getWorkoutCalories  = (pid, date)       => ironFetch(pid, `/api/plated/workouts/calories${date ? `?date=${date}` : ''}`);
-const getRecentWorkouts   = (pid, limit = 7)  => ironFetch(pid, `/api/plated/workouts/recent?limit=${limit}`);
+// tz = client's getTimezoneOffset() (minutes behind UTC; NZ = -720). IronLog
+// uses it to bucket workouts into the user's local calendar day.
+const getWorkoutCalories  = (pid, date, tz = 0)      => ironFetch(pid, `/api/plated/workouts/calories${date ? `?date=${date}&tz=${tz}` : ''}`);
+const getRecentWorkouts   = (pid, limit = 7, tz = 0) => ironFetch(pid, `/api/plated/workouts/recent?limit=${limit}&tz=${tz}`);
 
 const workoutCalories = w =>
   Number(w?.calories_burned ?? w?.calories ?? w?.total_calories ?? w?.kcal ?? 0) || 0;
@@ -101,8 +103,8 @@ router.get('/today', async (req, res) => {
     // date; summing recent workouts matched to the local day is tz-robust.
     const [profileRes, calsRes, recentRes] = await Promise.allSettled([
       getProfile(pid),
-      getWorkoutCalories(pid, today),
-      getRecentWorkouts(pid, 30),
+      getWorkoutCalories(pid, today, tzOff),
+      getRecentWorkouts(pid, 30, tzOff),
     ]);
 
     if (profileRes.status !== 'fulfilled') {
