@@ -117,10 +117,12 @@ router.get('/today', async (req, res) => {
     const calsData     = calsRes.status === 'fulfilled' ? (calsRes.value?.data ?? calsRes.value) : null;
     const endpointBurned = Number(calsData?.calories_burned ?? calsData?.total ?? calsData?.calories ?? 0) || 0;
 
-    let matchedBurned = 0, matchedCount = 0;
+    let matchedBurned = 0, matchedCount = 0, recentCount = 0, recentSample = [];
     if (recentRes.status === 'fulfilled') {
       const list = recentRes.value?.data ?? recentRes.value;
       if (Array.isArray(list)) {
+        recentCount  = list.length;
+        recentSample = list.slice(0, 5);   // raw items so we can read IronLog's field names
         for (const w of list) {
           if (workoutLocalDate(w, tzOff) === today) { matchedBurned += workoutCalories(w); matchedCount++; }
         }
@@ -145,7 +147,10 @@ router.get('/today', async (req, res) => {
       calorie_target:  calorieGoal != null ? Math.round(calorieGoal + burned) : null,
       last_synced:     now,
       debug: { date: today, tz: tzOff, endpointBurned, matchedBurned, matchedCount,
-               recent_ok: recentRes.status === 'fulfilled', cals_ok: calsRes.status === 'fulfilled' },
+               recent_ok: recentRes.status === 'fulfilled', cals_ok: calsRes.status === 'fulfilled',
+               recent_count: recentCount, recent_sample: recentSample, cals_raw: calsData,
+               recent_err: recentRes.status === 'rejected' ? String(recentRes.reason?.message || '') : null,
+               cals_err: calsRes.status === 'rejected' ? String(calsRes.reason?.message || '') : null },
     });
   } catch (err) {
     res.json({ connected: false, error: err.message, profile: null, calories_burned: 0, calorie_target: null, last_synced });

@@ -691,8 +691,12 @@ export function renderToday(container) {
             ${(burned === 0 && ironlog.debug) ? `
             <div style="margin-top:8px;font-size:10px;color:var(--text-faint);line-height:1.5">
               No workout found for ${ironlog.debug.date}.
-              <br>recent: ${ironlog.debug.recent_ok ? `${ironlog.debug.matchedCount} matched` : 'unavailable'} ·
+              <br>recent: ${ironlog.debug.recent_ok ? `${ironlog.debug.recent_count} returned, ${ironlog.debug.matchedCount} matched` : 'unavailable'} ·
               calories endpoint: ${ironlog.debug.cals_ok ? `${ironlog.debug.endpointBurned} ${ul}` : 'unavailable'}
+              <details style="margin-top:6px">
+                <summary style="cursor:pointer">raw IronLog data (tap, then long-press to copy)</summary>
+                <pre style="white-space:pre-wrap;word-break:break-all;font-size:9px;background:var(--surface-2);padding:8px;border-radius:6px;margin-top:4px">${esc(JSON.stringify({ recent_sample: ironlog.debug.recent_sample, cals_raw: ironlog.debug.cals_raw, recent_err: ironlog.debug.recent_err, cals_err: ironlog.debug.cals_err }, null, 2))}</pre>
+              </details>
             </div>` : ''}
           </div>` : ''}
         </div>
