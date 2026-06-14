@@ -53,7 +53,7 @@ function addDays(iso, n) {
 
 async function fetchIronLog(dateStr) {
   try {
-    const data = await api.get(`/api/ironlog/today?date=${dateStr}`);
+    const data = await api.get(`/api/ironlog/today?date=${dateStr}&tz=${new Date().getTimezoneOffset()}`);
     if (data.connected) return data;
     return data.last_synced ? { ...data, _stale: true } : null;
   } catch { return null; }
@@ -688,6 +688,12 @@ export function renderToday(container) {
               <span class="muted">Net</span>
               <span class="num">${fmtE(net)} ${ul}</span>
             </div>
+            ${(burned === 0 && ironlog.debug) ? `
+            <div style="margin-top:8px;font-size:10px;color:var(--text-faint);line-height:1.5">
+              No workout found for ${ironlog.debug.date}.
+              <br>recent: ${ironlog.debug.recent_ok ? `${ironlog.debug.matchedCount} matched` : 'unavailable'} ·
+              calories endpoint: ${ironlog.debug.cals_ok ? `${ironlog.debug.endpointBurned} ${ul}` : 'unavailable'}
+            </div>` : ''}
           </div>` : ''}
         </div>
       </div>` : ''}

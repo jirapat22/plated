@@ -66,6 +66,22 @@ const getBodyweight       = (pid, limit = 30) => ironFetch(pid, `/api/plated/bod
 const getWorkoutCalories  = (pid, date)       => ironFetch(pid, `/api/plated/workouts/calories${date ? `?date=${date}` : ''}`);
 const getRecentWorkouts   = (pid, limit = 7)  => ironFetch(pid, `/api/plated/workouts/recent?limit=${limit}`);
 
+const workoutCalories = w =>
+  Number(w?.calories_burned ?? w?.calories ?? w?.total_calories ?? w?.kcal ?? 0) || 0;
+
+// Resolve a workout's calendar date in the USER's local timezone.
+// Accepts a plain 'YYYY-MM-DD' (used as-is — already the user's logging day) or
+// an ISO timestamp (shifted by the client's tz offset, in minutes behind UTC).
+function workoutLocalDate(w, tzOffsetMin = 0) {
+  const raw = w?.date ?? w?.performed_at ?? w?.completed_at ?? w?.created_at ?? w?.logged_at ?? w?.timestamp;
+  if (!raw) return null;
+  const s = String(raw);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const t = Date.parse(s);
+  if (Number.isNaN(t)) return s.split('T')[0] || null;
+  return new Date(t - tzOffsetMin * 60000).toISOString().split('T')[0];
+}
+
 // GET /api/ironlog/today — profile + calories burned for today
 router.get('/today', async (req, res) => {
   const pid = req.profileId;
@@ -78,10 +94,15 @@ router.get('/today', async (req, res) => {
     const today = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '')
       ? req.query.date
       : new Date().toISOString().split('T')[0];
+    const tzOff = Number.isFinite(parseInt(req.query.tz)) ? parseInt(req.query.tz) : 0;
 
-    const [profileRes, calsRes] = await Promise.allSettled([
+    // Pull the calories endpoint AND recent workouts. The endpoint can miss the
+    // day when IronLog dates workouts in UTC but we ask for the user's local
+    // date; summing recent workouts matched to the local day is tz-robust.
+    const [profileRes, calsRes, recentRes] = await Promise.allSettled([
       getProfile(pid),
       getWorkoutCalories(pid, today),
+      getRecentWorkouts(pid, 30),
     ]);
 
     if (profileRes.status !== 'fulfilled') {
@@ -92,8 +113,22 @@ router.get('/today', async (req, res) => {
     }
 
     const profileData = profileRes.value?.data ?? profileRes.value;
-    const calsData    = calsRes.status === 'fulfilled' ? (calsRes.value?.data ?? calsRes.value) : null;
-    const burned      = calsData?.calories_burned ?? calsData?.total ?? calsData?.calories ?? 0;
+
+    const calsData     = calsRes.status === 'fulfilled' ? (calsRes.value?.data ?? calsRes.value) : null;
+    const endpointBurned = Number(calsData?.calories_burned ?? calsData?.total ?? calsData?.calories ?? 0) || 0;
+
+    let matchedBurned = 0, matchedCount = 0;
+    if (recentRes.status === 'fulfilled') {
+      const list = recentRes.value?.data ?? recentRes.value;
+      if (Array.isArray(list)) {
+        for (const w of list) {
+          if (workoutLocalDate(w, tzOff) === today) { matchedBurned += workoutCalories(w); matchedCount++; }
+        }
+      }
+    }
+
+    // Prefer the tz-matched recent workouts; fall back to the calories endpoint.
+    const burned = matchedCount > 0 ? matchedBurned : endpointBurned;
 
     const now = new Date().toISOString();
     try {
@@ -109,6 +144,8 @@ router.get('/today', async (req, res) => {
       calories_burned: burned,
       calorie_target:  calorieGoal != null ? Math.round(calorieGoal + burned) : null,
       last_synced:     now,
+      debug: { date: today, tz: tzOff, endpointBurned, matchedBurned, matchedCount,
+               recent_ok: recentRes.status === 'fulfilled', cals_ok: calsRes.status === 'fulfilled' },
     });
   } catch (err) {
     res.json({ connected: false, error: err.message, profile: null, calories_burned: 0, calorie_target: null, last_synced });
