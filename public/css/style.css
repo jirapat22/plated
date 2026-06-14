@@ -198,7 +198,8 @@ img { display: block; max-width: 100%; }
   /* stroke-dasharray set via inline style= so CSS cannot override it */
   transition: stroke-dasharray 600ms ease-out;
 }
-.ring-fill.over { stroke: var(--over); }
+/* Overflow arc drawn on top of the base fill — only the exceeded slice is dark */
+.ring-fill.ring-over { stroke: var(--over); }
 .ring-center {
   position: absolute;
   top: 50%; left: 50%;
@@ -231,10 +232,6 @@ img { display: block; max-width: 100%; }
 .calorie-ring.ring-sm { width: 82px; height: 82px; }
 .ring-fill.workout { stroke: var(--warning); }
 .ring-fill.target  { stroke: var(--success); }
-/* Exceeded the limit — darker burnt orange, wins over target/workout colours */
-.ring-fill.over,
-.ring-fill.target.over,
-.ring-fill.workout.over { stroke: var(--over); }
 .ring-kcal-sm { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .ring-goal-sm { font-size: 9px; color: var(--text-muted); }
 

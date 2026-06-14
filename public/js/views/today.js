@@ -13,12 +13,18 @@ const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 function fmt(n, dec = 0) { return n == null ? '–' : Number(n).toFixed(dec); }
 
 // Build one calorie ring SVG. variant: '' (goal, accent) | 'workout' | 'target'.
-function calRingSvg(pct, variant = '', over = false, small = false) {
+// overflowPct (0-100): the exceeded portion, drawn on top in the darker --over
+// colour so only the slice past the goal is dark, not the whole ring.
+function calRingSvg(pct, variant = '', small = false, overflowPct = 0) {
+  const base = (Math.min(pct, 100) / 100) * CIRC;
+  const over = (Math.min(Math.max(overflowPct, 0), 100) / 100) * CIRC;
   return `
     <svg class="calorie-ring${small ? ' ring-sm' : ''}" viewBox="0 0 140 140">
       <circle class="ring-bg" cx="70" cy="70" r="60"/>
-      <circle class="ring-fill ${variant}${over ? ' over' : ''}" cx="70" cy="70" r="60"
-        style="stroke-dasharray:${(pct / 100) * CIRC} ${CIRC}"/>
+      <circle class="ring-fill ${variant}" cx="70" cy="70" r="60"
+        style="stroke-dasharray:${base} ${CIRC}"/>
+      ${over > 0 ? `<circle class="ring-fill ring-over" cx="70" cy="70" r="60"
+        style="stroke-dasharray:${over} ${CIRC}"/>` : ''}
     </svg>`;
 }
 
@@ -504,7 +510,9 @@ export function renderToday(container) {
     const rightFill= Math.max(0, Math.min(eaten - baseGoal, burned)); // overflow into workout
     const rightPct = burned > 0 ? (rightFill / burned) * 100 : 0;     // right: overflow vs burned
     const leftPct  = Math.min(eaten / combined, 1) * 100;            // left: eaten vs combined
-    const overEat  = eaten > combined;
+    // Exceeded slices — only this portion of the ring is drawn dark.
+    const midOver  = baseGoal > 0 ? Math.max(0, (eaten - baseGoal) / baseGoal) * 100 : 0;
+    const leftOver = combined > 0 ? Math.max(0, (eaten - combined) / combined) * 100 : 0;
 
     // Hint speaks to the real budget (combined when a workout exists)
     const budget    = hasWorkout ? combined : baseGoal;
@@ -581,7 +589,7 @@ export function renderToday(container) {
             <div class="ring-col">
               <div class="ring-title">Eat Target</div>
               <div class="ring-wrap-relative">
-                ${calRingSvg(leftPct, 'target', overEat, true)}
+                ${calRingSvg(leftPct, 'target', true, leftOver)}
                 <div class="ring-center">
                   <div class="num ring-kcal-sm">${fmtE(eaten)}</div>
                   <div class="ring-goal-sm">/ ${fmtE(combined)}</div>
@@ -591,7 +599,7 @@ export function renderToday(container) {
             <div class="ring-col">
               <div class="ring-title">Daily Goal</div>
               <div class="ring-wrap-relative">
-                ${calRingSvg(midPct, '', eaten > baseGoal, false)}
+                ${calRingSvg(midPct, '', false, midOver)}
                 <div class="ring-center">
                   <div class="num ring-kcal">${fmtE(eaten)}</div>
                   <div class="ring-goal muted">/ ${fmtE(baseGoal)} ${ul}</div>
@@ -602,7 +610,7 @@ export function renderToday(container) {
             <div class="ring-col">
               <div class="ring-title">Workout</div>
               <div class="ring-wrap-relative">
-                ${calRingSvg(rightPct, 'workout', false, true)}
+                ${calRingSvg(rightPct, 'workout', true, 0)}
                 <div class="ring-center">
                   <div class="num ring-kcal-sm">${fmtE(burned)}🔥</div>
                   <div class="ring-goal-sm">${hasWorkout ? 'burned' : 'rest day'}</div>
