@@ -233,6 +233,17 @@ img { display: block; max-width: 100%; }
 .ring-kcal-sm { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .ring-goal-sm { font-size: 9px; color: var(--text-muted); }
 
+/* Phones: three rings (316px wide) overflow the card and clip to a single
+   visible ring. Scale them with the viewport so all three always fit, down
+   to a ~320px screen. The SVGs use a viewBox so they scale cleanly. */
+@media (max-width: 430px) {
+  .tri-rings { gap: 2px; }
+  .tri-rings .calorie-ring         { width: clamp(94px, 30vw, 140px); height: clamp(94px, 30vw, 140px); }
+  .tri-rings .calorie-ring.ring-sm { width: clamp(58px, 19vw, 82px);  height: clamp(58px, 19vw, 82px); }
+  .tri-rings .ring-kcal    { font-size: clamp(18px, 6vw, 26px); }
+  .tri-rings .ring-kcal-sm { font-size: clamp(12px, 4vw, 15px); }
+}
+
 /* ─── Macro Bar ──────────────────────────────────────────── */
 .macro-bar-outer {
   height: 10px;
