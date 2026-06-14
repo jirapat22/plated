@@ -513,7 +513,7 @@ export function renderToday(container) {
       : remaining > 50  ? `${fmtE(remaining)} left`
       : remaining < -50 ? `+${fmtE(-remaining)} over`
       : '✓ goal hit';
-    const hintColor = remaining < -50 ? 'var(--warning)' : remaining < 50 ? 'var(--success)' : 'var(--text-faint)';
+    const hintColor = remaining < -50 ? 'var(--over)' : remaining < 50 ? 'var(--success)' : 'var(--text-faint)';
 
     // Water chips (collapse > 3)
     const entries = waterData.entries;
@@ -876,6 +876,8 @@ export function renderToday(container) {
     sessionEl.className = 'meal-session';
     const sessionKcal    = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
     const sessionProtein = Math.round(session.entries.reduce((s, e) => s + (e.protein || 0), 0));
+    const sessionCarb    = Math.round(session.entries.reduce((s, e) => s + (e.carbs || 0), 0));
+    const sessionFat     = Math.round(session.entries.reduce((s, e) => s + (e.fat   || 0), 0));
     const timeStr        = formatTime(session.logged_at);
     const ul          = unitLabel();
     const isPastDay   = viewDate < localDate();
@@ -890,7 +892,7 @@ export function renderToday(container) {
           ${timeStr ? `<div class="meal-session-kcal">${timeStr}</div>` : ''}
         </button>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-          <span class="meal-session-kcal num">${fmtE(sessionKcal)} ${ul}${sessionProtein > 0 ? ` · <span style="color:var(--protein);font-weight:600">${sessionProtein}g P</span>` : ''}</span>
+          <span class="meal-session-kcal num">${fmtE(sessionKcal)} ${ul}${sessionProtein > 0 ? ` · <span style="color:var(--protein);font-weight:600">${sessionProtein}g P</span>` : ''}${sessionCarb > 0 ? ` · <span style="color:var(--carbs);font-weight:600">${sessionCarb}g C</span>` : ''}${sessionFat > 0 ? ` · <span style="color:var(--fat);font-weight:600">${sessionFat}g F</span>` : ''}</span>
           ${isPastDay ? `<button class="session-move-btn" title="Move to today"
             style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">
             → Today
