@@ -136,6 +136,18 @@ function initDb() {
       last_used    TEXT,
       PRIMARY KEY (profile_id, food_id)
     );
+
+    -- ── Bug reports / feature ideas (forwarded to Orbit) ───────
+    CREATE TABLE IF NOT EXISTS bug_reports (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      source     TEXT    NOT NULL,                  -- frontend | backend | manual
+      type       TEXT    DEFAULT 'bug_report',      -- bug_report | idea
+      message    TEXT    NOT NULL,
+      stack      TEXT,
+      context    TEXT,                              -- JSON string
+      orbit_sent INTEGER DEFAULT 0,
+      created_at TEXT    DEFAULT (datetime('now'))
+    );
   `);
 
   migrateSchema(db);

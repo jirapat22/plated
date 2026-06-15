@@ -30,6 +30,7 @@ const ironlogRoutes    = require('./src/routes/ironlog');
 const templatesRoutes  = require('./src/routes/templates');
 const notesRoutes      = require('./src/routes/notes');
 const orbitRoutes      = require('./src/routes/orbit');
+const bugReportsRoutes = require('./src/routes/bugReports');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -74,6 +75,9 @@ app.get('/health', (req, res) => {
 // Auth — public (login / create profile / status); /me etc. self-guard
 app.use('/api/auth', authRoutes);
 
+// Bug / idea reports — public so they work on the lock screen too
+app.use('/api/bug-report', bugReportsRoutes);
+
 // Protected — every route below is scoped to the logged-in profile
 app.use('/api/foods', requireProfile, foodsRoutes);
 app.use('/api/meals', requireProfile, mealsRoutes);
@@ -94,7 +98,21 @@ app.get('*', (req, res) => {
 
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ error: 'Internal server error' });
+  const status = err.status || err.statusCode || 500;
+  // Capture server faults (no status or 5xx) to Orbit — best-effort, never blocks.
+  if (status >= 500) {
+    try {
+      bugReportsRoutes.captureReport({
+        source: 'backend',
+        message: err.message || 'Internal server error',
+        stack: err.stack || null,
+        context: { method: req.method, path: req.originalUrl || req.url },
+      }).catch(() => {});
+    } catch { /* ignore */ }
+  }
+  if (!res.headersSent) {
+    res.status(status >= 500 ? 500 : status).json({ error: 'Internal server error' });
+  }
 });
 
 function start() {

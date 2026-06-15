@@ -1,10 +1,14 @@
 import { api, setToken, onUnauthorized } from './api.js';
 import { setEnergyUnit } from './utils/energy.js';
+import { installErrorCapture } from './utils/bugReport.js';
 import { renderToday }    from './views/today.js';
 import { renderHistory }  from './views/history.js';
 import { renderTrends }   from './views/trends.js';
 import { renderFoods }    from './views/foods.js';
 import { renderSettings } from './views/settings.js';
+
+// Capture uncaught errors / rejections and forward to Orbit (best-effort).
+installErrorCapture();
 
 // ─── State ─────────────────────────────────────────────────
 let currentView = 'today';

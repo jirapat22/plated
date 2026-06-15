@@ -1,6 +1,7 @@
 import { api }                        from '../api.js';
 import { showToast, reloadEnergyUnit, getProfile, applyProfile, logoutToLock, ACCENTS } from '../app.js';
 import { setEnergyUnit }             from '../utils/energy.js';
+import { submitReport }              from '../utils/bugReport.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -170,6 +171,23 @@ export function renderSettings(container) {
             <button class="btn btn-primary" id="note-add-btn">Add</button>
           </div>
           <div id="note-list" class="note-list"></div>
+        </div>
+      </div>
+
+      <!-- Send feedback to Orbit -->
+      <div class="card" style="margin-bottom:12px;padding:0">
+        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">SEND FEEDBACK</div>
+        <div style="padding:14px 16px">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
+            Report a bug or share an idea — sent to the team dashboard.
+          </div>
+          <div class="search-tabs" id="fb-type" style="padding:0;margin-bottom:10px">
+            <button class="search-tab active" data-fb="bug_report">🐞 Bug</button>
+            <button class="search-tab" data-fb="idea">💡 Idea</button>
+          </div>
+          <textarea class="input" id="fb-text" rows="3" placeholder="Describe the bug or idea…" style="margin-bottom:10px;resize:vertical"></textarea>
+          <button class="btn btn-primary btn-full" id="fb-send">Send</button>
+          <div id="fb-status" style="margin-top:8px;font-size:12px;color:var(--text-muted)"></div>
         </div>
       </div>
 
@@ -484,6 +502,33 @@ export function renderSettings(container) {
     noteAddBtn.addEventListener('click', addNote);
     noteInput.addEventListener('keydown', e => {
       if (e.key === 'Enter') addNote();
+    });
+
+    // Send feedback (bug / idea) → Orbit
+    let fbType = 'bug_report';
+    document.getElementById('fb-type').addEventListener('click', e => {
+      const btn = e.target.closest('[data-fb]');
+      if (!btn) return;
+      fbType = btn.dataset.fb;
+      document.querySelectorAll('#fb-type .search-tab').forEach(b => b.classList.toggle('active', b === btn));
+    });
+    document.getElementById('fb-send').addEventListener('click', async () => {
+      const ta = document.getElementById('fb-text');
+      const text = ta.value.trim();
+      const status = document.getElementById('fb-status');
+      if (!text) { showToast('Write something first', 'error'); return; }
+      const btn = document.getElementById('fb-send');
+      btn.disabled = true; btn.textContent = 'Sending…';
+      try {
+        await submitReport({ type: fbType, message: text });
+        ta.value = '';
+        status.textContent = '✓ Thanks! Your ' + (fbType === 'idea' ? 'idea' : 'bug report') + ' was sent.';
+        showToast('Feedback sent', 'success');
+      } catch {
+        status.textContent = 'Saved locally — will reach the team when back online.';
+      } finally {
+        btn.disabled = false; btn.textContent = 'Send';
+      }
     });
 
     // Weight log
