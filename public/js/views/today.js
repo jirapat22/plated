@@ -23,7 +23,7 @@ function calRingSvg(pct, variant = '', small = false, overflowPct = 0) {
       <circle class="ring-bg" cx="70" cy="70" r="60"/>
       <circle class="ring-fill ${variant}" cx="70" cy="70" r="60"
         style="stroke-dasharray:${base} ${CIRC}"/>
-      ${over > 0 ? `<circle class="ring-fill ring-over" cx="70" cy="70" r="60"
+      ${over > 0 ? `<circle class="ring-fill ${variant} ring-over" cx="70" cy="70" r="60"
         style="stroke-dasharray:${over} ${CIRC}"/>` : ''}
     </svg>`;
 }

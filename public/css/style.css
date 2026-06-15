@@ -198,8 +198,9 @@ img { display: block; max-width: 100%; }
   /* stroke-dasharray set via inline style= so CSS cannot override it */
   transition: stroke-dasharray 600ms ease-out;
 }
-/* Overflow arc drawn on top of the base fill — only the exceeded slice is dark */
-.ring-fill.ring-over { stroke: var(--over); }
+/* Overflow arc drawn on top of the base fill — only the exceeded slice, in a
+   darker shade of the SAME ring colour (keeps variant stroke, just darkens). */
+.ring-fill.ring-over { filter: brightness(0.62); }
 .ring-center {
   position: absolute;
   top: 50%; left: 50%;
