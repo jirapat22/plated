@@ -144,6 +144,17 @@ function start() {
         console.log(`Migrated ${pending.length} checklist note(s) to bug_reports`);
       }
     } catch (e) { console.warn('Notes migration skipped:', e.message); }
+
+    // Forward any locally-stored reports that haven't reached Orbit yet.
+    if (process.env.ORBIT_URL?.trim()) {
+      console.log(`Orbit reporting enabled → ${process.env.ORBIT_URL}`);
+      try {
+        const { flushed } = await bugReportsRoutes.flushUnsent();
+        if (flushed) console.log(`Flushed ${flushed} pending report(s) to Orbit`);
+      } catch (e) { console.warn('Orbit flush skipped:', e.message); }
+    } else {
+      console.log('Orbit reporting disabled (set ORBIT_URL + INGEST_SECRET to enable)');
+    }
   })();
 
   const server = app.listen(PORT, () => {

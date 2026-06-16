@@ -89,6 +89,26 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Retry any locally-stored reports that never reached Orbit (e.g. stored while
+// ORBIT_URL was unset, or while Orbit was down). Best-effort; stops on failure
+// so it retries next startup. Returns { flushed }.
+async function flushUnsent(limit = 200) {
+  if (!process.env.ORBIT_URL?.trim()) return { flushed: 0, reason: 'ORBIT_URL not configured' };
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM bug_reports WHERE orbit_sent = 0 ORDER BY id LIMIT $n').all({ n: limit });
+  let flushed = 0;
+  for (const r of rows) {
+    let ctx = {};
+    try { ctx = r.context ? JSON.parse(r.context) : {}; } catch { /* keep {} */ }
+    const res = await sendToOrbit({ type: r.type, message: r.message, stack: r.stack, context: ctx, created_at: r.created_at });
+    if (!res.sent) break;  // Orbit unreachable — leave the rest for next startup
+    db.prepare('UPDATE bug_reports SET orbit_sent = 1 WHERE id = $id').run({ id: r.id });
+    flushed++;
+  }
+  return { flushed };
+}
+
 module.exports = router;
 module.exports.captureReport = captureReport;
 module.exports.isDuplicate = isDuplicate;
+module.exports.flushUnsent = flushUnsent;

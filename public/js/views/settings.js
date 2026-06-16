@@ -28,8 +28,8 @@ export function renderSettings(container) {
     const prof = getProfile() || { name: '', accent_color: ACCENTS[0] };
     body.innerHTML = `
       <!-- Profile -->
-      <div class="card" style="margin-bottom:12px;padding:0">
-        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">PROFILE</div>
+      <div class="card sec" style="margin-bottom:12px;padding:0">
+        <div class="sec-head">👤 Profile<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <label class="form-label">Display name</label>
           <input class="input" id="pf-name" value="${esc(prof.name)}" maxlength="24" style="margin-bottom:12px"/>
@@ -48,16 +48,16 @@ export function renderSettings(container) {
 
       ${prof.is_admin ? `
       <!-- Admin -->
-      <div class="card" style="margin-bottom:12px;padding:0">
-        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">ADMIN · PROFILES</div>
+      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
+        <div class="sec-head">🛡️ Admin · Profiles<span class="sec-chevron">▾</span></div>
         <div style="padding:8px 16px 14px" id="admin-list">
           <div class="skeleton skel-line" style="margin:8px 0"></div>
         </div>
       </div>` : ''}
 
       <!-- Phase Selector -->
-      <div class="card" style="margin-bottom:12px;padding:0">
-        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">GOAL PHASE</div>
+      <div class="card sec" style="margin-bottom:12px;padding:0">
+        <div class="sec-head">🎯 Goal Phase<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
             ${phaseBtn('cut',      '🔻 Cut',      s.phase)}
@@ -102,8 +102,8 @@ export function renderSettings(container) {
       </div>
 
       <!-- Goals -->
-      <div class="card" style="margin-bottom:12px;padding:0">
-        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">DAILY GOALS</div>
+      <div class="card sec" style="margin-bottom:12px;padding:0">
+        <div class="sec-head">🍎 Daily Goals<span class="sec-chevron">▾</span></div>
         ${goalRow('calorie_goal',      'Calories',      s.calorie_goal,      'kcal')}
         ${goalRow('protein_goal',      'Protein',       s.protein_goal,      'g')}
         ${goalRow('carb_goal',         'Carbs',         s.carb_goal,         'g')}
@@ -115,15 +115,15 @@ export function renderSettings(container) {
       </div>
 
       <!-- Target weight -->
-      <div class="card" style="margin-bottom:12px;padding:0">
-        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">TARGET WEIGHT</div>
+      <div class="card sec" style="margin-bottom:12px;padding:0">
+        <div class="sec-head">⚖️ Target Weight<span class="sec-chevron">▾</span></div>
         ${goalRow('target_weight_kg', 'Goal weight', s.target_weight_kg, 'kg')}
         <div style="padding:10px 16px 14px;font-size:11px;color:var(--text-faint)">Used on the Trends page to track progress toward your goal.</div>
       </div>
 
       <!-- IronLog -->
-      <div class="card" style="margin-bottom:12px;padding:0">
-        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">IRONLOG INTEGRATION</div>
+      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
+        <div class="sec-head">⚡ IronLog Integration<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;line-height:1.5">
             <strong>How to connect:</strong> in IronLog, go to <em>Settings → API Key</em>, tap Copy, then paste it below.
@@ -147,8 +147,8 @@ export function renderSettings(container) {
       </div>
 
       <!-- Weight Log -->
-      <div class="card" style="margin-bottom:12px;padding:0">
-        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">WEIGHT LOG</div>
+      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
+        <div class="sec-head">📉 Weight Log<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="display:flex;gap:10px;margin-bottom:14px">
             <input class="input" id="weight-input" type="text" inputmode="decimal" step="0.1" placeholder="e.g. 75.5" style="flex:1"/>
@@ -160,8 +160,8 @@ export function renderSettings(container) {
       </div>
 
       <!-- Ideas & Bugs — report to the team dashboard -->
-      <div class="card" style="margin-bottom:12px;padding:0">
-        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">IDEAS &amp; BUGS</div>
+      <div class="card sec" style="margin-bottom:12px;padding:0">
+        <div class="sec-head">💡 Ideas &amp; Bugs<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
             Report a bug or share an idea — sent to the team dashboard.
@@ -177,8 +177,8 @@ export function renderSettings(container) {
       </div>
 
       <!-- Export -->
-      <div class="card" style="margin-bottom:12px;padding:0">
-        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">DATA</div>
+      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
+        <div class="sec-head">📦 Data &amp; Export<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px;display:flex;flex-direction:column;gap:8px">
           <a class="btn btn-secondary btn-full" href="/api/settings/export-csv" download>📊 Export meals as CSV</a>
           <a class="btn btn-secondary btn-full" href="/api/settings/export" download>📦 Export all data as JSON</a>
@@ -186,8 +186,8 @@ export function renderSettings(container) {
       </div>
 
       <!-- Danger zone -->
-      <div class="card" style="margin-bottom:20px;padding:0;border-color:rgba(255,107,107,.3)">
-        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--error);border-bottom:1px solid var(--border)">DANGER ZONE</div>
+      <div class="card sec collapsed" style="margin-bottom:20px;padding:0;border-color:rgba(255,107,107,.3)">
+        <div class="sec-head danger">⚠️ Danger Zone<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
             Permanently deletes all logged meals, water, weight entries, and templates. Your food database and goal settings are kept.
@@ -196,6 +196,10 @@ export function renderSettings(container) {
         </div>
       </div>
     `;
+
+    // Collapsible sections — tap a header to expand/collapse
+    body.querySelectorAll('.sec-head').forEach(h =>
+      h.addEventListener('click', () => h.closest('.card').classList.toggle('collapsed')));
 
     // ── Profile ──────────────────────────────────────────────
     let pfAccent = prof.accent_color || ACCENTS[0];

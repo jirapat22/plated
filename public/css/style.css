@@ -1112,3 +1112,19 @@ img { display: block; max-width: 100%; }
   color: var(--text-muted);
 }
 .review-add { color: var(--accent); border-color: rgba(200,184,255,.3); background: var(--accent-dim); }
+
+/* ─── Collapsible settings sections ──────────────────────── */
+.sec-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 14px 16px;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.02em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer; user-select: none; -webkit-user-select: none;
+}
+.sec-head.danger { color: var(--error); }
+.sec-chevron { font-size: 11px; color: var(--text-faint); transition: transform 0.2s; flex-shrink: 0; }
+.sec-head:active { background: var(--surface-2); }
+.card.collapsed > *:not(.sec-head) { display: none; }
+.card.collapsed .sec-head { border-bottom: none; }
+.card.collapsed .sec-chevron { transform: rotate(-90deg); }
