@@ -59,25 +59,33 @@ export function renderSettings(container) {
       <div class="card sec" style="margin-bottom:12px;padding:0">
         <div class="sec-head">🎯 Goal Phase<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+          <!-- 1. Maintenance / TDEE — the basis everything is derived from -->
+          <label class="form-label">① Maintenance (TDEE)</label>
+          <div style="font-size:11px;color:var(--text-faint);margin:2px 0 6px">Calories you burn per day. Synced from IronLog, or set it manually.</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+            <input class="input settings-row-input" type="text" inputmode="decimal" value="${s.tdee || ''}"
+              data-key="tdee" placeholder="e.g. 2700" style="height:40px;flex:1;width:auto" />
+            <span style="font-size:12px;color:var(--text-muted)">kcal</span>
+            <button class="btn btn-secondary" id="manual-tdee-apply" style="height:40px;padding:0 14px;font-size:13px">Apply</button>
+          </div>
+
+          <!-- 2. Phase -->
+          <label class="form-label">② Phase</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:6px 0 16px">
             ${phaseBtn('cut',      '🔻 Cut',      s.phase)}
             ${phaseBtn('maintain', '⚖️ Maintain', s.phase)}
             ${phaseBtn('bulk',     '📈 Bulk',     s.phase)}
           </div>
-          <div id="phase-description" style="font-size:12px;color:var(--text-muted);margin-bottom:12px">${phaseDesc(s.phase, s.tdee, s.cut_deficit, s.bulk_surplus)}</div>
-          <div class="form-row" style="margin-bottom:10px">
+
+          <!-- 3. Adjustment -->
+          <label class="form-label">③ Adjustment</label>
+          <div class="form-row" style="margin:6px 0 16px">
             ${goalRow('cut_deficit',  'Cut deficit',   s.cut_deficit,  'kcal', true)}
             ${goalRow('bulk_surplus', 'Bulk surplus',  s.bulk_surplus, 'kcal', true)}
           </div>
-          <div style="margin-top:10px">
-            <label class="form-label">TDEE (manual override if IronLog doesn't send it)</label>
-            <div style="display:flex;gap:8px;align-items:center">
-              <input class="input settings-row-input" type="text" inputmode="decimal" value="${s.tdee || ''}"
-                data-key="tdee" placeholder="e.g. 2400" style="height:40px;flex:1;width:auto" />
-              <span style="font-size:12px;color:var(--text-muted)">kcal</span>
-              <button class="btn btn-secondary" id="manual-tdee-apply" style="height:40px;padding:0 14px;font-size:13px">Apply</button>
-            </div>
-          </div>
+
+          <!-- 4. Resulting daily calorie goal -->
+          <div id="phase-goal" class="phase-goal">${goalResult(s)}</div>
         </div>
       </div>
 
@@ -300,12 +308,32 @@ export function renderSettings(container) {
       });
     });
 
+    // Recompute + persist the daily calorie goal from TDEE + phase + adjustment,
+    // and refresh the result box.
+    async function refreshGoal() {
+      const goalEl = document.getElementById('phase-goal');
+      const tdee = parseFloat(s.tdee);
+      if (tdee) {
+        const phase = s.phase || 'maintain';
+        const deficit = parseInt(s.cut_deficit) || 500;
+        const surplus = parseInt(s.bulk_surplus) || 300;
+        const cal = Math.round(phase === 'cut' ? tdee - deficit : phase === 'bulk' ? tdee + surplus : tdee);
+        s.calorie_goal = String(cal);
+        try { await api.patch('/api/settings', { calorie_goal: s.calorie_goal }); } catch { /* non-fatal */ }
+        const ci = body.querySelector('[data-key="calorie_goal"]');
+        if (ci) ci.value = cal;
+      }
+      if (goalEl) goalEl.innerHTML = goalResult(s);
+    }
+
     // Goal inputs — save on blur
     body.querySelectorAll('.settings-row-input').forEach(input => {
       input.addEventListener('change', async () => {
         try {
           await api.patch('/api/settings', { [input.dataset.key]: input.value });
+          if (input.dataset.key) s[input.dataset.key] = input.value;
           showToast('Saved', 'success');
+          if (input.dataset.key === 'cut_deficit' || input.dataset.key === 'bulk_surplus') refreshGoal();
         } catch (err) {
           showToast(err.message, 'error');
         }
@@ -319,14 +347,17 @@ export function renderSettings(container) {
         body.querySelectorAll('.phase-btn').forEach(b => b.classList.toggle('active', b === btn));
         try {
           const result = await api.post('/api/ironlog/phase', { phase });
-          document.getElementById('phase-description').textContent =
-            phaseDesc(phase, result.tdee, s.cut_deficit, s.bulk_surplus);
+          s.phase = phase;
+          if (result.tdee != null)         s.tdee = String(result.tdee);
+          if (result.calorie_goal != null) s.calorie_goal = String(result.calorie_goal);
+          const goalEl = document.getElementById('phase-goal');
+          if (goalEl) goalEl.innerHTML = goalResult(s);
           if (result.calorie_goal) {
             const calInput = body.querySelector('[data-key="calorie_goal"]');
             if (calInput) calInput.value = result.calorie_goal;
-            showToast(`Phase set to ${phase} — calorie goal updated to ${result.calorie_goal} kcal`, 'success');
+            showToast(`Phase set to ${phase} — goal updated to ${result.calorie_goal} kcal`, 'success');
           } else {
-            showToast(`Phase set to ${phase} — sync from IronLog to auto-set calorie goal`, 'info');
+            showToast(`Phase set to ${phase} — set your TDEE to compute the goal`, 'info');
           }
         } catch (err) {
           showToast(err.message, 'error');
@@ -345,10 +376,13 @@ export function renderSettings(container) {
                     : phase === 'bulk' ? tdee + surplus : tdee;
       try {
         await api.patch('/api/settings', { tdee: String(tdee), calorie_goal: String(calGoal) });
-        body.querySelector('[data-key="calorie_goal"]').value = calGoal;
-        document.getElementById('phase-description').textContent =
-          phaseDesc(phase, tdee, s.cut_deficit, s.bulk_surplus);
-        showToast(`TDEE saved · Calorie goal → ${calGoal} kcal`, 'success');
+        s.tdee = String(tdee);
+        s.calorie_goal = String(calGoal);
+        const calInput = body.querySelector('[data-key="calorie_goal"]');
+        if (calInput) calInput.value = calGoal;
+        const goalEl = document.getElementById('phase-goal');
+        if (goalEl) goalEl.innerHTML = goalResult(s);
+        showToast(`TDEE saved · goal → ${calGoal} kcal`, 'success');
         window.dispatchEvent(new CustomEvent('plated:settings-changed'));
       } catch (err) {
         showToast(err.message, 'error');
@@ -593,13 +627,26 @@ function phaseBtn(phase, label, current) {
   `;
 }
 
-function phaseDesc(phase, tdee, deficit, surplus) {
-  const d = parseInt(deficit) || 500;
-  const s = parseInt(surplus) || 300;
-  const t = parseFloat(tdee)  || null;
-  if (phase === 'cut')
-    return `Eating ${d} kcal below TDEE${t ? ` = ${Math.round(t - d)} kcal/day` : ''}. ~${(d / 7700 * 7).toFixed(2)} kg/week loss.`;
-  if (phase === 'bulk')
-    return `Eating ${s} kcal above TDEE${t ? ` = ${Math.round(t + s)} kcal/day` : ''}. Lean muscle gain phase.`;
-  return `Eating at TDEE${t ? ` = ${Math.round(t)} kcal/day` : ''}. Weight maintenance.`;
+// Prominent "your daily calorie goal" result for the Goal Phase section.
+// Computes live from TDEE + phase + adjustment; falls back to the synced goal.
+function goalResult(s) {
+  const tdee    = parseFloat(s.tdee) || null;
+  const phase   = s.phase || 'maintain';
+  const deficit = parseInt(s.cut_deficit)  || 500;
+  const surplus = parseInt(s.bulk_surplus) || 300;
+  const goal = tdee != null
+    ? (phase === 'cut' ? tdee - deficit : phase === 'bulk' ? tdee + surplus : tdee)
+    : (parseFloat(s.calorie_goal) || null);
+  if (goal == null) {
+    return `<div class="phase-goal-empty">Enter your TDEE above (or sync IronLog) to see your daily calorie goal.</div>`;
+  }
+  const math = tdee != null
+    ? (phase === 'cut'  ? `${Math.round(tdee)} TDEE − ${deficit} deficit`
+     : phase === 'bulk' ? `${Math.round(tdee)} TDEE + ${surplus} surplus`
+     : `at maintenance · ${Math.round(tdee)} TDEE`)
+    : 'from your synced goal';
+  return `
+    <div class="phase-goal-label">Your daily calorie goal</div>
+    <div class="phase-goal-num">${Math.round(goal)}<span> kcal</span></div>
+    <div class="phase-goal-sub">${math}</div>`;
 }

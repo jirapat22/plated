@@ -1128,3 +1128,16 @@ img { display: block; max-width: 100%; }
 .card.collapsed > *:not(.sec-head) { display: none; }
 .card.collapsed .sec-head { border-bottom: none; }
 .card.collapsed .sec-chevron { transform: rotate(-90deg); }
+
+/* Goal Phase — prominent resulting calorie goal */
+.phase-goal {
+  background: var(--accent-dim);
+  border: 1px solid rgba(200,184,255,.25);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px; text-align: center;
+}
+.phase-goal-label { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint); }
+.phase-goal-num { font-size: 28px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1.1; margin-top: 2px; }
+.phase-goal-num span { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.phase-goal-sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+.phase-goal-empty { font-size: 12px; color: var(--text-faint); text-align: center; }
