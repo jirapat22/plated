@@ -159,24 +159,9 @@ export function renderSettings(container) {
         </div>
       </div>
 
-      <!-- Ideas & Bugs checklist -->
+      <!-- Ideas & Bugs — report to the team dashboard -->
       <div class="card" style="margin-bottom:12px;padding:0">
         <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">IDEAS &amp; BUGS</div>
-        <div style="padding:14px 16px">
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
-            Jot down upgrade ideas or bugs you notice, then tick them off as you go.
-          </div>
-          <div style="display:flex;gap:10px;margin-bottom:14px">
-            <input class="input" id="note-input" placeholder="e.g. Barcode scanner is too narrow" style="flex:1"/>
-            <button class="btn btn-primary" id="note-add-btn">Add</button>
-          </div>
-          <div id="note-list" class="note-list"></div>
-        </div>
-      </div>
-
-      <!-- Send feedback to Orbit -->
-      <div class="card" style="margin-bottom:12px;padding:0">
-        <div style="padding:14px 16px;font-size:13px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border)">SEND FEEDBACK</div>
         <div style="padding:14px 16px">
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
             Report a bug or share an idea — sent to the team dashboard.
@@ -485,26 +470,7 @@ export function renderSettings(container) {
     });
 
     // Ideas & bugs checklist
-    loadNotes();
-    const noteInput  = document.getElementById('note-input');
-    const noteAddBtn = document.getElementById('note-add-btn');
-    const addNote = async () => {
-      const text = noteInput.value.trim();
-      if (!text) { showToast('Enter a note first', 'error'); return; }
-      try {
-        await api.post('/api/notes', { text });
-        noteInput.value = '';
-        loadNotes();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    };
-    noteAddBtn.addEventListener('click', addNote);
-    noteInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') addNote();
-    });
-
-    // Send feedback (bug / idea) → Orbit
+    // Ideas & Bugs (bug / idea) → Orbit
     let fbType = 'bug_report';
     document.getElementById('fb-type').addEventListener('click', e => {
       const btn = e.target.closest('[data-fb]');
@@ -582,51 +548,6 @@ export function renderSettings(container) {
     } catch { /* non-fatal */ }
   }
 
-  async function loadNotes() {
-    try {
-      const notes = await api.get('/api/notes');
-      const list = document.getElementById('note-list');
-      if (!list) return;
-      if (notes.length === 0) {
-        list.innerHTML = '<div class="muted" style="font-size:13px">No ideas or bugs noted yet</div>';
-        return;
-      }
-      list.innerHTML = notes.map(n => `
-        <div class="note-entry${n.done ? ' done' : ''}">
-          <input type="checkbox" class="note-check" data-id="${n.id}" ${n.done ? 'checked' : ''}/>
-          <span class="note-text">${esc(n.text)}</span>
-          <button class="note-del" data-id="${n.id}" aria-label="Delete">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-            </svg>
-          </button>
-        </div>
-      `).join('');
-
-      list.querySelectorAll('.note-check').forEach(cb => {
-        cb.addEventListener('change', async () => {
-          const checked = cb.checked;
-          try {
-            await api.patch(`/api/notes/${cb.dataset.id}`, { done: checked ? 1 : 0 });
-            loadNotes();
-          } catch (err) {
-            cb.checked = !checked;
-            showToast(err.message, 'error');
-          }
-        });
-      });
-      list.querySelectorAll('.note-del').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          try {
-            await api.delete(`/api/notes/${btn.dataset.id}`);
-            loadNotes();
-          } catch (err) {
-            showToast(err.message, 'error');
-          }
-        });
-      });
-    } catch { /* non-fatal */ }
-  }
 
   load();
 }

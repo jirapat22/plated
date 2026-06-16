@@ -124,6 +124,28 @@ function start() {
 
   initDb();
 
+  // One-time: migrate the legacy "Ideas & Bugs" checklist (notes) into the new
+  // bug-report pipeline (forwarded to Orbit), then clear it. Self-guarding —
+  // once notes are deleted this never runs again.
+  (async () => {
+    try {
+      const { getDb } = require('./src/db');
+      const db = getDb();
+      const notes = db.prepare('SELECT id, text FROM notes').all();
+      const pending = notes.filter(n => n.text && n.text.trim());
+      for (const n of pending) {
+        await bugReportsRoutes.captureReport({
+          source: 'manual', type: 'bug_report', message: n.text.trim(),
+          context: { migrated_from: 'notes_checklist' },
+        });
+      }
+      if (notes.length) {
+        db.prepare('DELETE FROM notes').run();
+        console.log(`Migrated ${pending.length} checklist note(s) to bug_reports`);
+      }
+    } catch (e) { console.warn('Notes migration skipped:', e.message); }
+  })();
+
   const server = app.listen(PORT, () => {
     console.log(`Plated running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
     console.log(`Data dir: ${dataDir}`);
