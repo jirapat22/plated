@@ -78,7 +78,9 @@ router.post('/', async (req, res) => {
     const src = ['frontend', 'backend', 'manual'].includes(source) ? source : 'manual';
     const db = getDb();
 
-    if (isDuplicate(db, src, msg, stack)) {
+    // Dedupe only auto-captured errors (an error loop can spam). Manual
+    // submissions always go through — a user who sends twice means it.
+    if (src !== 'manual' && isDuplicate(db, src, msg, stack)) {
       return res.status(202).json({ received: true, deduped: true });
     }
 

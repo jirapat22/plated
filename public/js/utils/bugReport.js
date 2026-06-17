@@ -1,8 +1,10 @@
 // Bug / idea reporting — manual submissions and automatic crash capture.
-// Posts to /api/bug-report (public, works pre-login). Best-effort: never throws.
+// Posts to /api/bug-report (public, works pre-login). Best-effort: never throws
+// for auto-capture. Manual submissions are queued offline and retried.
 
 const DEDUPE_MS = 5 * 60 * 1000;
 const DEDUPE_KEY = 'bugDedupe';
+const OUTBOX_KEY = 'bugOutbox';
 
 let appVersion = 'unknown';
 (async () => {
@@ -40,7 +42,9 @@ function getToken() {
   try { return localStorage.getItem('plated_token'); } catch { return null; }
 }
 
-// Low-level post (raw fetch so it works pre-login and never triggers auth redirect)
+// Low-level post (raw fetch so it works pre-login and never triggers auth
+// redirect). Returns true if the backend received it (any HTTP response),
+// false only if the network was unreachable (offline) so callers can requeue.
 async function postReport(body) {
   try {
     const token = getToken();
@@ -49,23 +53,61 @@ async function postReport(body) {
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify(body),
     });
-  } catch { /* offline / best-effort */ }
+    return true;
+  } catch {
+    return false;   // network failure — caller may queue for retry
+  }
 }
 
-// Public: submit a manual report. Returns nothing meaningful (fire-and-forget-ish).
+// ── Offline outbox (manual reports only) ──────────────────────
+function readOutbox() {
+  try { return JSON.parse(localStorage.getItem(OUTBOX_KEY) || '[]'); } catch { return []; }
+}
+function writeOutbox(q) {
+  try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(q.slice(-50))); } catch { /* full / private */ }
+}
+function enqueue(body) { const q = readOutbox(); q.push(body); writeOutbox(q); }
+
+// Retry queued manual reports; keep any that still fail.
+export async function flushOutbox() {
+  const q = readOutbox();
+  if (!q.length) return;
+  const remaining = [];
+  for (const body of q) {
+    const ok = await postReport(body);
+    if (!ok) remaining.push(body);
+  }
+  writeOutbox(remaining);
+}
+
+// Public: submit a manual report. Throws if it had to be queued offline, so the
+// UI can tell the user it'll send later.
 export async function submitReport({ type = 'bug_report', message, context = {} }) {
   const msg = (message || '').trim();
   if (!msg) return;
-  await postReport({ source: 'manual', type, message: msg, stack: null, context: baseContext(context) });
+  const body = { source: 'manual', type, message: msg, stack: null, context: baseContext(context) };
+  const ok = await postReport(body);
+  if (!ok) { enqueue(body); throw new Error('Queued — will send when back online'); }
 }
 
-function autoReport(message, stack) {
+function autoReport(message, stack, ctx = {}) {
   const msg = (message || 'Unknown error').toString();
   if (!shouldSend(`${msg}@${location.pathname}`)) return;
-  postReport({ source: 'frontend', type: 'bug_report', message: msg, stack: stack || null, context: baseContext() });
+  postReport({ source: 'frontend', type: 'bug_report', message: msg, stack: stack || null, context: baseContext(ctx) });
 }
 
-// Install global handlers for uncaught errors + unhandled promise rejections.
+// Report a handled API failure (server 5xx or network error the app caught).
+// Skips the reporter's own endpoint to avoid loops; deduped by status+path.
+export function reportApiError({ method = 'GET', path = '', status = 0, message = '' }) {
+  if (String(path).includes('/api/bug-report')) return;
+  if (!shouldSend(`api:${status}:${path}`)) return;
+  const label = `API ${status || 'network error'} on ${method} ${path}${message ? ` — ${message}` : ''}`;
+  postReport({ source: 'frontend', type: 'bug_report', message: label, stack: null,
+    context: baseContext({ kind: 'api_error', method, path, status }) });
+}
+
+// Install global handlers for uncaught errors + unhandled promise rejections,
+// plus outbox flushing.
 export function installErrorCapture() {
   window.addEventListener('error', e => {
     const message = e.message || e.error?.message || 'Uncaught error';
@@ -76,4 +118,7 @@ export function installErrorCapture() {
     const message = r?.message || (typeof r === 'string' ? r : 'Unhandled promise rejection');
     autoReport(message, r?.stack || null);
   });
+  // Flush any offline-queued manual reports now and whenever we reconnect.
+  window.addEventListener('online', flushOutbox);
+  flushOutbox();
 }
