@@ -137,10 +137,10 @@
 <!-- ─── Toast Container ───────────────────────────────────── -->
 <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-<!-- CDN: html5-qrcode for barcode scanning -->
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<!-- CDN: html5-qrcode for barcode scanning (crossorigin = real error details, not "Script error.") -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" crossorigin="anonymous"></script>
 <!-- CDN: Chart.js for trends -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 
 <script type="module" src="/js/app.js"></script>
 </body>

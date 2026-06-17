@@ -110,8 +110,13 @@ export function reportApiError({ method = 'GET', path = '', status = 0, message 
 // plus outbox flushing.
 export function installErrorCapture() {
   window.addEventListener('error', e => {
+    // Cross-origin scripts without CORS surface as an opaque "Script error."
+    // with no detail — useless to report. (CDN tags now set crossorigin to
+    // unmask real errors; anything still opaque is dropped as noise.)
+    if (!e.error && !e.filename && /^script error\.?$/i.test(e.message || '')) return;
     const message = e.message || e.error?.message || 'Uncaught error';
-    autoReport(message, e.error?.stack || null);
+    const where = e.filename ? { where: `${e.filename}:${e.lineno}:${e.colno}` } : {};
+    autoReport(message, e.error?.stack || null, where);
   });
   window.addEventListener('unhandledrejection', e => {
     const r = e.reason;
