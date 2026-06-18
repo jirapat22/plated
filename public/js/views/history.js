@@ -38,6 +38,7 @@ export function renderHistory(container) {
 
   function renderStrip() {
     const strip = document.getElementById('cal-strip-root');
+    if (!strip) return;   // view torn down (tab switch) during async load
     strip.innerHTML = '';
     const summaryByDate = Object.fromEntries(summary.map(r => [r.date, r]));
 
@@ -70,12 +71,14 @@ export function renderHistory(container) {
 
   async function loadDay(date) {
     const dayEl = document.getElementById('history-day');
+    if (!dayEl) return;   // view torn down before/while loading
     dayEl.innerHTML = '<div class="skeleton skel-line" style="margin-bottom:10px"></div><div class="skeleton skel-line" style="width:70%"></div>';
     try {
       const [mealData, settings] = await Promise.all([
         api.get(`/api/meals/day/${date}`),
         api.get('/api/settings'),
       ]);
+      if (!document.getElementById('history-day')) return;   // navigated away during fetch
       renderDay(dayEl, mealData, settings, date);
     } catch (err) {
       dayEl.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;

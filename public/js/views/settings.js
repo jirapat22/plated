@@ -18,13 +18,16 @@ export function renderSettings(container) {
       const settings = await api.get('/api/settings');
       render(settings);
     } catch (err) {
-      document.getElementById('settings-body').innerHTML =
+      const el = document.getElementById('settings-body');   // may be gone if tab switched
+      if (el) el.innerHTML =
         `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
     }
   }
 
   function render(s) {
     const body = document.getElementById('settings-body');
+    if (!body) return;   // view torn down before render
+
     const prof = getProfile() || { name: '', accent_color: ACCENTS[0] };
     body.innerHTML = `
       <!-- Profile -->

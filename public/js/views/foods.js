@@ -60,6 +60,7 @@ export function renderFoods(container) {
 
   async function loadList() {
     const list = document.getElementById('foods-list');
+    if (!list) return;   // view torn down (tab switch) before/while loading
     list.innerHTML = '<div class="skeleton skel-line" style="margin:8px 16px"></div>';
 
     try {
