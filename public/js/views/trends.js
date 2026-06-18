@@ -191,7 +191,11 @@ export function renderTrends(container) {
   container.prepend(style);
 
   async function load() {
-    document.getElementById('trends-body').innerHTML =
+    // The view may be torn down (tab switch) while we await — bail if #trends-body
+    // is gone instead of throwing on a null element.
+    const bodyEl = document.getElementById('trends-body');
+    if (!bodyEl) return;
+    bodyEl.innerHTML =
       '<div class="skeleton skel-line" style="height:180px;border-radius:14px"></div>';
     try {
       const [summary, weights, settings] = await Promise.all([
@@ -206,9 +210,11 @@ export function renderTrends(container) {
         ironlogWeights = d.entries || (Array.isArray(d) ? d : []);
       } catch { /* non-fatal */ }
 
+      if (!document.getElementById('trends-body')) return;  // left the view during fetch
       render(summary, weights, ironlogWeights, settings);
     } catch (err) {
-      document.getElementById('trends-body').innerHTML =
+      const el = document.getElementById('trends-body');
+      if (el) el.innerHTML =
         `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
     }
   }
@@ -292,7 +298,9 @@ export function renderTrends(container) {
       ? `<div style="font-size:13px;color:var(--text-muted);margin-top:4px">1 day — keep it going! 💪</div>`
       : `<div style="font-size:13px;color:var(--text-muted);margin-top:4px">${streak} consecutive days within 10% of goal</div>`;
 
-    document.getElementById('trends-body').innerHTML = `
+    const trendsBody = document.getElementById('trends-body');
+    if (!trendsBody) return;   // view torn down before render
+    trendsBody.innerHTML = `
       <!-- Streak -->
       <div class="card streak-card" style="margin-bottom:12px">
         <div class="streak-num">${streak === 0 ? '–' : streak}</div>
