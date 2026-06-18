@@ -90,10 +90,20 @@ export async function submitReport({ type = 'bug_report', message, context = {} 
   if (!ok) { enqueue(body); throw new Error('Queued — will send when back online'); }
 }
 
+// Per-page-load cap so a pathological loop can't flood Orbit. Manual sends and
+// the outbox bypass this (they go straight through postReport).
+let autoSent = 0;
+const AUTO_CAP = 25;
+function autoPost(body) {
+  if (autoSent >= AUTO_CAP) return;
+  autoSent++;
+  postReport(body);
+}
+
 function autoReport(message, stack, ctx = {}) {
   const msg = (message || 'Unknown error').toString();
   if (!shouldSend(`${msg}@${location.pathname}`)) return;
-  postReport({ source: 'frontend', type: 'bug_report', message: msg, stack: stack || null, context: baseContext(ctx) });
+  autoPost({ source: 'frontend', type: 'bug_report', message: msg, stack: stack || null, context: baseContext(ctx) });
 }
 
 // Report a handled API failure (server 5xx or network error the app caught).
@@ -102,8 +112,49 @@ export function reportApiError({ method = 'GET', path = '', status = 0, message 
   if (String(path).includes('/api/bug-report')) return;
   if (!shouldSend(`api:${status}:${path}`)) return;
   const label = `API ${status || 'network error'} on ${method} ${path}${message ? ` — ${message}` : ''}`;
-  postReport({ source: 'frontend', type: 'bug_report', message: label, stack: null,
+  autoPost({ source: 'frontend', type: 'bug_report', message: label, stack: null,
     context: baseContext({ kind: 'api_error', method, path, status }) });
+}
+
+// Report an error you CAUGHT but that shouldn't normally happen. Use inside a
+// catch block instead of silently swallowing:  catch (e) { reportHandled(e, {where:'foo'}); }
+// Don't use for expected control-flow (optional fetches, private-mode storage…).
+export function reportHandled(err, ctx = {}) {
+  const message = err?.message || (typeof err === 'string' ? err : 'Handled error');
+  if (!shouldSend(`handled:${message}@${ctx.where || location.pathname}`)) return;
+  autoPost({ source: 'frontend', type: 'bug_report', message, stack: err?.stack || null,
+    context: baseContext({ ...ctx, kind: 'handled' }) });
+}
+
+// Runtime invariant: report (but don't throw) when something that must always
+// be true isn't — the only way to surface "impossible state" logic bugs.
+export function assert(condition, message, ctx = {}) {
+  if (condition) return true;
+  if (shouldSend(`invariant:${message}`)) {
+    autoPost({ source: 'frontend', type: 'bug_report', message: `Invariant failed: ${message}`,
+      stack: new Error().stack || null, context: baseContext({ ...ctx, kind: 'invariant' }) });
+  }
+  return false;
+}
+
+// Wrap console.error so logged-but-swallowed errors are also reported.
+function interceptConsole() {
+  const orig = console.error.bind(console);
+  console.error = (...args) => {
+    orig(...args);
+    try {
+      const msg = args.map(a =>
+        a instanceof Error ? (a.stack || a.message)
+        : typeof a === 'string' ? a
+        : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()
+      ).join(' ').slice(0, 1000);
+      if (!msg || msg.includes('/api/bug-report')) return;   // avoid self-loops
+      if (!shouldSend(`console:${msg.slice(0, 160)}`)) return;
+      const stack = args.find(a => a instanceof Error)?.stack || null;
+      autoPost({ source: 'frontend', type: 'bug_report', message: msg, stack,
+        context: baseContext({ kind: 'console' }) });
+    } catch { /* never break console */ }
+  };
 }
 
 // Install global handlers for uncaught errors + unhandled promise rejections,
@@ -123,6 +174,7 @@ export function installErrorCapture() {
     const message = r?.message || (typeof r === 'string' ? r : 'Unhandled promise rejection');
     autoReport(message, r?.stack || null);
   });
+  interceptConsole();
   // Flush any offline-queued manual reports now and whenever we reconnect.
   window.addEventListener('online', flushOutbox);
   flushOutbox();

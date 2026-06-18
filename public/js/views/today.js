@@ -6,6 +6,7 @@ import { fmtE, unitLabel, wireEnergyUnitToggle } from '../utils/energy.js';
 import { getFoodIcon }                     from '../utils/foodIcon.js';
 import { localDate }                       from '../utils/date.js';
 import { classifyDay, isFlagged, LOG_STRONG } from '../utils/logCheck.js';
+import { assert } from '../utils/bugReport.js';
 
 const CIRC = 2 * Math.PI * 60;
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -520,6 +521,11 @@ export function renderToday(container) {
     const hasWorkout  = burned > 0;
     const eaten       = t.calories;
     const net         = eaten - burned;
+
+    // Sanity invariants — surface "impossible state" data bugs (NaN totals,
+    // bad IronLog values) that wouldn't otherwise throw.
+    assert(Number.isFinite(eaten) && eaten >= 0, "today's calorie total isn't a valid number", { eaten });
+    assert(Number.isFinite(burned) && burned >= 0, 'IronLog burned is not a valid number', { burned });
 
     const midPct   = Math.min(eaten / baseGoal, 1) * 100;            // middle: eaten vs goal
     const rightFill= Math.max(0, Math.min(eaten - baseGoal, burned)); // overflow into workout
