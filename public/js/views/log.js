@@ -201,6 +201,10 @@ function showQuantitySheet(food, sessionId, onSuccess) {
       </div>
 
       <div class="qty-macros" id="qty-macros"></div>
+      ${food.calories_per_100g == null ? `
+      <div style="margin:0 16px 8px;padding:9px 12px;background:rgba(249,115,22,.10);border:1px solid rgba(249,115,22,.3);border-radius:8px;font-size:12px;color:#f9a35c;line-height:1.4">
+        ⚠ This food has no calorie data — it'll log as <strong>0 ${ul}</strong> and won't count toward your goal. Add calories in the Foods tab (search it → Edit) first.
+      </div>` : ''}
       <div class="qty-confirm">
         <button class="btn btn-primary btn-full" id="qty-confirm-btn">Add to Meal</button>
       </div>

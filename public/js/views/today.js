@@ -496,6 +496,21 @@ export function renderToday(container) {
     );
     const showLogCheck = isFlagged(dayStatus);   // never true for today/future
 
+    // Foods logged without calorie data add 0 kcal — they make the total look
+    // low even though you logged them. Estimate the missing kcal from macros.
+    const noCalNames = [];
+    let missingKcalEst = 0;
+    for (const sess of (mealData.sessions || [])) {
+      for (const e of (sess.entries || [])) {
+        const macros = (e.protein || 0) + (e.carbs || 0) + (e.fat || 0);
+        if ((e.calories || 0) === 0 && macros > 0) {
+          noCalNames.push(e.food_name);
+          missingKcalEst += Math.round(4 * (e.protein || 0) + 4 * (e.carbs || 0) + 9 * (e.fat || 0));
+        }
+      }
+    }
+    const showNoCal = noCalNames.length > 0;
+
     // ── Calorie rings ────────────────────────────────────────
     // Middle = base goal; right = workout earned; left = goal + workout.
     // Eaten fills the base goal first, then spills into the workout ring.
@@ -621,6 +636,17 @@ export function renderToday(container) {
           <div id="macro-bar-root" style="margin-top:12px"></div>
         </div>
       </div>
+
+      <!-- Foods logged without calorie data -->
+      ${showNoCal ? `
+      <div style="padding:0 16px 4px">
+        <div class="logcheck-banner">
+          <div class="logcheck-text">
+            <div class="logcheck-title">⚠️ ${noCalNames.length} food${noCalNames.length === 1 ? '' : 's'} logged without calories</div>
+            <div class="logcheck-sub">${noCalNames.slice(0, 3).map(esc).join(', ')}${noCalNames.length > 3 ? ` +${noCalNames.length - 3} more` : ''} — about ${fmtE(missingKcalEst)} ${ul} aren't counted in your total. Add calories to ${noCalNames.length === 1 ? 'it' : 'them'} in the Foods tab (search → Edit).</div>
+          </div>
+        </div>
+      </div>` : ''}
 
       <!-- Water -->
       <div style="padding:0 16px 4px">
