@@ -685,6 +685,9 @@ export function renderToday(container) {
             <div class="label">⚖️ Bodyweight</div>
             ${todayWeight
               ? `<div class="num" style="font-size:20px;margin-top:2px">${todayWeight.weight_kg} <span style="font-size:12px;color:var(--text-muted)">kg</span></div>`
+              : ironlog?.bodyweight
+              ? `<div class="num" style="font-size:20px;margin-top:2px">${ironlog.bodyweight.weight_kg} <span style="font-size:12px;color:var(--text-muted)">kg</span></div>
+                 <div style="font-size:11px;color:var(--accent);margin-top:2px">⚡ via IronLog${ironlog.bodyweight.is_today ? ' · today' : ' · ' + ironlog.bodyweight.date}</div>`
               : `<div style="font-size:12px;color:var(--text-faint);margin-top:3px">Not logged today</div>`
             }
           </div>

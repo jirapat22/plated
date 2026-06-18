@@ -319,19 +319,25 @@ export function renderTrends(container) {
       ${flaggedDays.length ? `
       <!-- Needs a look -->
       <div class="card" style="margin-bottom:12px;padding:0">
-        <div style="padding:14px 16px 8px;font-size:13px;font-weight:700;color:var(--text-muted)">⚠️ NEEDS A LOOK</div>
+        <div style="padding:14px 16px 4px;font-size:13px;font-weight:700;color:var(--text-muted)">⚠️ NEEDS A LOOK</div>
+        <div style="padding:0 16px 10px;font-size:12px;color:var(--text-muted);line-height:1.5">
+          These days look <strong>under-logged</strong> — under 60% of your ${fmtE(goal)} ${ul} goal with only 1–2 meals, so you probably forgot to log something. For each: tap <strong>Forgot — add</strong> to log the missing food, or <strong>Ate light</strong> if the low day was real (it'll then count normally).
+        </div>
         <div style="padding:0 12px 8px">
           ${flaggedDays.slice().reverse().map(r => {
             const d = new Date(r.date + 'T00:00:00');
             const lbl = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            const pct = goal ? Math.round((r.calories / goal) * 100) : 0;
             return `
             <div class="review-row">
               <div style="min-width:0">
-                <div style="font-size:14px;font-weight:600">${lbl}${r.status === LOG_STRONG ? ' <span style="color:'+FLAG+'">⚠</span>' : ''}</div>
-                <div style="font-size:12px;color:var(--text-muted)">${r.meal_count} meal${r.meal_count === 1 ? '' : 's'} · ${fmtE(r.calories)} ${ul}</div>
+                <div style="font-size:14px;font-weight:600">${lbl}
+                  <span class="review-flag">under-logged</span>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted)">${r.meal_count} meal${r.meal_count === 1 ? '' : 's'} · ${fmtE(r.calories)} ${ul} · only ${pct}% of goal</div>
               </div>
               <div style="display:flex;gap:6px;flex-shrink:0">
-                <button class="review-add"   data-date="${r.date}">Add</button>
+                <button class="review-add"   data-date="${r.date}">Forgot — add</button>
                 <button class="review-light" data-date="${r.date}">Ate light</button>
               </div>
             </div>`;

@@ -101,10 +101,11 @@ router.get('/today', async (req, res) => {
     // Pull the calories endpoint AND recent workouts. The endpoint can miss the
     // day when IronLog dates workouts in UTC but we ask for the user's local
     // date; summing recent workouts matched to the local day is tz-robust.
-    const [profileRes, calsRes, recentRes] = await Promise.allSettled([
+    const [profileRes, calsRes, recentRes, bwRes] = await Promise.allSettled([
       getProfile(pid),
       getWorkoutCalories(pid, today, tzOff),
       getRecentWorkouts(pid, 30, tzOff),
+      getBodyweight(pid, 30),
     ]);
 
     if (profileRes.status !== 'fulfilled') {
@@ -134,6 +135,22 @@ router.get('/today', async (req, res) => {
     // Prefer the tz-matched recent workouts; fall back to the calories endpoint.
     const burned = matchedCount > 0 ? matchedBurned : endpointBurned;
 
+    // Latest IronLog bodyweight — shown on Today when nothing is logged locally.
+    let bodyweight = null;
+    if (bwRes.status === 'fulfilled') {
+      const bwList = bwRes.value?.data ?? bwRes.value;
+      if (Array.isArray(bwList) && bwList.length) {
+        const norm = bwList
+          .map(w => ({ date: workoutLocalDate(w, tzOff), kg: Number(w.weight_kg ?? w.weight ?? w.bodyweight_kg) || null }))
+          .filter(w => w.date && w.kg != null)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        const todays = norm.find(w => w.date === today);
+        const latest = norm[norm.length - 1];
+        const pick = todays || latest;
+        if (pick) bodyweight = { date: pick.date, weight_kg: pick.kg, is_today: pick.date === today };
+      }
+    }
+
     const now = new Date().toISOString();
     try {
       getDb().prepare("INSERT OR REPLACE INTO profile_settings (profile_id,key,value) VALUES ($pid,'ironlog_last_synced',$v)")
@@ -147,6 +164,7 @@ router.get('/today', async (req, res) => {
       profile:         profileData,
       calories_burned: burned,
       calorie_target:  calorieGoal != null ? Math.round(calorieGoal + burned) : null,
+      bodyweight,
       last_synced:     now,
       debug: { date: today, tz: tzOff, endpointBurned, matchedBurned, matchedCount,
                recent_ok: recentRes.status === 'fulfilled', cals_ok: calsRes.status === 'fulfilled',

@@ -1112,6 +1112,12 @@ img { display: block; max-width: 100%; }
   color: var(--text-muted);
 }
 .review-add { color: var(--accent); border-color: rgba(200,184,255,.3); background: var(--accent-dim); }
+.review-flag {
+  display: inline-block; margin-left: 6px; font-size: 9px; font-weight: 700;
+  letter-spacing: 0.03em; text-transform: uppercase; padding: 1px 6px;
+  border-radius: 999px; vertical-align: middle;
+  background: rgba(249,115,22,.12); color: #f9a35c; border: 1px solid rgba(249,115,22,.3);
+}
 
 /* ─── Collapsible settings sections ──────────────────────── */
 .sec-head {
