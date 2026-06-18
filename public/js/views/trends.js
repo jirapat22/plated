@@ -228,6 +228,11 @@ export function renderTrends(container) {
     const flaggedDays  = rows.filter(r => isFlagged(r.status));
     const completeDays = loggedDays.filter(r => r.status === 'complete');
 
+    // Only nag about recently-flagged days — you can't realistically fix a
+    // month-old day, so anything older than 2 weeks ages off this list by itself.
+    const flagCutoff = (() => { const d = new Date(); d.setDate(d.getDate() - 14); return localDate(d); })();
+    const recentFlagged = flaggedDays.filter(r => r.date >= flagCutoff);
+
     const labels   = rows.map(r => { const d = new Date(r.date + 'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; });
     const cals     = rows.map(r => toDisplay(r.calories ?? 0));
     const proteins = rows.map(r => r.protein ?? 0);
@@ -310,21 +315,21 @@ export function renderTrends(container) {
             <div class="stat-lbl">fully logged</div>
           </div>
           <div class="stat-cell">
-            <div class="stat-num" style="color:${flaggedDays.length ? FLAG : 'var(--text)'}">${flaggedDays.length}</div>
+            <div class="stat-num" style="color:${recentFlagged.length ? FLAG : 'var(--text)'}">${recentFlagged.length}</div>
             <div class="stat-lbl">need a look</div>
           </div>
         </div>
       </div>
 
-      ${flaggedDays.length ? `
+      ${recentFlagged.length ? `
       <!-- Needs a look -->
       <div class="card" style="margin-bottom:12px;padding:0">
-        <div style="padding:14px 16px 4px;font-size:13px;font-weight:700;color:var(--text-muted)">⚠️ NEEDS A LOOK</div>
+        <div style="padding:14px 16px 4px;font-size:13px;font-weight:700;color:var(--text-muted)">⚠️ NEEDS A LOOK · LAST 2 WEEKS</div>
         <div style="padding:0 16px 10px;font-size:12px;color:var(--text-muted);line-height:1.5">
-          These days look <strong>under-logged</strong> — under 60% of your ${fmtE(goal)} ${ul} goal with only 1–2 meals, so you probably forgot to log something. For each: tap <strong>Forgot — add</strong> to log the missing food, or <strong>Ate light</strong> if the low day was real (it'll then count normally).
+          These days look <strong>under-logged</strong> — under 60% of your ${fmtE(goal)} ${ul} goal with only 1–2 meals, so you probably forgot to log something. Tap <strong>Forgot — add</strong> to log the missing food, or <strong>Ate light</strong> if the low day was real (it'll then count normally). Do nothing and a day drops off this list after 2 weeks.
         </div>
         <div style="padding:0 12px 8px">
-          ${flaggedDays.slice().reverse().map(r => {
+          ${recentFlagged.slice().reverse().map(r => {
             const d = new Date(r.date + 'T00:00:00');
             const lbl = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
             const pct = goal ? Math.round((r.calories / goal) * 100) : 0;
