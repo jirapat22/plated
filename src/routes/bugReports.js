@@ -91,6 +91,38 @@ router.post('/', async (req, res) => {
   }
 });
 
+// GET /api/bug-report/status — diagnose Orbit delivery. Never exposes the
+// secret (only its presence/length so you can compare to what Orbit expects).
+router.get('/status', (req, res) => {
+  try {
+    const db = getDb();
+    const base = process.env.ORBIT_URL?.trim() || null;
+    let host = null;
+    try { host = base ? new URL(base).host : null; } catch { host = 'invalid URL'; }
+    const unsent = db.prepare('SELECT COUNT(*) AS c FROM bug_reports WHERE orbit_sent = 0').get().c;
+    const sent   = db.prepare('SELECT COUNT(*) AS c FROM bug_reports WHERE orbit_sent = 1').get().c;
+    const latest = db.prepare('SELECT id, source, orbit_sent, created_at FROM bug_reports ORDER BY id DESC LIMIT 1').get() || null;
+    res.json({
+      orbit_configured: !!base,
+      orbit_host:       host,                 // compare to orbit-production-3c19.up.railway.app
+      forward_path:     '/api/bug-reports',
+      secret_present:   !!process.env.INGEST_SECRET,
+      secret_len:       (process.env.INGEST_SECRET || '').trim().length,
+      unsent_count:     unsent,
+      sent_count:       sent,
+      latest_report:    latest,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/bug-report/flush — force a retry of unsent reports right now.
+router.post('/flush', async (req, res) => {
+  try { res.json(await flushUnsent()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // Retry any locally-stored reports that never reached Orbit (e.g. stored while
 // ORBIT_URL was unset, or while Orbit was down). Best-effort; stops on failure
 // so it retries next startup. Returns { flushed }.
