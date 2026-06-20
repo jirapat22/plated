@@ -463,8 +463,8 @@ export function renderToday(container) {
         api.get(`/api/weight/day/${viewDate}`).catch(() => null),
       ]);
       if (myGen !== loadGen) return;            // a newer load() superseded us
-      // Only pull IronLog for the actual current day, using the local date.
-      const ironlog = (viewDate === localDate()) ? await fetchIronLog(viewDate) : null;
+      // Pull IronLog for the viewed day (endpoint matches workouts by local date).
+      const ironlog = await fetchIronLog(viewDate);
       if (myGen !== loadGen) return;            // and again after the IronLog fetch
       render(mealData, waterData, settings, ironlog, todayWeight);
     } catch (err) {
@@ -691,7 +691,7 @@ export function renderToday(container) {
             <div class="label">⚖️ Bodyweight</div>
             ${todayWeight
               ? `<div class="num" style="font-size:20px;margin-top:2px">${todayWeight.weight_kg} <span style="font-size:12px;color:var(--text-muted)">kg</span></div>`
-              : ironlog?.bodyweight
+              : (isToday && ironlog?.bodyweight)
               ? `<div class="num" style="font-size:20px;margin-top:2px">${ironlog.bodyweight.weight_kg} <span style="font-size:12px;color:var(--text-muted)">kg</span></div>
                  <div style="font-size:11px;color:var(--accent);margin-top:2px">⚡ via IronLog${ironlog.bodyweight.is_today ? ' · today' : ' · ' + ironlog.bodyweight.date}</div>`
               : `<div style="font-size:12px;color:var(--text-faint);margin-top:3px">Not logged today</div>`
