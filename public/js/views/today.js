@@ -731,17 +731,6 @@ export function renderToday(container) {
               <span class="muted">Net</span>
               <span class="num">${fmtE(net)} ${ul}</span>
             </div>
-            ${(burned === 0 && ironlog.debug) ? `
-            <div style="margin-top:8px;font-size:10px;color:var(--text-faint);line-height:1.5">
-              No workout found for ${ironlog.debug.date}.
-              <br>recent: ${ironlog.debug.recent_ok ? `${ironlog.debug.recent_count} returned, ${ironlog.debug.matchedCount} matched` : 'unavailable'} ·
-              calories endpoint: ${ironlog.debug.cals_ok ? `${ironlog.debug.endpointBurned} ${ul}` : 'unavailable'}
-              <details style="margin-top:6px">
-                <summary style="cursor:pointer">raw IronLog data</summary>
-                <button class="il-debug-copy btn btn-secondary" style="height:30px;padding:0 12px;font-size:12px;margin:6px 0">📋 Copy raw data</button>
-                <pre style="white-space:pre-wrap;word-break:break-all;font-size:9px;background:var(--surface-2);padding:8px;border-radius:6px;margin-top:4px">${esc(JSON.stringify({ recent_sample: ironlog.debug.recent_sample, cals_raw: ironlog.debug.cals_raw, recent_err: ironlog.debug.recent_err, cals_err: ironlog.debug.cals_err }, null, 2))}</pre>
-              </details>
-            </div>` : ''}
           </div>` : ''}
         </div>
       </div>` : ''}
@@ -799,12 +788,6 @@ export function renderToday(container) {
       userNavigated = false; viewDate = localDate(); load();
     });
 
-    // Copy raw IronLog debug data to clipboard for diagnosis
-    document.querySelector('.il-debug-copy')?.addEventListener('click', async () => {
-      const txt = JSON.stringify(ironlog?.debug ?? {}, null, 2);
-      try { await navigator.clipboard.writeText(txt); showToast('Copied — paste it to Claude', 'success'); }
-      catch { showToast('Copy failed — long-press the text instead', 'error'); }
-    });
 
     // Log-check banner: add a meal, or confirm "I ate light"
     document.querySelector('.logcheck-add')?.addEventListener('click', async () => {

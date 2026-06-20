@@ -117,12 +117,6 @@ router.get('/status', (req, res) => {
   }
 });
 
-// POST /api/bug-report/flush — force a retry of unsent reports right now.
-router.post('/flush', async (req, res) => {
-  try { res.json(await flushUnsent()); }
-  catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 // Retry any locally-stored reports that never reached Orbit (e.g. stored while
 // ORBIT_URL was unset, or while Orbit was down). Best-effort; stops on failure
 // so it retries next startup. Returns { flushed }.
