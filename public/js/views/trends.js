@@ -39,6 +39,18 @@ function movingAvg(arr, win = 7) {
   });
 }
 
+// Least-squares slope of y over x (used for the weight trend, kg/day).
+function linFit(xs, ys) {
+  const n = xs.length;
+  if (n < 2) return null;
+  const sx = xs.reduce((a, b) => a + b, 0);
+  const sy = ys.reduce((a, b) => a + b, 0);
+  const sxx = xs.reduce((a, b) => a + b * b, 0);
+  const sxy = xs.reduce((a, b, i) => a + b * ys[i], 0);
+  const denom = n * sxx - sx * sx;
+  return denom === 0 ? null : (n * sxy - sx * sy) / denom;
+}
+
 function makeChart(id, labels, data, color, yLabel, opts = {}) {
   destroyChart(id);
   const ctx = document.getElementById(id);
@@ -278,54 +290,89 @@ export function renderTrends(container) {
     const completeCount = completeDays.length;
     const completePct   = loggedCount ? Math.round((completeCount / loggedCount) * 100) : 0;
 
-    // ── Goal progress ──
+    // ── "Is it working?" verdict — intake vs actual weight change ──
     const validForAvg = loggedDays.filter(r => !isFlagged(r.status));
     const avgCal = validForAvg.length
       ? validForAvg.reduce((s, r) => s + (r.calories ?? 0), 0) / validForAvg.length
       : null;
-    const balance = avgCal != null ? avgCal - goal : null;   // + over / - under goal
-
     const targetWeight = parseFloat(settings.target_weight_kg) || null;
+    const cfgTdee      = parseFloat(settings.tdee) || null;
+    const phase        = settings.phase || 'maintain';
     const curWeight    = wVals.length ? wVals[wVals.length - 1] : null;
-    const startWeight  = wVals.length ? wVals[0] : null;
-    const wChange      = (curWeight != null && startWeight != null) ? curWeight - startWeight : null;
-    const toTarget     = (curWeight != null && targetWeight != null) ? curWeight - targetWeight : null;
 
-    // Streak messaging
-    const streakEl = streak === 0
-      ? `<div style="font-size:13px;color:var(--text-muted);margin-top:4px">Log meals and hit your calorie goal to start a streak 🎯</div>`
-      : streak === 1
-      ? `<div style="font-size:13px;color:var(--text-muted);margin-top:4px">1 day — keep it going! 💪</div>`
-      : `<div style="font-size:13px;color:var(--text-muted);margin-top:4px">${streak} consecutive days within 10% of goal</div>`;
+    // Weight trend slope (kg/day) from a least-squares fit over the weigh-in dates.
+    const wDayX = weightEntries.map(([d]) =>
+      Math.round((new Date(d + 'T00:00:00') - new Date(weightEntries[0][0] + 'T00:00:00')) / 86400000));
+    const slopePerDay = linFit(wDayX, wVals);
+    const spanDays    = wDayX.length ? wDayX[wDayX.length - 1] : 0;
+    const weeklyRate  = slopePerDay != null ? slopePerDay * 7 : null;
+    // Adaptive TDEE: real maintenance ≈ avg intake − the weight-change energy.
+    const realTDEE    = (avgCal != null && slopePerDay != null) ? Math.round(avgCal - slopePerDay * 7700) : null;
+
+    const haveVerdict = wVals.length >= 4 && spanDays >= 10 && validForAvg.length >= 5 && weeklyRate != null;
+
+    let verdictGood = null, verdictSub = '', weeksToTarget = null;
+    if (haveVerdict) {
+      if (phase === 'maintain') {
+        verdictGood = Math.abs(weeklyRate) <= 0.15;
+        verdictSub = verdictGood ? 'Weight is holding steady.'
+          : `Drifting ${weeklyRate > 0 ? 'up' : 'down'} — nudge intake to hold.`;
+      } else {
+        verdictGood = phase === 'cut' ? weeklyRate <= -0.05 : weeklyRate >= 0.05;
+        verdictSub = phase === 'cut'
+          ? (verdictGood ? `Losing ${Math.abs(weeklyRate).toFixed(2)} kg/wk — your deficit is real.`
+                         : 'Not losing yet — intake is at or above maintenance.')
+          : (verdictGood ? `Gaining ${weeklyRate.toFixed(2)} kg/wk — your surplus is working.`
+                         : 'Not gaining — intake is at or below maintenance.');
+      }
+      if (targetWeight != null && curWeight != null && Math.abs(weeklyRate) > 0.02) {
+        const w = (curWeight - targetWeight) / (-weeklyRate);
+        if (w > 0 && w < 520) weeksToTarget = w;
+      }
+    }
+    const etaLabel = weeksToTarget ? (() => {
+      const d = new Date(); d.setDate(d.getDate() + Math.round(weeksToTarget * 7));
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    })() : null;
 
     const trendsBody = document.getElementById('trends-body');
     if (!trendsBody) return;   // view torn down before render
     trendsBody.innerHTML = `
-      <!-- Streak -->
-      <div class="card streak-card" style="margin-bottom:12px">
-        <div class="streak-num">${streak === 0 ? '–' : streak}</div>
-        <div>
-          <div style="font-size:15px;font-weight:700">Day streak 🔥</div>
-          ${streakEl}
-        </div>
+      <!-- Verdict (hero) -->
+      <div class="card" style="margin-bottom:12px;border:1px solid ${haveVerdict ? (verdictGood ? 'rgba(93,202,138,.45)' : 'rgba(249,115,22,.45)') : 'var(--border)'}">
+        <div class="label" style="margin-bottom:6px">${phase === 'cut' ? 'Is your cut working?' : phase === 'bulk' ? 'Is your bulk working?' : 'Holding maintenance?'}</div>
+        ${haveVerdict ? `
+          <div style="font-size:22px;font-weight:800;color:${verdictGood ? 'var(--success)' : FLAG}">${verdictGood ? 'On track ✓' : 'Off track ⚠'}</div>
+          <div style="font-size:13px;color:var(--text-muted);margin:2px 0 12px">${verdictSub}</div>
+          <div class="stat-grid">
+            <div class="stat-cell"><div class="stat-num">${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(2)}</div><div class="stat-lbl">kg / week</div></div>
+            <div class="stat-cell"><div class="stat-num">${fmtE(realTDEE)}</div><div class="stat-lbl">real maint. ${ul}</div></div>
+            <div class="stat-cell"><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl">${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div></div>
+          </div>
+          ${cfgTdee ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Your set TDEE is ${fmtE(cfgTdee)} ${ul}; your data says ≈ ${fmtE(realTDEE)}.${Math.abs(realTDEE - cfgTdee) > 200 ? ' Worth updating it in Settings.' : ''}</div>` : ''}
+          ${etaLabel ? `<div style="font-size:11px;color:var(--text-faint);margin-top:4px">At this rate you reach ${targetWeight} kg around ${etaLabel}.</div>` : ''}
+        ` : `
+          <div style="font-size:13px;color:var(--text-muted);line-height:1.55">Keep logging to unlock your verdict — it weighs your intake against your real weight change to say whether it's working, and estimates your true maintenance calories.<br><span style="color:var(--text-faint)">Needs ~2 weeks of weigh-ins (have ${wVals.length}) and ≥5 fully-logged days (have ${validForAvg.length}).</span></div>
+        `}
       </div>
 
-      <!-- Consistency -->
+      <!-- Bodyweight + target (the verdict's evidence) -->
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div class="label">Bodyweight — ${days}d</div>
+          ${targetWeight ? `<div style="font-size:10px;color:var(--text-faint);display:flex;align-items:center;gap:4px"><span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>target ${targetWeight} kg</div>` : ''}
+        </div>
+        <div style="height:170px;position:relative"><canvas id="chart-wt"></canvas></div>
+      </div>
+
+      <!-- Consistency (streak folded in) -->
       <div class="card" style="margin-bottom:12px">
         <div class="label" style="margin-bottom:10px">Consistency — ${days}d</div>
         <div class="stat-grid">
-          <div class="stat-cell">
-            <div class="stat-num">${loggedCount}</div>
-            <div class="stat-lbl">days logged</div>
-          </div>
-          <div class="stat-cell">
-            <div class="stat-num">${completePct}%</div>
-            <div class="stat-lbl">fully logged</div>
-          </div>
-          <div class="stat-cell">
-            <div class="stat-num" style="color:${recentFlagged.length ? FLAG : 'var(--text)'}">${recentFlagged.length}</div>
-            <div class="stat-lbl">need a look</div>
-          </div>
+          <div class="stat-cell"><div class="stat-num">${streak || '–'}</div><div class="stat-lbl">streak 🔥</div></div>
+          <div class="stat-cell"><div class="stat-num">${loggedCount}</div><div class="stat-lbl">days logged</div></div>
+          <div class="stat-cell"><div class="stat-num">${completePct}%</div><div class="stat-lbl">fully logged</div></div>
+          <div class="stat-cell"><div class="stat-num" style="color:${recentFlagged.length ? FLAG : 'var(--text)'}">${recentFlagged.length}</div><div class="stat-lbl">need a look</div></div>
         </div>
       </div>
 
@@ -358,43 +405,6 @@ export function renderTrends(container) {
         </div>
       </div>` : ''}
 
-      <!-- Goal progress -->
-      <div class="card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Goal progress — ${days}d</div>
-        <div class="gp-row">
-          <span class="gp-lbl">Avg intake ${avgCal != null ? '(complete days)' : ''}</span>
-          <span class="gp-val">${avgCal != null ? `${fmtE(avgCal)} ${ul}` : '–'}
-            ${balance != null ? `<span style="font-size:12px;color:${balance > 0 ? 'var(--warning)' : 'var(--success)'}"> · ${balance > 0 ? '+' : ''}${fmtE(balance)} vs goal</span>` : ''}
-          </span>
-        </div>
-        <div class="gp-row">
-          <span class="gp-lbl">Weight (${days}d change)</span>
-          <span class="gp-val">${curWeight != null ? `${curWeight.toFixed(1)} kg` : '–'}
-            ${wChange != null ? `<span style="font-size:12px;color:var(--text-muted)"> · ${wChange > 0 ? '+' : ''}${wChange.toFixed(1)} kg</span>` : ''}
-          </span>
-        </div>
-        ${targetWeight != null ? `
-        <div class="gp-row">
-          <span class="gp-lbl">To target (${targetWeight} kg)</span>
-          <span class="gp-val">${toTarget != null ? `${toTarget > 0 ? '' : '+'}${(-toTarget).toFixed(1)} kg to go` : '–'}</span>
-        </div>` : `
-        <div class="gp-row">
-          <span class="gp-lbl" style="font-size:12px;color:var(--text-faint)">Set a target weight in Settings to track progress</span>
-        </div>`}
-      </div>
-
-      <!-- Weekly avg -->
-      ${weeklyAvg ? `
-      <div class="card" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <div class="label">7-day avg</div>
-          ${skipped7 ? `<div style="font-size:11px;color:var(--text-faint);margin-top:2px">${skipped7} under-logged day${skipped7 === 1 ? '' : 's'} excluded</div>` : ''}
-        </div>
-        <div class="num" style="font-size:18px">${weeklyAvg}
-          <span style="font-size:12px;color:var(--text-muted)"> / ${fmtE(goal)} ${ul}</span>
-        </div>
-      </div>` : ''}
-
       <!-- Calories chart -->
       <div class="card" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -417,23 +427,18 @@ export function renderTrends(container) {
         <div style="height:160px;position:relative"><canvas id="chart-pro"></canvas></div>
       </div>
 
-      <!-- Carbs chart -->
-      <div class="card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Carbs — ${days}d</div>
-        <div style="height:160px;position:relative"><canvas id="chart-carb"></canvas></div>
-      </div>
-
-      <!-- Fat chart -->
-      <div class="card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Fat — ${days}d</div>
-        <div style="height:160px;position:relative"><canvas id="chart-fat"></canvas></div>
-      </div>
-
-      <!-- Weight chart -->
-      <div class="card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Bodyweight — ${days}d</div>
-        <div style="height:160px;position:relative"><canvas id="chart-wt"></canvas></div>
-      </div>
+      <!-- Carbs + fat (secondary — tucked away) -->
+      <details id="more-macros" style="margin-bottom:12px">
+        <summary style="cursor:pointer;list-style:none;font-size:13px;font-weight:700;color:var(--text-muted);padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md)">More macros · carbs & fat</summary>
+        <div class="card" style="margin-top:10px">
+          <div class="label" style="margin-bottom:10px">Carbs — ${days}d</div>
+          <div style="height:150px;position:relative"><canvas id="chart-carb"></canvas></div>
+        </div>
+        <div class="card" style="margin-top:12px">
+          <div class="label" style="margin-bottom:10px">Fat — ${days}d</div>
+          <div style="height:150px;position:relative"><canvas id="chart-fat"></canvas></div>
+        </div>
+      </details>
     `;
 
     // Review-list actions
@@ -461,14 +466,23 @@ export function renderTrends(container) {
         pointColors, pointRadii, trendData: calTrend,
       });
       makeChart('chart-pro',  labels, proteins, '#1E88E5', 'g', { goalLine: proteinGoal });
-      makeChart('chart-carb', labels, carbs,    '#f97316', 'g', { goalLine: carbGoal });
-      makeChart('chart-fat',  labels, fats,     '#eab308', 'g', { goalLine: fatGoal  });
-      if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg', { trendData: wTrend });
+      if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg', { trendData: wTrend, goalLine: targetWeight ?? undefined });
       else {
         const c = document.getElementById('chart-wt');
-        if (c) c.closest('.card').querySelector('.label').nextElementSibling.innerHTML =
-          '<div class="empty-state" style="height:160px;display:flex;align-items:center;justify-content:center"><div class="empty-text">Log your weight to see a chart</div></div>';
+        if (c) c.closest('.card').querySelector('div[style*="height"]').innerHTML =
+          '<div class="empty-state" style="height:170px;display:flex;align-items:center;justify-content:center"><div class="empty-text">Log your weight to see a chart</div></div>';
       }
+      // Carbs/fat render only once their section is open (canvas needs to be visible).
+      const more = document.getElementById('more-macros');
+      let drawn = false;
+      const drawMacros = () => {
+        if (drawn || !more.open) return;
+        drawn = true;
+        makeChart('chart-carb', labels, carbs, '#f97316', 'g', { goalLine: carbGoal });
+        makeChart('chart-fat',  labels, fats,  '#eab308', 'g', { goalLine: fatGoal  });
+      };
+      more?.addEventListener('toggle', drawMacros);
+      drawMacros();
     });
   }
 
