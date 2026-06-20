@@ -20,7 +20,8 @@ export function showToast(msg, type = 'info') {
   const icons = { success: '✓', error: '✕', info: 'ℹ' };
   const el = document.createElement('div');
   el.className = `toast ${type}`;
-  el.innerHTML = `<span class="toast-icon">${icons[type] || 'ℹ'}</span><span>${msg}</span>`;
+  el.innerHTML = `<span class="toast-icon">${icons[type] || 'ℹ'}</span><span class="toast-msg"></span>`;
+  el.querySelector('.toast-msg').textContent = msg;   // textContent = no HTML injection
   container.appendChild(el);
   setTimeout(() => {
     el.classList.add('out');

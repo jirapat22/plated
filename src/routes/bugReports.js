@@ -45,8 +45,12 @@ function isDuplicate(db, source, message, stack) {
 // Returns { id, orbit }. Used by the endpoint AND the backend error handler.
 async function captureReport({ source, type, message, stack, context }) {
   const db = getDb();
-  const ctxStr = context == null ? null
+  // Cap untrusted sizes — the endpoint is public.
+  message = String(message).slice(0, 2000);
+  stack = stack ? String(stack).slice(0, 5000) : null;
+  let ctxStr = context == null ? null
     : (typeof context === 'string' ? context : JSON.stringify(context));
+  if (ctxStr) ctxStr = ctxStr.slice(0, 5000);
   const created_at = new Date().toISOString();
 
   const info = db.prepare(`
@@ -107,7 +111,6 @@ router.get('/status', (req, res) => {
       orbit_host:       host,                 // compare to orbit-production-3c19.up.railway.app
       forward_path:     '/api/bug-reports',
       secret_present:   !!process.env.INGEST_SECRET,
-      secret_len:       (process.env.INGEST_SECRET || '').trim().length,
       unsent_count:     unsent,
       sent_count:       sent,
       latest_report:    latest,

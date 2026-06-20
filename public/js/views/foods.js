@@ -148,13 +148,13 @@ export function renderFoods(container) {
               </div>
             </div>
             <div style="display:flex;gap:8px">
-              <button class="btn btn-secondary btn-full" id="detail-edit">✏️ Edit</button>
-              ${canDeleteFood(food) ? `<button class="btn btn-danger btn-full" id="detail-delete">Delete</button>` : ''}
+              ${canDeleteFood(food) ? `<button class="btn btn-secondary btn-full" id="detail-edit">✏️ Edit</button>
+              <button class="btn btn-danger btn-full" id="detail-delete">Delete</button>` : '<div style="font-size:12px;color:var(--text-faint);padding:6px 0">Only the creator can edit this food.</div>'}
             </div>
           </div>
         `;
         document.getElementById('detail-close').addEventListener('click', hideSheet);
-        document.getElementById('detail-edit').addEventListener('click', renderEdit);
+        document.getElementById('detail-edit')?.addEventListener('click', renderEdit);
         document.getElementById('detail-delete')?.addEventListener('click', async () => {
           if (!confirm(`Delete "${food.name}"? It'll disappear from search but your past logs stay intact.`)) return;
           try {

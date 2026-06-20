@@ -28,7 +28,6 @@ const weightRoutes = require('./src/routes/weight');
 const settingsRoutes   = require('./src/routes/settings');
 const ironlogRoutes    = require('./src/routes/ironlog');
 const templatesRoutes  = require('./src/routes/templates');
-const notesRoutes      = require('./src/routes/notes');
 const orbitRoutes      = require('./src/routes/orbit');
 const bugReportsRoutes = require('./src/routes/bugReports');
 
@@ -36,7 +35,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '256kb' }));
 
 // Public — registered before express.static and all /api routers
 app.get('/api/orbit-summary', (req, res) => {
@@ -86,7 +85,6 @@ app.use('/api/weight', requireProfile, weightRoutes);
 app.use('/api/settings', requireProfile, settingsRoutes);
 app.use('/api/ironlog',    requireProfile, ironlogRoutes);
 app.use('/api/templates',  requireProfile, templatesRoutes);
-app.use('/api/notes',      notesRoutes); // shared across profiles
 
 // SPA fallback
 app.get('*', (req, res) => {
@@ -124,28 +122,8 @@ function start() {
 
   initDb();
 
-  // One-time: migrate the legacy "Ideas & Bugs" checklist (notes) into the new
-  // bug-report pipeline (forwarded to Orbit), then clear it. Self-guarding —
-  // once notes are deleted this never runs again.
+  // Forward any locally-stored reports that haven't reached Orbit yet.
   (async () => {
-    try {
-      const { getDb } = require('./src/db');
-      const db = getDb();
-      const notes = db.prepare('SELECT id, text FROM notes').all();
-      const pending = notes.filter(n => n.text && n.text.trim());
-      for (const n of pending) {
-        await bugReportsRoutes.captureReport({
-          source: 'manual', type: 'bug_report', message: n.text.trim(),
-          context: { migrated_from: 'notes_checklist' },
-        });
-      }
-      if (notes.length) {
-        db.prepare('DELETE FROM notes').run();
-        console.log(`Migrated ${pending.length} checklist note(s) to bug_reports`);
-      }
-    } catch (e) { console.warn('Notes migration skipped:', e.message); }
-
-    // Forward any locally-stored reports that haven't reached Orbit yet.
     if (process.env.ORBIT_URL?.trim()) {
       console.log(`Orbit reporting enabled → ${process.env.ORBIT_URL}`);
       try {

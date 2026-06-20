@@ -298,6 +298,12 @@ router.patch('/:id', (req, res) => {
     const food = db.prepare('SELECT * FROM foods WHERE id = $id').get({ id });
     if (!food) return res.status(404).json({ error: 'Food not found' });
 
+    // Same rule as delete: only the creator (or admin) may edit a shared food.
+    const admin = !!db.prepare('SELECT is_admin FROM profiles WHERE id = $id').get({ id: req.profileId })?.is_admin;
+    if (!admin && food.created_by_profile !== req.profileId) {
+      return res.status(403).json({ error: 'You can only edit foods you created' });
+    }
+
     const allowed = [
       'name', 'brand', 'calories_per_100g', 'protein_per_100g',
       'carbs_per_100g', 'fat_per_100g', 'fiber_per_100g', 'serving_size_g',

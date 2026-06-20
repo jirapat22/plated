@@ -98,13 +98,6 @@ function initDb() {
       PRIMARY KEY (profile_id, date, key)
     );
 
-    CREATE TABLE IF NOT EXISTS notes (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      text       TEXT    NOT NULL,
-      done       INTEGER DEFAULT 0,
-      created_at TEXT    DEFAULT (datetime('now'))
-    );
-
     -- ── Multi-profile ──────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS profiles (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
