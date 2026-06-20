@@ -434,6 +434,7 @@ export function renderToday(container) {
   let userNavigated = false;   // true only when user manually tapped ← › or swiped
   let ironlogExpanded = false;
   let loadGen = 0;             // increments on each load; stale responses discarded
+  const ironCache = new Map(); // past days are immutable — cache their IronLog data
 
   // Swipe navigation
   let swipeStartX = 0, swipeStartY = 0;
@@ -464,7 +465,14 @@ export function renderToday(container) {
       ]);
       if (myGen !== loadGen) return;            // a newer load() superseded us
       // Pull IronLog for the viewed day (endpoint matches workouts by local date).
-      const ironlog = await fetchIronLog(viewDate);
+      // Cache past days (immutable); always re-fetch today since workouts change.
+      let ironlog;
+      if (viewDate !== localDate() && ironCache.has(viewDate)) {
+        ironlog = ironCache.get(viewDate);
+      } else {
+        ironlog = await fetchIronLog(viewDate);
+        if (viewDate !== localDate()) ironCache.set(viewDate, ironlog);
+      }
       if (myGen !== loadGen) return;            // and again after the IronLog fetch
       render(mealData, waterData, settings, ironlog, todayWeight);
     } catch (err) {
