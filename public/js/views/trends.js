@@ -211,7 +211,8 @@ export function renderTrends(container) {
       '<div class="skeleton skel-line" style="height:180px;border-radius:14px"></div>';
     try {
       const [summary, weights, settings] = await Promise.all([
-        api.get(`/api/meals/summary?days=${days}`),
+        // Fetch enough for the fixed 28-day verdict window even on the 7d range.
+        api.get(`/api/meals/summary?days=${Math.max(days, 28)}`),
         api.get('/api/weight?limit=90'),
         api.get('/api/settings'),
       ]);
@@ -240,8 +241,10 @@ export function renderTrends(container) {
     const todayISO    = localDate();
     const streak      = calcStreak(summary, goal);
 
-    // Tag every day with its logging-completeness status.
-    const rows = summary.map(r => ({ ...r, status: classifyDay(r, goal, todayISO) }));
+    // Tag every day; charts + consistency use the selected range, the verdict
+    // uses a fixed 28-day window (below) regardless of range.
+    const fullRows = summary.map(r => ({ ...r, status: classifyDay(r, goal, todayISO) }));
+    const rows = fullRows.slice(-days);
     const loggedDays   = rows.filter(r => (r.meal_count || 0) > 0);
     const flaggedDays  = rows.filter(r => isFlagged(r.status));
     const completeDays = loggedDays.filter(r => r.status === 'complete');
@@ -267,9 +270,8 @@ export function renderTrends(container) {
     const weightMap = {};
     ironlogWeights.forEach(w => { weightMap[w.date] = w.weight_kg; });
     localWeights.forEach(w   => { weightMap[w.date] = w.weight_kg; });
-    const weightEntries = Object.entries(weightMap)
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .slice(-days);
+    const weightSorted  = Object.entries(weightMap).sort((a, b) => a[0].localeCompare(b[0]));
+    const weightEntries = weightSorted.slice(-days);   // charts reflect the range
     const wLabels = weightEntries.map(([d]) => { const dt = new Date(d + 'T00:00:00'); return `${dt.getMonth()+1}/${dt.getDate()}`; });
     const wVals   = weightEntries.map(([, v]) => v);
     const wTrend  = movingAvg(wVals, 7);
@@ -291,25 +293,31 @@ export function renderTrends(container) {
     const completePct   = loggedCount ? Math.round((completeCount / loggedCount) * 100) : 0;
 
     // ── "Is it working?" verdict — intake vs actual weight change ──
-    const validForAvg = loggedDays.filter(r => !isFlagged(r.status));
+    // Fixed ~28-day window, independent of the chart range. Excludes today (its
+    // calories are still being logged) so the average isn't dragged down.
+    const win28 = (() => { const d = new Date(); d.setDate(d.getDate() - 28); return localDate(d); })();
+    const validForAvg = fullRows.filter(r =>
+      r.date >= win28 && r.date < todayISO && (r.meal_count || 0) > 0 && !isFlagged(r.status));
     const avgCal = validForAvg.length
       ? validForAvg.reduce((s, r) => s + (r.calories ?? 0), 0) / validForAvg.length
       : null;
     const targetWeight = parseFloat(settings.target_weight_kg) || null;
     const cfgTdee      = parseFloat(settings.tdee) || null;
     const phase        = settings.phase || 'maintain';
-    const curWeight    = wVals.length ? wVals[wVals.length - 1] : null;
+    const curWeight    = weightSorted.length ? weightSorted[weightSorted.length - 1][1] : null;
 
-    // Weight trend slope (kg/day) from a least-squares fit over the weigh-in dates.
-    const wDayX = weightEntries.map(([d]) =>
-      Math.round((new Date(d + 'T00:00:00') - new Date(weightEntries[0][0] + 'T00:00:00')) / 86400000));
-    const slopePerDay = linFit(wDayX, wVals);
-    const spanDays    = wDayX.length ? wDayX[wDayX.length - 1] : 0;
+    // Weight trend slope (kg/day) — least-squares over the last 28 days of weigh-ins.
+    const wWin = weightSorted.filter(([d]) => d >= win28);
+    const wWinVals = wWin.map(([, v]) => v);
+    const wWinX = wWin.map(([d]) =>
+      Math.round((new Date(d + 'T00:00:00') - new Date((wWin[0]?.[0] || d) + 'T00:00:00')) / 86400000));
+    const slopePerDay = linFit(wWinX, wWinVals);
+    const spanDays    = wWinX.length ? wWinX[wWinX.length - 1] : 0;
     const weeklyRate  = slopePerDay != null ? slopePerDay * 7 : null;
     // Adaptive TDEE: real maintenance ≈ avg intake − the weight-change energy.
     const realTDEE    = (avgCal != null && slopePerDay != null) ? Math.round(avgCal - slopePerDay * 7700) : null;
 
-    const haveVerdict = wVals.length >= 4 && spanDays >= 10 && validForAvg.length >= 5 && weeklyRate != null;
+    const haveVerdict = wWinVals.length >= 4 && spanDays >= 10 && validForAvg.length >= 5 && weeklyRate != null;
 
     let verdictGood = null, verdictSub = '', weeksToTarget = null;
     if (haveVerdict) {
@@ -352,7 +360,7 @@ export function renderTrends(container) {
           ${cfgTdee ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Your set TDEE is ${fmtE(cfgTdee)} ${ul}; your data says ≈ ${fmtE(realTDEE)}.${Math.abs(realTDEE - cfgTdee) > 200 ? ' Worth updating it in Settings.' : ''}</div>` : ''}
           ${etaLabel ? `<div style="font-size:11px;color:var(--text-faint);margin-top:4px">At this rate you reach ${targetWeight} kg around ${etaLabel}.</div>` : ''}
         ` : `
-          <div style="font-size:13px;color:var(--text-muted);line-height:1.55">Keep logging to unlock your verdict — it weighs your intake against your real weight change to say whether it's working, and estimates your true maintenance calories.<br><span style="color:var(--text-faint)">Needs ~2 weeks of weigh-ins (have ${wVals.length}) and ≥5 fully-logged days (have ${validForAvg.length}).</span></div>
+          <div style="font-size:13px;color:var(--text-muted);line-height:1.55">Keep logging to unlock your verdict — it weighs your intake against your real weight change to say whether it's working, and estimates your true maintenance calories.<br><span style="color:var(--text-faint)">Needs ~2 weeks of weigh-ins (have ${wWinVals.length}) and ≥5 fully-logged days (have ${validForAvg.length}).</span></div>
         `}
       </div>
 
@@ -476,7 +484,7 @@ export function renderTrends(container) {
       const more = document.getElementById('more-macros');
       let drawn = false;
       const drawMacros = () => {
-        if (drawn || !more.open) return;
+        if (!more || drawn || !more.open) return;
         drawn = true;
         makeChart('chart-carb', labels, carbs, '#f97316', 'g', { goalLine: carbGoal });
         makeChart('chart-fat',  labels, fats,  '#eab308', 'g', { goalLine: fatGoal  });
