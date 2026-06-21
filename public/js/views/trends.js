@@ -314,8 +314,13 @@ export function renderTrends(container) {
     const slopePerDay = linFit(wWinX, wWinVals);
     const spanDays    = wWinX.length ? wWinX[wWinX.length - 1] : 0;
     const weeklyRate  = slopePerDay != null ? slopePerDay * 7 : null;
-    // Adaptive TDEE: real maintenance ≈ avg intake − the weight-change energy.
-    const realTDEE    = (avgCal != null && slopePerDay != null) ? Math.round(avgCal - slopePerDay * 7700) : null;
+    // >1.5 kg/wk over a 28-day trend is almost always water/scale noise, not real
+    // tissue change — the energy math (and projection) can't be trusted then.
+    const rateReliable = weeklyRate != null && Math.abs(weeklyRate) <= 1.5;
+    // Adaptive TDEE: real maintenance ≈ avg intake − weight-change energy.
+    // Rounded to 10 (it's an estimate); only shown when the trend is reliable.
+    const realTDEE = (avgCal != null && slopePerDay != null && rateReliable)
+      ? Math.round((avgCal - slopePerDay * 7700) / 10) * 10 : null;
 
     const haveVerdict = wWinVals.length >= 4 && spanDays >= 10 && validForAvg.length >= 5 && weeklyRate != null;
 
@@ -333,7 +338,7 @@ export function renderTrends(container) {
           : (verdictGood ? `Gaining ${weeklyRate.toFixed(2)} kg/wk — your surplus is working.`
                          : 'Not gaining — intake is at or below maintenance.');
       }
-      if (targetWeight != null && curWeight != null && Math.abs(weeklyRate) > 0.02) {
+      if (rateReliable && targetWeight != null && curWeight != null && Math.abs(weeklyRate) > 0.02) {
         const w = (curWeight - targetWeight) / (-weeklyRate);
         if (w > 0 && w < 520) weeksToTarget = w;
       }
@@ -354,10 +359,11 @@ export function renderTrends(container) {
           <div style="font-size:13px;color:var(--text-muted);margin:2px 0 12px">${verdictSub}</div>
           <div class="stat-grid">
             <div class="stat-cell"><div class="stat-num">${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(2)}</div><div class="stat-lbl">kg / week</div></div>
-            <div class="stat-cell"><div class="stat-num">${fmtE(realTDEE)}</div><div class="stat-lbl">real maint. ${ul}</div></div>
+            <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div></div>
             <div class="stat-cell"><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl">${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div></div>
           </div>
-          ${cfgTdee ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Your set TDEE is ${fmtE(cfgTdee)} ${ul}; your data says ≈ ${fmtE(realTDEE)}.${Math.abs(realTDEE - cfgTdee) > 200 ? ' Worth updating it in Settings.' : ''}</div>` : ''}
+          ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>`
+            : cfgTdee ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Your set TDEE is ${fmtE(cfgTdee)} ${ul}; your data says ≈ ${fmtE(realTDEE)}.${Math.abs(realTDEE - cfgTdee) > 200 ? ' Worth updating it in Settings.' : ''}</div>` : ''}
           ${etaLabel ? `<div style="font-size:11px;color:var(--text-faint);margin-top:4px">At this rate you reach ${targetWeight} kg around ${etaLabel}.</div>` : ''}
         ` : `
           <div style="font-size:13px;color:var(--text-muted);line-height:1.55">Keep logging to unlock your verdict — it weighs your intake against your real weight change to say whether it's working, and estimates your true maintenance calories.<br><span style="color:var(--text-faint)">Needs ~2 weeks of weigh-ins (have ${wWinVals.length}) and ≥5 fully-logged days (have ${validForAvg.length}).</span></div>
