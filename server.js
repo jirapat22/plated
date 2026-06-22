@@ -30,6 +30,7 @@ const ironlogRoutes    = require('./src/routes/ironlog');
 const templatesRoutes  = require('./src/routes/templates');
 const orbitRoutes      = require('./src/routes/orbit');
 const bugReportsRoutes = require('./src/routes/bugReports');
+const batchesRoutes    = require('./src/routes/batches');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -85,6 +86,7 @@ app.use('/api/weight', requireProfile, weightRoutes);
 app.use('/api/settings', requireProfile, settingsRoutes);
 app.use('/api/ironlog',    requireProfile, ironlogRoutes);
 app.use('/api/templates',  requireProfile, templatesRoutes);
+app.use('/api/batches',    requireProfile, batchesRoutes);
 
 // SPA fallback
 app.get('*', (req, res) => {

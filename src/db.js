@@ -130,6 +130,19 @@ function initDb() {
       PRIMARY KEY (profile_id, food_id)
     );
 
+    -- ── Meal-prep batches: totals + cooked weight, drawn down by weight ──
+    CREATE TABLE IF NOT EXISTS batches (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id  INTEGER NOT NULL,
+      name        TEXT    NOT NULL,
+      food_id     INTEGER REFERENCES foods(id),   -- backing food used for portion entries
+      calories    REAL, protein REAL, carbs REAL, fat REAL, fiber REAL,  -- whole-batch totals
+      cooked_g    REAL    NOT NULL,                -- weight after cooking (the divisor)
+      remaining_g REAL    NOT NULL,                -- decrements as portions are logged
+      ingredients TEXT,                            -- JSON [{name, grams}] for display
+      created_at  TEXT    DEFAULT (datetime('now'))
+    );
+
     -- ── Bug reports / feature ideas (forwarded to Orbit) ───────
     CREATE TABLE IF NOT EXISTS bug_reports (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,

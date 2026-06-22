@@ -2,6 +2,7 @@ import { api }           from '../api.js';
 import { showToast, showSheet, hideSheet, getProfile } from '../app.js';
 import { getFoodIcon }  from '../utils/foodIcon.js';
 import { wireEnergyUnitToggle, wireDualNutrition } from '../utils/energy.js';
+import { renderBatches } from './batches.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -49,6 +50,7 @@ export function renderFoods(container) {
         <button class="search-tab" data-tab="favourites">★ Favourites</button>
         <button class="search-tab" data-tab="custom">Custom</button>
         <button class="search-tab" data-tab="scanned">Scanned</button>
+        <button class="search-tab" data-tab="batches">🍱 Batches</button>
       </div>
       <button class="btn btn-secondary" id="add-custom-btn" style="height:36px;font-size:12px;flex-shrink:0">+ Add</button>
     </div>
@@ -61,6 +63,10 @@ export function renderFoods(container) {
   async function loadList() {
     const list = document.getElementById('foods-list');
     if (!list) return;   // view torn down (tab switch) before/while loading
+    // Batches are their own thing (build + portion), not a food list.
+    document.getElementById('foods-search').closest('.search-input-wrap').style.display = currentTab === 'batches' ? 'none' : '';
+    document.getElementById('add-custom-btn').style.display = currentTab === 'batches' ? 'none' : '';
+    if (currentTab === 'batches') { renderBatches(list); return; }
     list.innerHTML = '<div class="skeleton skel-line" style="margin:8px 16px"></div>';
 
     try {

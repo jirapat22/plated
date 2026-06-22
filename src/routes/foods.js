@@ -87,7 +87,7 @@ router.get('/search', (req, res) => {
       FROM foods f
       LEFT JOIN profile_food_stats pfs ON pfs.food_id = f.id AND pfs.profile_id = $pid
       WHERE (f.name LIKE $term OR f.brand LIKE $term)
-        AND f.source != 'quick'
+        AND f.source NOT IN ('quick', 'batch')
         AND f.hidden = 0
       ORDER BY
         is_favourite DESC,
@@ -151,7 +151,7 @@ router.get('/recent', (req, res) => {
         GROUP BY me.food_id
       ) latest ON latest.food_id = f.id
       LEFT JOIN profile_food_stats pfs ON pfs.food_id = f.id AND pfs.profile_id = $pid
-      WHERE f.source != 'quick' AND f.hidden = 0
+      WHERE f.source NOT IN ('quick', 'batch') AND f.hidden = 0
       ORDER BY use_count DESC, latest.last_used DESC
       LIMIT 10
     `).all({ pid: req.profileId });
@@ -169,7 +169,7 @@ router.get('/favourites', (req, res) => {
       FROM foods f
       JOIN profile_food_stats pfs
         ON pfs.food_id = f.id AND pfs.profile_id = $pid AND pfs.is_favourite = 1
-      WHERE f.hidden = 0
+      WHERE f.hidden = 0 AND f.source != 'batch'
       ORDER BY pfs.use_count DESC, f.name ASC
     `).all({ pid: req.profileId });
     res.json(rows);
