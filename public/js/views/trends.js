@@ -370,7 +370,11 @@ export function renderTrends(container) {
             <div class="stat-cell"><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl">${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div></div>
           </div>
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>`
-            : cfgTdee ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Your set TDEE is ${fmtE(cfgTdee)} ${ul}; your data says ≈ ${fmtE(realTDEE)}.${Math.abs(realTDEE - cfgTdee) > 200 ? ' Worth updating it in Settings.' : ''}</div>` : ''}
+            : realTDEE == null ? ''
+            : `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">Estimated from ~${fmtE(avgCal)} ${ul}/day logged + your weight trend (includes activity).${cfgTdee ? (
+                  realTDEE < cfgTdee - 200 ? ` That's below your set TDEE (${fmtE(cfgTdee)}) — usually a sign of under-logging, not a lower TDEE. Don't lower it unless you're sure you logged everything.`
+                : realTDEE > cfgTdee + 200 ? ` That's above your set TDEE (${fmtE(cfgTdee)}); if your logging's been accurate you could raise it.`
+                : ` In line with your set TDEE (${fmtE(cfgTdee)}).`) : ''}</div>`}
           ${etaLabel ? `<div style="font-size:11px;color:var(--text-faint);margin-top:4px">At this rate you reach ${targetWeight} kg around ${etaLabel}.</div>` : ''}
         ` : `
           <div style="font-size:13px;color:var(--text-muted);line-height:1.55">Keep logging to unlock your verdict — it weighs your intake against your real weight change to say whether it's working, and estimates your true maintenance calories.<br><span style="color:var(--text-faint)">Needs ~2 weeks of weigh-ins (have ${wWinVals.length}) and ≥5 fully-logged days (have ${validForAvg.length}).</span></div>
