@@ -200,7 +200,11 @@ img { display: block; max-width: 100%; }
 }
 /* Overflow arc drawn on top of the base fill — only the exceeded slice, in a
    darker shade of the SAME ring colour (keeps variant stroke, just darkens). */
-.ring-fill.ring-over { filter: brightness(0.62); }
+/* Exceeded slice: same hue, clearly darker (mix toward black). Per variant so
+   it darkens the right base colour. */
+.ring-fill.ring-over         { stroke: color-mix(in srgb, var(--accent),  #000 45%); }
+.ring-fill.target.ring-over  { stroke: color-mix(in srgb, var(--success), #000 42%); }
+.ring-fill.workout.ring-over { stroke: color-mix(in srgb, var(--warning), #000 42%); }
 .ring-center {
   position: absolute;
   top: 50%; left: 50%;

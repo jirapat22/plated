@@ -48,9 +48,9 @@ export function renderFoods(container) {
       <div class="search-tabs" id="foods-tabs" style="padding:0;flex:1;overflow-x:auto;flex-wrap:nowrap">
         <button class="search-tab active" data-tab="all">All</button>
         <button class="search-tab" data-tab="favourites">★ Favourites</button>
+        <button class="search-tab" data-tab="batches">🍱 Batches</button>
         <button class="search-tab" data-tab="custom">Custom</button>
         <button class="search-tab" data-tab="scanned">Scanned</button>
-        <button class="search-tab" data-tab="batches">🍱 Batches</button>
       </div>
       <button class="btn btn-secondary" id="add-custom-btn" style="height:36px;font-size:12px;flex-shrink:0">+ Add</button>
     </div>
