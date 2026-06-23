@@ -8,8 +8,10 @@ const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 
 // Badge for user-added foods. Returns '' for the built-in database foods.
 export function foodTagHtml(food) {
-  if (food.source === 'custom')        return '<span class="food-tag tag-custom">Custom</span>';
-  if (food.source === 'openfoodfacts') return '<span class="food-tag tag-scanned">Scanned</span>';
+  if (food.source === 'custom') return '<span class="food-tag tag-custom">Custom</span>';
+  // Only badge a scanned food if YOU scanned it — shared/built-in foods that
+  // happen to carry an OFF source shouldn't read as "Scanned" to everyone.
+  if (food.source === 'openfoodfacts' && isMine(food)) return '<span class="food-tag tag-scanned">Scanned</span>';
   return '';
 }
 // Whether the current profile may delete this food (creator or admin).

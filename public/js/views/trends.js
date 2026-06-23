@@ -266,10 +266,17 @@ export function renderTrends(container) {
     const pointRadii  = rows.map(r => isFlagged(r.status) ? 5 : 2);
     const calTrend    = movingAvg(rows.map(r => toDisplay(r.calories ?? 0)), 7);
 
-    // Weight series (IronLog + local merged by date)
+    // Weight series (IronLog + local merged by date). Normalize hard: IronLog
+    // can send ISO timestamps and a 'weight' field — both produce NaN/NaN if
+    // used raw. Keep only valid YYYY-MM-DD dates with finite kg.
     const weightMap = {};
-    ironlogWeights.forEach(w => { weightMap[w.date] = w.weight_kg; });
-    localWeights.forEach(w   => { weightMap[w.date] = w.weight_kg; });
+    const addWeight = (rawDate, rawKg) => {
+      const date = String(rawDate || '').split('T')[0];
+      const kg = Number(rawKg);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(kg)) weightMap[date] = kg;
+    };
+    ironlogWeights.forEach(w => addWeight(w.date, w.weight_kg ?? w.weight ?? w.bodyweight_kg));
+    localWeights.forEach(w   => addWeight(w.date, w.weight_kg));
     const weightSorted  = Object.entries(weightMap).sort((a, b) => a[0].localeCompare(b[0]));
     const weightEntries = weightSorted.slice(-days);   // charts reflect the range
     const wLabels = weightEntries.map(([d]) => { const dt = new Date(d + 'T00:00:00'); return `${dt.getMonth()+1}/${dt.getDate()}`; });

@@ -66,6 +66,56 @@ async function fetchIronLog(dateStr) {
   } catch { return null; }
 }
 
+// Copy a logged food (same quantity) into another meal today, or onto any day.
+async function openCopyEntry(entry, viewDate, onDone) {
+  let sessions = [];
+  try { sessions = (await api.get(`/api/meals/day/${viewDate}`)).sessions || []; } catch { /* ignore */ }
+  const others = sessions.filter(s => s.id !== entry.meal_session_id);
+
+  const copyTo = sid => api.post(`/api/meals/sessions/${sid}/entries`, { food_id: entry.food_id, quantity_g: entry.quantity_g });
+  const newSession = async date => (await api.post('/api/meals/sessions', { date })).id;
+
+  showSheet(content => {
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">Copy food</span>
+        <button class="sheet-close" id="cp-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        <div style="font-size:15px;font-weight:600">${esc(entry.food_name)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${fmt(entry.quantity_g)}g · ${fmtE(entry.calories)} ${unitLabel()}</div>
+        <label class="form-label">Copy to a meal today</label>
+        <div style="display:flex;flex-direction:column;gap:6px;margin:6px 0 16px">
+          ${others.map(s => `<button class="cp-meal btn btn-secondary" data-sid="${s.id}" style="justify-content:flex-start">${esc(s.name || 'Meal')}</button>`).join('')}
+          <button class="cp-meal btn btn-secondary" data-sid="new" style="justify-content:flex-start;color:var(--accent)">+ New meal</button>
+        </div>
+        <label class="form-label">…or another day</label>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <input class="input" id="cp-date" type="date" max="${localDate()}" value="${viewDate}" style="flex:1"/>
+          <button class="btn btn-primary" id="cp-date-go">Copy</button>
+        </div>
+      </div>`;
+    document.getElementById('cp-close').addEventListener('click', hideSheet);
+    content.querySelectorAll('.cp-meal').forEach(btn => btn.addEventListener('click', async () => {
+      try {
+        const sid = btn.dataset.sid === 'new' ? await newSession(viewDate) : btn.dataset.sid;
+        await copyTo(sid);
+        hideSheet(); showToast('Copied', 'success'); onDone?.();
+      } catch (err) { showToast(err.message, 'error'); }
+    }));
+    document.getElementById('cp-date-go').addEventListener('click', async () => {
+      const date = document.getElementById('cp-date').value;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return showToast('Pick a date', 'error');
+      try {
+        await copyTo(await newSession(date));
+        hideSheet();
+        showToast(date === localDate() ? 'Copied to today' : `Copied to ${date}`, 'success');
+        onDone?.();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+  });
+}
+
 // ── Meal name presets ────────────────────────────────────────
 const MEAL_PRESETS = [
   { emoji: '🌅', name: 'Breakfast'    },
@@ -958,6 +1008,7 @@ export function renderToday(container) {
         </div>
         <div class="meal-entry-kcal">${fmtE(entry.calories)}</div>
         <div style="display:flex;gap:4px;flex-shrink:0">
+          <button class="entry-copy-btn" title="Copy to…" style="width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:13px">⧉</button>
           <button class="entry-edit-btn" title="Edit" style="width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:12px">✏️</button>
           <button class="entry-del-btn" title="Delete" style="width:30px;height:30px;border-radius:50%;background:rgba(255,107,107,.1);color:var(--error);display:flex;align-items:center;justify-content:center;font-size:15px">×</button>
         </div>
@@ -980,6 +1031,7 @@ export function renderToday(container) {
         entryEl.addEventListener(ev, () => clearTimeout(lpTimer), { passive: true })
       );
 
+      entryEl.querySelector('.entry-copy-btn').addEventListener('click', () => openCopyEntry(entry, viewDate, () => load()));
       entryEl.querySelector('.entry-edit-btn').addEventListener('click', () => openEditEntry(entry, () => load()));
       entryEl.querySelector('.entry-del-btn').addEventListener('click', async () => {
         try {
