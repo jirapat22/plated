@@ -1,4 +1,4 @@
-const CACHE_NAME = 'plated-v61';
+const CACHE_NAME = 'plated-v62';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

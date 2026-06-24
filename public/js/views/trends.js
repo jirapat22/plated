@@ -317,13 +317,38 @@ export function renderTrends(container) {
       return `${f(m)} – ${f(su)}`;
     })();
 
-    // ── Weekly averages over the selected range (Mon–Sun buckets) ──
+    // This-week macro averages (per logged day)
+    const wkAvgOf = k => wkRows.length ? wkRows.reduce((s, r) => s + (r[k] || 0), 0) / wkRows.length : 0;
+    const wkP = wkAvgOf('protein'), wkC = wkAvgOf('carbs'), wkF = wkAvgOf('fat');
+
+    // ── Weekly averages over the selected range (Mon–Sun buckets), per macro ──
     const weekMap = {};
-    rows.forEach(r => { if ((r.meal_count || 0) > 0) (weekMap[mondayOf(r.date)] ||= []).push(r.calories || 0); });
-    const weeks = Object.entries(weekMap)
+    rows.forEach(r => { if ((r.meal_count || 0) > 0) (weekMap[mondayOf(r.date)] ||= []).push(r); });
+    const avgOf = (arr, k) => arr.reduce((s, r) => s + (r[k] || 0), 0) / arr.length;
+    const weekData = Object.entries(weekMap)
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([mon, arr]) => ({ mon, avg: arr.reduce((s, c) => s + c, 0) / arr.length }));
-    const weekMaxAvg = Math.max(1, ...weeks.map(w => w.avg));
+      .map(([mon, arr]) => ({ mon, cal: avgOf(arr, 'calories'), protein: avgOf(arr, 'protein'), carbs: avgOf(arr, 'carbs'), fat: avgOf(arr, 'fat') }));
+
+    const macroMeta = {
+      cal:     { label: 'Calories', goal, color: 'var(--accent)',  disp: v => fmtE(v) },
+      protein: { label: 'Protein',  goal: proteinGoal, color: 'var(--protein)', disp: v => Math.round(v) + 'g' },
+      carbs:   { label: 'Carbs',    goal: carbGoal,    color: 'var(--carbs)',   disp: v => Math.round(v) + 'g' },
+      fat:     { label: 'Fat',      goal: fatGoal,     color: 'var(--fat)',     disp: v => Math.round(v) + 'g' },
+    };
+    function drawWeekBars(metric) {
+      const m = macroMeta[metric];
+      const box = document.getElementById('wk-bars');
+      if (!box) return;
+      const max = Math.max(m.goal || 1, ...weekData.map(w => w[metric]));
+      box.innerHTML = weekData.map(w => {
+        const lbl = new Date(w.mon + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return `<div style="display:flex;align-items:center;gap:8px;margin:7px 0">
+          <span style="width:52px;font-size:11px;color:var(--text-muted);flex-shrink:0">${lbl}</span>
+          <div style="flex:1;height:18px;background:var(--surface-2);border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.round(w[metric] / max * 100)}%;background:${m.color}"></div></div>
+          <span style="width:48px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums">${m.disp(w[metric])}</span>
+        </div>`;
+      }).join('') + `<div style="font-size:10px;color:var(--text-faint);margin-top:6px">Avg per logged day, Mon–Sun. ${m.label} goal ${m.disp(m.goal)}.</div>`;
+    }
 
     // ── "Is it working?" verdict — intake vs actual weight change ──
     // Fixed ~28-day window, independent of the chart range. Excludes today (its
@@ -440,6 +465,12 @@ export function renderTrends(container) {
           <div class="stat-cell"><div class="stat-num">${wkRows.length}<span style="font-size:13px;color:var(--text-muted)">/7</span></div><div class="stat-lbl">days logged</div></div>
         </div>
         <div style="font-size:12px;color:${wkAvg > goal ? 'var(--warning)' : 'var(--text-muted)'};margin-top:10px">${wkAvg > goal ? `+${fmtE(wkAvg - goal)} over` : `${fmtE(goal - wkAvg)} under`} your ${fmtE(goal)} ${ul} goal, on average</div>
+        <div style="display:flex;gap:14px;font-size:12px;margin-top:8px;border-top:1px solid var(--border);padding-top:10px">
+          <span><span style="color:var(--protein);font-weight:600">${Math.round(wkP)}</span><span style="color:var(--text-faint)">/${Math.round(proteinGoal)} P</span></span>
+          <span><span style="color:var(--carbs);font-weight:600">${Math.round(wkC)}</span><span style="color:var(--text-faint)">/${Math.round(carbGoal)} C</span></span>
+          <span><span style="color:var(--fat);font-weight:600">${Math.round(wkF)}</span><span style="color:var(--text-faint)">/${Math.round(fatGoal)} F</span></span>
+          <span style="color:var(--text-faint);margin-left:auto">avg/day</span>
+        </div>
       </div>` : ''}
 
       ${recentFlagged.length ? `
@@ -487,24 +518,17 @@ export function renderTrends(container) {
         <div style="height:160px;position:relative"><canvas id="chart-cal"></canvas></div>
       </div>
 
-      <!-- Weekly averages (Mon–Sun) -->
-      ${weeks.length >= 2 ? `
+      <!-- Weekly averages (Mon–Sun), per macro -->
+      ${weekData.length >= 2 ? `
       <div class="card" style="margin-bottom:12px">
         <div class="label" style="margin-bottom:10px">Weekly average — Mon to Sun</div>
-        ${weeks.map(w => {
-          const m = new Date(w.mon + 'T00:00:00');
-          const lbl = m.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-          const over = w.avg > goal;
-          return `
-          <div style="display:flex;align-items:center;gap:8px;margin:7px 0">
-            <span style="width:52px;font-size:11px;color:var(--text-muted);flex-shrink:0">${lbl}</span>
-            <div style="flex:1;height:18px;background:var(--surface-2);border-radius:4px;overflow:hidden">
-              <div style="height:100%;width:${Math.round(w.avg / weekMaxAvg * 100)}%;background:${over ? 'var(--warning)' : 'var(--accent)'}"></div>
-            </div>
-            <span style="width:48px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums">${fmtE(w.avg)}</span>
-          </div>`;
-        }).join('')}
-        <div style="font-size:10px;color:var(--text-faint);margin-top:6px">Average per logged day, each Mon–Sun week. Goal ${fmtE(goal)} ${ul}.</div>
+        <div class="search-tabs" id="wk-metric" style="padding:0;margin-bottom:10px">
+          <button class="search-tab active" data-m="cal">Calories</button>
+          <button class="search-tab" data-m="protein">Protein</button>
+          <button class="search-tab" data-m="carbs">Carbs</button>
+          <button class="search-tab" data-m="fat">Fat</button>
+        </div>
+        <div id="wk-bars"></div>
       </div>` : ''}
 
       <!-- Protein chart -->
@@ -545,6 +569,18 @@ export function renderTrends(container) {
         } catch (err) { showToast(err.message, 'error'); }
       });
     });
+
+    // Weekly-average macro toggle
+    const wkMetric = document.getElementById('wk-metric');
+    if (wkMetric) {
+      drawWeekBars('cal');
+      wkMetric.addEventListener('click', e => {
+        const b = e.target.closest('[data-m]');
+        if (!b) return;
+        wkMetric.querySelectorAll('.search-tab').forEach(x => x.classList.toggle('active', x === b));
+        drawWeekBars(b.dataset.m);
+      });
+    }
 
     requestAnimationFrame(() => {
       makeChart('chart-cal', labels, cals, '#c8b8ff', ul, {
