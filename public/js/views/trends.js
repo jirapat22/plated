@@ -39,6 +39,13 @@ function movingAvg(arr, win = 7) {
   });
 }
 
+// The Monday (YYYY-MM-DD) of the week containing the given date.
+function mondayOf(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));   // getDay: Sun=0 → shift so Mon=0
+  return localDate(d);
+}
+
 // Least-squares slope of y over x (used for the weight trend, kg/day).
 function linFit(xs, ys) {
   const n = xs.length;
@@ -299,6 +306,25 @@ export function renderTrends(container) {
     const completeCount = completeDays.length;
     const completePct   = loggedCount ? Math.round((completeCount / loggedCount) * 100) : 0;
 
+    // ── This calendar week (Mon–Sun) ──
+    const thisMon = mondayOf(todayISO);
+    const wkRows  = fullRows.filter(r => r.date >= thisMon && (r.meal_count || 0) > 0);
+    const wkTotal = wkRows.reduce((s, r) => s + (r.calories || 0), 0);
+    const wkAvg   = wkRows.length ? wkTotal / wkRows.length : 0;
+    const wkLabel = (() => {
+      const m = new Date(thisMon + 'T00:00:00'), su = new Date(m); su.setDate(su.getDate() + 6);
+      const f = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return `${f(m)} – ${f(su)}`;
+    })();
+
+    // ── Weekly averages over the selected range (Mon–Sun buckets) ──
+    const weekMap = {};
+    rows.forEach(r => { if ((r.meal_count || 0) > 0) (weekMap[mondayOf(r.date)] ||= []).push(r.calories || 0); });
+    const weeks = Object.entries(weekMap)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([mon, arr]) => ({ mon, avg: arr.reduce((s, c) => s + c, 0) / arr.length }));
+    const weekMaxAvg = Math.max(1, ...weeks.map(w => w.avg));
+
     // ── "Is it working?" verdict — intake vs actual weight change ──
     // Fixed ~28-day window, independent of the chart range. Excludes today (its
     // calories are still being logged) so the average isn't dragged down.
@@ -401,6 +427,21 @@ export function renderTrends(container) {
         </div>
       </div>
 
+      <!-- This week (Mon–Sun) -->
+      ${wkRows.length ? `
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+          <div class="label">This week</div>
+          <div style="font-size:11px;color:var(--text-faint)">${wkLabel}</div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-cell"><div class="stat-num">${fmtE(wkAvg)}</div><div class="stat-lbl">avg / day</div></div>
+          <div class="stat-cell"><div class="stat-num">${fmtE(wkTotal)}</div><div class="stat-lbl">total ${ul}</div></div>
+          <div class="stat-cell"><div class="stat-num">${wkRows.length}<span style="font-size:13px;color:var(--text-muted)">/7</span></div><div class="stat-lbl">days logged</div></div>
+        </div>
+        <div style="font-size:12px;color:${wkAvg > goal ? 'var(--warning)' : 'var(--text-muted)'};margin-top:10px">${wkAvg > goal ? `+${fmtE(wkAvg - goal)} over` : `${fmtE(goal - wkAvg)} under`} your ${fmtE(goal)} ${ul} goal, on average</div>
+      </div>` : ''}
+
       ${recentFlagged.length ? `
       <!-- Needs a look -->
       <div class="card" style="margin-bottom:12px;padding:0">
@@ -445,6 +486,26 @@ export function renderTrends(container) {
         </div>
         <div style="height:160px;position:relative"><canvas id="chart-cal"></canvas></div>
       </div>
+
+      <!-- Weekly averages (Mon–Sun) -->
+      ${weeks.length >= 2 ? `
+      <div class="card" style="margin-bottom:12px">
+        <div class="label" style="margin-bottom:10px">Weekly average — Mon to Sun</div>
+        ${weeks.map(w => {
+          const m = new Date(w.mon + 'T00:00:00');
+          const lbl = m.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          const over = w.avg > goal;
+          return `
+          <div style="display:flex;align-items:center;gap:8px;margin:7px 0">
+            <span style="width:52px;font-size:11px;color:var(--text-muted);flex-shrink:0">${lbl}</span>
+            <div style="flex:1;height:18px;background:var(--surface-2);border-radius:4px;overflow:hidden">
+              <div style="height:100%;width:${Math.round(w.avg / weekMaxAvg * 100)}%;background:${over ? 'var(--warning)' : 'var(--accent)'}"></div>
+            </div>
+            <span style="width:48px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums">${fmtE(w.avg)}</span>
+          </div>`;
+        }).join('')}
+        <div style="font-size:10px;color:var(--text-faint);margin-top:6px">Average per logged day, each Mon–Sun week. Goal ${fmtE(goal)} ${ul}.</div>
+      </div>` : ''}
 
       <!-- Protein chart -->
       <div class="card" style="margin-bottom:12px">
