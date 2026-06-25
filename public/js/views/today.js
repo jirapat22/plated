@@ -1000,10 +1000,10 @@ export function renderToday(container) {
         <div style="font-size:20px;flex-shrink:0;width:30px;text-align:center">${getFoodIcon(entry.food_name)}</div>
         <div class="meal-entry-info">
           <div class="meal-entry-name">${esc(entry.food_name)}</div>
-          <div class="meal-entry-sub">${fmt(entry.quantity_g)}g &nbsp;
-            <span style="color:var(--protein)">${fmt(entry.protein,1)}P</span> ·
-            <span style="color:var(--carbs)">${fmt(entry.carbs,1)}C</span> ·
-            <span style="color:var(--fat)">${fmt(entry.fat,1)}F</span>
+          <div class="meal-entry-sub"><span style="color:var(--text)">${fmt(entry.quantity_g)}g</span> <span style="color:var(--text-faint)">·</span>
+            <span style="color:var(--protein)">${fmt(entry.protein)}P</span>
+            <span style="color:var(--carbs)">${fmt(entry.carbs)}C</span>
+            <span style="color:var(--fat)">${fmt(entry.fat)}F</span>
           </div>
         </div>
         <div class="meal-entry-kcal">${fmtE(entry.calories)}</div>
