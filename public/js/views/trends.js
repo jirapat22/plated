@@ -339,15 +339,24 @@ export function renderTrends(container) {
       const m = macroMeta[metric];
       const box = document.getElementById('wk-bars');
       if (!box) return;
-      const max = Math.max(m.goal || 1, ...weekData.map(w => w[metric]));
-      box.innerHTML = weekData.map(w => {
-        const lbl = new Date(w.mon + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        return `<div style="display:flex;align-items:center;gap:8px;margin:7px 0">
-          <span style="width:52px;font-size:11px;color:var(--text-muted);flex-shrink:0">${lbl}</span>
-          <div style="flex:1;height:18px;background:var(--surface-2);border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.round(w[metric] / max * 100)}%;background:${m.color}"></div></div>
-          <span style="width:48px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums">${m.disp(w[metric])}</span>
+      const max = Math.max(m.goal || 1, ...weekData.map(w => w[metric])) * 1.08;  // headroom
+      const goalPct = m.goal ? (m.goal / max) * 100 : null;
+      const f = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      box.innerHTML = weekData.slice().reverse().map(w => {   // most recent week on top
+        const mon = new Date(w.mon + 'T00:00:00');
+        const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
+        const isThis = w.mon === thisMon;
+        const val = w[metric];
+        const over = m.goal && val > m.goal;
+        return `<div style="display:flex;align-items:center;gap:10px;margin:9px 0">
+          <span style="width:82px;flex-shrink:0;font-size:11px;${isThis ? 'color:var(--accent);font-weight:700' : 'color:var(--text-muted)'}">${isThis ? 'This week' : `${f(mon)}–${sun.getDate()}`}</span>
+          <div style="flex:1;height:20px;background:var(--surface-2);border-radius:5px;position:relative;overflow:hidden">
+            <div style="height:100%;width:${Math.round(val / max * 100)}%;background:${m.color};border-radius:5px"></div>
+            ${goalPct != null ? `<div title="goal" style="position:absolute;top:-1px;bottom:-1px;left:${goalPct}%;width:2px;background:var(--text);opacity:.5"></div>` : ''}
+          </div>
+          <span style="width:50px;text-align:right;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;${over ? 'color:var(--warning)' : ''}">${m.disp(val)}</span>
         </div>`;
-      }).join('') + `<div style="font-size:10px;color:var(--text-faint);margin-top:6px">Avg per logged day, Mon–Sun. ${m.label} goal ${m.disp(m.goal)}.</div>`;
+      }).join('') + `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-faint);margin-top:8px;border-top:1px solid var(--border);padding-top:8px"><span>avg per logged day</span><span>┃ goal ${m.disp(m.goal)}</span></div>`;
     }
 
     // ── "Is it working?" verdict — intake vs actual weight change ──
