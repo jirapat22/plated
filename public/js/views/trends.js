@@ -432,26 +432,6 @@ export function renderTrends(container) {
         `}
       </div>
 
-      <!-- Bodyweight + target (the verdict's evidence) -->
-      <div class="card" style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div class="label">Bodyweight — ${days}d</div>
-          ${targetWeight ? `<div style="font-size:10px;color:var(--text-faint);display:flex;align-items:center;gap:4px"><span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>target ${targetWeight} kg</div>` : ''}
-        </div>
-        <div style="height:170px;position:relative"><canvas id="chart-wt"></canvas></div>
-      </div>
-
-      <!-- Consistency (streak folded in) -->
-      <div class="card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Consistency — ${days}d</div>
-        <div class="stat-grid">
-          <div class="stat-cell"><div class="stat-num">${streak || '–'}</div><div class="stat-lbl">streak 🔥</div></div>
-          <div class="stat-cell"><div class="stat-num">${loggedCount}</div><div class="stat-lbl">days logged</div></div>
-          <div class="stat-cell"><div class="stat-num">${completePct}%</div><div class="stat-lbl">fully logged</div></div>
-          <div class="stat-cell"><div class="stat-num" style="color:${recentFlagged.length ? FLAG : 'var(--text)'}">${recentFlagged.length}</div><div class="stat-lbl">need a look</div></div>
-        </div>
-      </div>
-
       <!-- This week (Mon–Sun) -->
       ${wkRows.length ? `
       <div class="card" style="margin-bottom:12px">
@@ -472,6 +452,30 @@ export function renderTrends(container) {
           <span style="color:var(--text-faint);margin-left:auto">avg/day</span>
         </div>
       </div>` : ''}
+
+      <!-- Weekly averages (Mon–Sun), per macro — "am I eating more than usual?" -->
+      ${weekData.length >= 2 ? `
+      <div class="card" style="margin-bottom:12px">
+        <div class="label" style="margin-bottom:10px">Weekly average — Mon to Sun</div>
+        <div class="search-tabs" id="wk-metric" style="padding:0;margin-bottom:10px">
+          <button class="search-tab active" data-m="cal">Calories</button>
+          <button class="search-tab" data-m="protein">Protein</button>
+          <button class="search-tab" data-m="carbs">Carbs</button>
+          <button class="search-tab" data-m="fat">Fat</button>
+        </div>
+        <div id="wk-bars"></div>
+      </div>` : ''}
+
+      <!-- Consistency (streak folded in) -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="label" style="margin-bottom:10px">Consistency — ${days}d</div>
+        <div class="stat-grid">
+          <div class="stat-cell"><div class="stat-num">${streak || '–'}</div><div class="stat-lbl">streak 🔥</div></div>
+          <div class="stat-cell"><div class="stat-num">${loggedCount}</div><div class="stat-lbl">days logged</div></div>
+          <div class="stat-cell"><div class="stat-num">${completePct}%</div><div class="stat-lbl">fully logged</div></div>
+          <div class="stat-cell"><div class="stat-num" style="color:${recentFlagged.length ? FLAG : 'var(--text)'}">${recentFlagged.length}</div><div class="stat-lbl">need a look</div></div>
+        </div>
+      </div>
 
       ${recentFlagged.length ? `
       <!-- Needs a look -->
@@ -502,6 +506,15 @@ export function renderTrends(container) {
         </div>
       </div>` : ''}
 
+      <!-- Bodyweight + target -->
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div class="label">Bodyweight — ${days}d</div>
+          ${targetWeight ? `<div style="font-size:10px;color:var(--text-faint);display:flex;align-items:center;gap:4px"><span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>target ${targetWeight} kg</div>` : ''}
+        </div>
+        <div style="height:170px;position:relative"><canvas id="chart-wt"></canvas></div>
+      </div>
+
       <!-- Calories chart -->
       <div class="card" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -517,19 +530,6 @@ export function renderTrends(container) {
         </div>
         <div style="height:160px;position:relative"><canvas id="chart-cal"></canvas></div>
       </div>
-
-      <!-- Weekly averages (Mon–Sun), per macro -->
-      ${weekData.length >= 2 ? `
-      <div class="card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Weekly average — Mon to Sun</div>
-        <div class="search-tabs" id="wk-metric" style="padding:0;margin-bottom:10px">
-          <button class="search-tab active" data-m="cal">Calories</button>
-          <button class="search-tab" data-m="protein">Protein</button>
-          <button class="search-tab" data-m="carbs">Carbs</button>
-          <button class="search-tab" data-m="fat">Fat</button>
-        </div>
-        <div id="wk-bars"></div>
-      </div>` : ''}
 
       <!-- Protein chart -->
       <div class="card" style="margin-bottom:12px">
