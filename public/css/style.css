@@ -1063,6 +1063,16 @@ img { display: block; max-width: 100%; }
 .tag-custom  { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(200,184,255,.25); }
 .tag-scanned { background: rgba(126,231,199,.12); color: #7ee7c7; border: 1px solid rgba(126,231,199,.25); }
 
+/* ─── Concern chips (Today at-a-glance status) ───────────── */
+.concern-chip {
+  display: inline-flex; align-items: center;
+  font-size: 12px; font-weight: 600;
+  padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+}
+.concern-chip.bad  { background: rgba(255,107,107,.12); color: var(--error);   border: 1px solid rgba(255,107,107,.28); }
+.concern-chip.warn { background: rgba(255,179,71,.12);  color: var(--warning); border: 1px solid rgba(255,179,71,.28); }
+.concern-chip.good { background: rgba(93,202,138,.12);  color: var(--success); border: 1px solid rgba(93,202,138,.28); }
+
 /* ─── "Did you fully log?" banner (Today) ────────────────── */
 .logcheck-banner {
   background: rgba(249,115,22,.10);

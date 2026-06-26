@@ -602,6 +602,14 @@ export function renderToday(container) {
       : '✓ goal hit';
     const hintColor = remaining < -50 ? 'var(--over)' : remaining < 50 ? 'var(--success)' : 'var(--text-faint)';
 
+    // ── Concerns: one glanceable row of "what needs attention" ──
+    const concerns = [];
+    if (showNoCal)               concerns.push({ t: `${noCalNames.length} food${noCalNames.length === 1 ? '' : 's'} no calories`, kind: 'bad' });
+    if (eaten > combined)        concerns.push({ t: `+${fmtE(eaten - combined)} ${ul} over`, kind: 'warn' });
+    if (t.carbs > goals.carbs + 0.5) concerns.push({ t: `Carbs +${Math.round(t.carbs - goals.carbs)}g`, kind: 'warn' });
+    if (t.fat   > goals.fat   + 0.5) concerns.push({ t: `Fat +${Math.round(t.fat - goals.fat)}g`,     kind: 'warn' });
+    const showConcernRow = concerns.length > 0 || eaten > 0;
+
     // Water chips (collapse > 3)
     const entries = waterData.entries;
     const showChips = entries.length > 0;
@@ -644,6 +652,17 @@ export function renderToday(container) {
           <span style="font-size:12px;color:var(--accent)">📅 Viewing a past day — not today</span>
           <button id="go-today-btn" style="font-size:12px;font-weight:700;color:var(--accent)">Today →</button>
         </div>
+      </div>` : ''}
+
+      <!-- Concerns: at-a-glance "what to be aware of" -->
+      ${showConcernRow ? `
+      <div style="padding:0 16px 6px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+          ${concerns.length
+            ? concerns.map(c => `<span class="concern-chip ${c.kind}">${c.kind === 'bad' ? '⚠ ' : ''}${esc(c.t)}</span>`).join('')
+            : `<span class="concern-chip good">✓ Nothing to flag</span>`}
+        </div>
+        ${showNoCal ? `<div style="font-size:11px;color:var(--text-faint);margin-top:6px">${noCalNames.slice(0, 3).map(esc).join(', ')}${noCalNames.length > 3 ? ` +${noCalNames.length - 3}` : ''} — add calories in Foods (~${fmtE(missingKcalEst)} ${ul} uncounted).</div>` : ''}
       </div>` : ''}
 
       <!-- "Did you forget to log?" check -->
@@ -700,17 +719,6 @@ export function renderToday(container) {
           <div id="macro-bar-root" style="margin-top:12px"></div>
         </div>
       </div>
-
-      <!-- Foods logged without calorie data -->
-      ${showNoCal ? `
-      <div style="padding:0 16px 4px">
-        <div class="logcheck-banner">
-          <div class="logcheck-text">
-            <div class="logcheck-title">⚠️ ${noCalNames.length} food${noCalNames.length === 1 ? '' : 's'} logged without calories</div>
-            <div class="logcheck-sub">${noCalNames.slice(0, 3).map(esc).join(', ')}${noCalNames.length > 3 ? ` +${noCalNames.length - 3} more` : ''} — about ${fmtE(missingKcalEst)} ${ul} aren't counted in your total. Add calories to ${noCalNames.length === 1 ? 'it' : 'them'} in the Foods tab (search → Edit).</div>
-          </div>
-        </div>
-      </div>` : ''}
 
       <!-- Water -->
       <div style="padding:0 16px 4px">
