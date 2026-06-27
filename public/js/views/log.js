@@ -2,8 +2,84 @@ import { api }                            from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
 import { renderFoodSearch }               from '../components/foodSearch.js';
 import { fmtE, unitLabel }                from '../utils/energy.js';
+import { localDate }                      from '../utils/date.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+// ── Copy a single logged food, or a whole meal, to another meal/day ──
+async function dayMeals(viewDate) {
+  try { return (await api.get(`/api/meals/day/${viewDate}`)).sessions || []; } catch { return []; }
+}
+
+// Shared sheet body for picking a destination (other meals today / new meal / a date).
+// onPick(target) → target = { sid } for an existing/new meal today, or { date } for a day.
+function destinationSheet(title, subtitle, viewDate, others, handlers) {
+  showSheet(content => {
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">${title}</span>
+        <button class="sheet-close" id="cp-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        ${subtitle}
+        <label class="form-label">Copy into a meal</label>
+        <div style="display:flex;flex-direction:column;gap:6px;margin:6px 0 16px">
+          ${others.map(s => `<button class="cp-meal btn btn-secondary" data-sid="${s.id}" style="justify-content:flex-start">${esc(s.name || 'Meal')}</button>`).join('')}
+          <button class="cp-meal btn btn-secondary" data-sid="new" style="justify-content:flex-start;color:var(--accent)">+ New meal</button>
+        </div>
+        <label class="form-label">…or another day</label>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <input class="input" id="cp-date" type="date" max="${localDate()}" value="${viewDate}" style="flex:1"/>
+          <button class="btn btn-primary" id="cp-date-go">Copy</button>
+        </div>
+      </div>`;
+    document.getElementById('cp-close').addEventListener('click', hideSheet);
+    content.querySelectorAll('.cp-meal').forEach(btn => btn.addEventListener('click', () => handlers.toMeal(btn.dataset.sid)));
+    document.getElementById('cp-date-go').addEventListener('click', () => {
+      const date = document.getElementById('cp-date').value;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return showToast('Pick a date', 'error');
+      handlers.toDate(date);
+    });
+  });
+}
+
+// Copy a single logged food (same quantity) into another meal today or onto any day.
+export async function openCopyEntry(entry, viewDate, onDone) {
+  const others = (await dayMeals(viewDate)).filter(s => s.id !== entry.meal_session_id);
+  const copyTo = sid => api.post(`/api/meals/sessions/${sid}/entries`, { food_id: entry.food_id, quantity_g: entry.quantity_g });
+  const newSession = async date => (await api.post('/api/meals/sessions', { date })).id;
+  const sub = `<div style="font-size:15px;font-weight:600">${esc(entry.food_name)}</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${Math.round(entry.quantity_g)}g · ${fmtE(entry.calories)} ${unitLabel()}</div>`;
+  destinationSheet('Copy food', sub, viewDate, others, {
+    toMeal: async sid => {
+      try { await copyTo(sid === 'new' ? await newSession(viewDate) : sid); hideSheet(); showToast('Copied', 'success'); onDone?.(); }
+      catch (err) { showToast(err.message, 'error'); }
+    },
+    toDate: async date => {
+      try { await copyTo(await newSession(date)); hideSheet(); showToast(date === localDate() ? 'Copied to today' : `Copied to ${date}`, 'success'); onDone?.(); }
+      catch (err) { showToast(err.message, 'error'); }
+    },
+  });
+}
+
+// Copy a whole meal (all foods) to a new meal on a day, or merge into an existing meal.
+export async function openCopyMeal(session, viewDate, onDone) {
+  const others = (await dayMeals(viewDate)).filter(s => s.id !== session.id);
+  const copy = body => api.post(`/api/meals/sessions/${session.id}/copy`, body);
+  const n = (session.entries || []).length;
+  const sub = `<div style="font-size:15px;font-weight:600">${esc(session.name || 'Meal')}</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${n} food${n === 1 ? '' : 's'} · copied with the same amounts</div>`;
+  destinationSheet('Copy meal', sub, viewDate, others, {
+    toMeal: async sid => {
+      try { await copy(sid === 'new' ? { date: viewDate } : { target_session_id: sid }); hideSheet(); showToast(sid === 'new' ? 'Meal copied' : 'Merged into meal', 'success'); onDone?.(); }
+      catch (err) { showToast(err.message, 'error'); }
+    },
+    toDate: async date => {
+      try { await copy({ date }); hideSheet(); showToast(date === localDate() ? 'Copied to today' : `Copied to ${date}`, 'success'); onDone?.(); }
+      catch (err) { showToast(err.message, 'error'); }
+    },
+  });
+}
 
 export function openFoodEntry(sessionId, onSuccess, opts = {}) {
   showSheet(content => {

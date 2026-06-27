@@ -2,7 +2,7 @@ import { api }             from '../api.js';
 import { showToast }        from '../app.js';
 import { renderMacroBar }   from '../components/macroBar.js';
 import { fmtE, unitLabel }  from '../utils/energy.js';
-import { openFoodEntry }    from './log.js';
+import { openFoodEntry, openEditEntry, openCopyEntry, openCopyMeal } from './log.js';
 import { localDate }        from '../utils/date.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -156,52 +156,72 @@ export function renderHistory(container) {
         card.className = 'card';
         card.style.marginBottom = '10px';
         card.innerHTML = `
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <span style="font-weight:600">${esc(session.name)}</span>
-            <div style="display:flex;align-items:center;gap:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px">
+            <button class="h-rename" style="font-weight:600;text-align:left;flex:1;min-width:0;display:flex;align-items:center;gap:6px;overflow:hidden">
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(session.name)}</span><span style="font-size:11px;color:var(--text-faint);flex-shrink:0">✎</span>
+            </button>
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
               <div style="text-align:right">
                 <div class="num muted" style="font-size:13px">${fmtE(sessionKcal)} ${ul}</div>
-                ${hasMacros ? `<div style="font-size:11px;color:var(--text-faint)">
-                  <span style="color:var(--protein)">${sessionProtein.toFixed(0)}P</span> ·
-                  <span style="color:var(--carbs)">${sessionCarbs.toFixed(0)}C</span> ·
-                  <span style="color:var(--fat)">${sessionFat.toFixed(0)}F</span>
-                </div>` : ''}
+                ${hasMacros ? `<div style="font-size:11px;color:var(--text-faint)"><span style="color:var(--protein)">${sessionProtein.toFixed(0)}P</span> · <span style="color:var(--carbs)">${sessionCarbs.toFixed(0)}C</span> · <span style="color:var(--fat)">${sessionFat.toFixed(0)}F</span></div>` : ''}
               </div>
-              ${isPast ? `<button class="move-today-btn" data-id="${session.id}"
-                style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 10px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">
-                Move to Today
-              </button>` : ''}
+              ${isPast ? `<button class="move-today-btn" title="Move to today" style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">→ Today</button>` : ''}
+              <button class="h-copy-meal" title="Copy meal to…" style="color:var(--text-faint);padding:4px;font-size:14px">⧉</button>
+              <button class="h-del-meal" title="Delete meal" style="color:var(--text-faint);padding:4px;font-size:15px">×</button>
             </div>
           </div>
           ${session.entries.map(e => {
             const macros = [
-              e.protein != null ? `<span style="color:var(--protein)">${e.protein.toFixed(1)}P</span>` : null,
-              e.carbs   != null ? `<span style="color:var(--carbs)">${e.carbs.toFixed(1)}C</span>`   : null,
-              e.fat     != null ? `<span style="color:var(--fat)">${e.fat.toFixed(1)}F</span>`       : null,
-            ].filter(Boolean).join('<span style="color:var(--text-faint)"> · </span>');
+              e.protein != null ? `<span style="color:var(--protein)">${e.protein.toFixed(0)}P</span>` : null,
+              e.carbs   != null ? `<span style="color:var(--carbs)">${e.carbs.toFixed(0)}C</span>`   : null,
+              e.fat     != null ? `<span style="color:var(--fat)">${e.fat.toFixed(0)}F</span>`       : null,
+            ].filter(Boolean).join(' ');
             return `
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;border-top:1px solid var(--border)">
-              <div>
-                <div style="font-size:13px;font-weight:500">${esc(e.food_name)}</div>
-                <div style="font-size:12px;color:var(--text-muted)">${e.quantity_g}g</div>
+            <div data-eid="${e.id}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border)">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.food_name)}</div>
+                <div style="font-size:12px;color:var(--text-muted)">${e.quantity_g}g${macros ? ` · ${macros}` : ''}</div>
               </div>
-              <div style="text-align:right">
-                <div class="num" style="font-size:13px">${fmtE(e.calories ?? 0)} ${ul}</div>
-                ${macros ? `<div style="font-size:11px;margin-top:2px">${macros}</div>` : ''}
+              <div class="num" style="font-size:13px;font-weight:600;flex-shrink:0">${fmtE(e.calories ?? 0)}</div>
+              <div style="display:flex;gap:3px;flex-shrink:0">
+                <button class="h-ecopy" title="Copy" style="width:28px;height:28px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);font-size:12px">⧉</button>
+                <button class="h-eedit" title="Edit" style="width:28px;height:28px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);font-size:11px">✏️</button>
+                <button class="h-edel" title="Delete" style="width:28px;height:28px;border-radius:50%;background:rgba(255,107,107,.1);color:var(--error);font-size:14px">×</button>
               </div>
             </div>`;
           }).join('')}
+          <button class="h-add-food new-meal-btn" style="margin-top:8px;width:100%;font-size:13px">+ Add food</button>
         `;
 
-        // Move to today handler
+        card.querySelector('.h-rename').addEventListener('click', async () => {
+          const name = prompt('Rename meal', session.name);
+          if (name == null || !name.trim()) return;
+          try { await api.patch(`/api/meals/sessions/${session.id}`, { name: name.trim() }); loadDay(date); }
+          catch (err) { showToast(err.message, 'error'); }
+        });
+        card.querySelector('.h-del-meal').addEventListener('click', async () => {
+          if (!confirm(`Delete "${session.name}" and its foods?`)) return;
+          try { await api.delete(`/api/meals/sessions/${session.id}`); showToast('Meal deleted', 'success'); loadDay(date); }
+          catch (err) { showToast(err.message, 'error'); }
+        });
+        card.querySelector('.h-copy-meal').addEventListener('click', () => openCopyMeal(session, date, () => loadDay(date)));
+        card.querySelector('.h-add-food').addEventListener('click', () => openFoodEntry(session.id, () => loadDay(date)));
         card.querySelector('.move-today-btn')?.addEventListener('click', async () => {
           try {
             await api.patch(`/api/meals/sessions/${session.id}`, { date: today });
             showToast(`"${session.name}" moved to today`, 'success');
-            loadDay(date);       // refresh this past day (now empty or fewer sessions)
-          } catch (err) {
-            showToast(err.message, 'error');
-          }
+            loadDay(date);
+          } catch (err) { showToast(err.message, 'error'); }
+        });
+        session.entries.forEach(e => {
+          const row = card.querySelector(`[data-eid="${e.id}"]`);
+          if (!row) return;
+          row.querySelector('.h-eedit').addEventListener('click', () => openEditEntry(e, () => loadDay(date)));
+          row.querySelector('.h-ecopy').addEventListener('click', () => openCopyEntry(e, date, () => loadDay(date)));
+          row.querySelector('.h-edel').addEventListener('click', async () => {
+            try { await api.delete(`/api/meals/entries/${e.id}`); loadDay(date); }
+            catch (err) { showToast(err.message, 'error'); }
+          });
         });
 
         el.appendChild(card);

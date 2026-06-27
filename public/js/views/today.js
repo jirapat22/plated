@@ -1,6 +1,6 @@
 import { api }                            from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
-import { openFoodEntry, openEditEntry }    from './log.js';
+import { openFoodEntry, openEditEntry, openCopyEntry, openCopyMeal } from './log.js';
 import { renderMacroBar }                  from '../components/macroBar.js';
 import { fmtE, unitLabel, wireEnergyUnitToggle } from '../utils/energy.js';
 import { getFoodIcon }                     from '../utils/foodIcon.js';
@@ -64,56 +64,6 @@ async function fetchIronLog(dateStr) {
     if (data.connected) return data;
     return data.last_synced ? { ...data, _stale: true } : null;
   } catch { return null; }
-}
-
-// Copy a logged food (same quantity) into another meal today, or onto any day.
-async function openCopyEntry(entry, viewDate, onDone) {
-  let sessions = [];
-  try { sessions = (await api.get(`/api/meals/day/${viewDate}`)).sessions || []; } catch { /* ignore */ }
-  const others = sessions.filter(s => s.id !== entry.meal_session_id);
-
-  const copyTo = sid => api.post(`/api/meals/sessions/${sid}/entries`, { food_id: entry.food_id, quantity_g: entry.quantity_g });
-  const newSession = async date => (await api.post('/api/meals/sessions', { date })).id;
-
-  showSheet(content => {
-    content.innerHTML = `
-      <div class="sheet-header">
-        <span class="sheet-title">Copy food</span>
-        <button class="sheet-close" id="cp-close">✕</button>
-      </div>
-      <div style="padding:0 16px">
-        <div style="font-size:15px;font-weight:600">${esc(entry.food_name)}</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${fmt(entry.quantity_g)}g · ${fmtE(entry.calories)} ${unitLabel()}</div>
-        <label class="form-label">Copy to a meal today</label>
-        <div style="display:flex;flex-direction:column;gap:6px;margin:6px 0 16px">
-          ${others.map(s => `<button class="cp-meal btn btn-secondary" data-sid="${s.id}" style="justify-content:flex-start">${esc(s.name || 'Meal')}</button>`).join('')}
-          <button class="cp-meal btn btn-secondary" data-sid="new" style="justify-content:flex-start;color:var(--accent)">+ New meal</button>
-        </div>
-        <label class="form-label">…or another day</label>
-        <div style="display:flex;gap:8px;margin-top:6px">
-          <input class="input" id="cp-date" type="date" max="${localDate()}" value="${viewDate}" style="flex:1"/>
-          <button class="btn btn-primary" id="cp-date-go">Copy</button>
-        </div>
-      </div>`;
-    document.getElementById('cp-close').addEventListener('click', hideSheet);
-    content.querySelectorAll('.cp-meal').forEach(btn => btn.addEventListener('click', async () => {
-      try {
-        const sid = btn.dataset.sid === 'new' ? await newSession(viewDate) : btn.dataset.sid;
-        await copyTo(sid);
-        hideSheet(); showToast('Copied', 'success'); onDone?.();
-      } catch (err) { showToast(err.message, 'error'); }
-    }));
-    document.getElementById('cp-date-go').addEventListener('click', async () => {
-      const date = document.getElementById('cp-date').value;
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return showToast('Pick a date', 'error');
-      try {
-        await copyTo(await newSession(date));
-        hideSheet();
-        showToast(date === localDate() ? 'Copied to today' : `Copied to ${date}`, 'success');
-        onDone?.();
-      } catch (err) { showToast(err.message, 'error'); }
-    });
-  });
 }
 
 // ── Meal name presets ────────────────────────────────────────
@@ -990,7 +940,8 @@ export function renderToday(container) {
             → Today
           </button>` : ''}
           <button class="session-save-tmpl-btn" title="Save as template" style="color:var(--text-faint);padding:4px;font-size:15px">🔖</button>
-          <button class="session-copy-btn" title="Copy past meal" style="color:var(--text-faint);padding:4px;font-size:15px">♻️</button>
+          <button class="session-copy-btn" title="Pull a past meal in" style="color:var(--text-faint);padding:4px;font-size:15px">♻️</button>
+          <button class="session-copyout-btn" title="Copy this meal to…" style="color:var(--text-faint);padding:4px;font-size:14px">⧉</button>
           <button class="session-del-btn" title="Delete" style="color:var(--text-faint);padding:4px">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -1076,6 +1027,9 @@ export function renderToday(container) {
     );
     sessionEl.querySelector('.session-copy-btn').addEventListener('click', () =>
       openCopyPastMeal(session.id, () => load())
+    );
+    sessionEl.querySelector('.session-copyout-btn').addEventListener('click', () =>
+      openCopyMeal(session, viewDate, () => load())
     );
     sessionEl.querySelector('.session-del-btn').addEventListener('click', async () => {
       if (!confirm(`Delete "${session.name}" and all its entries?`)) return;

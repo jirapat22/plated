@@ -194,6 +194,38 @@ router.post('/sessions', (req, res) => {
   }
 });
 
+// POST /api/meals/sessions/:id/copy { date?, target_session_id? }
+// Copies every food in a meal to a new meal on `date`, or merges them into an
+// existing meal (target_session_id). Entries are copied verbatim (same macros).
+router.post('/sessions/:id/copy', (req, res) => {
+  try {
+    const db = getDb();
+    const pid = req.profileId;
+    const src = db.prepare('SELECT * FROM meal_sessions WHERE id = $id AND profile_id = $p').get({ id: req.params.id, p: pid });
+    if (!src) return res.status(404).json({ error: 'Meal not found' });
+    const entries = db.prepare('SELECT * FROM meal_entries WHERE meal_session_id = $s').all({ s: src.id });
+    if (!entries.length) return res.status(400).json({ error: 'That meal has no foods to copy' });
+
+    let targetId = parseInt(req.body.target_session_id) || null;
+    if (targetId) {
+      const own = db.prepare('SELECT 1 FROM meal_sessions WHERE id = $s AND profile_id = $p').get({ s: targetId, p: pid });
+      if (!own) return res.status(404).json({ error: 'Target meal not found' });
+    } else {
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body.date || '') ? req.body.date : new Date().toISOString().split('T')[0];
+      const idx = db.prepare('SELECT COALESCE(MAX(meal_index), 0) + 1 AS i FROM meal_sessions WHERE date = $d AND profile_id = $p').get({ d: date, p: pid }).i;
+      targetId = db.prepare('INSERT INTO meal_sessions (date, name, meal_index, profile_id) VALUES ($d, $n, $i, $p)')
+        .run({ d: date, n: src.name, i: idx, p: pid }).lastInsertRowid;
+    }
+
+    const ins = db.prepare(`INSERT INTO meal_entries (meal_session_id, food_id, quantity_g, calories, protein, carbs, fat, fiber)
+      VALUES ($s, $f, $q, $cal, $p, $c, $ft, $fb)`);
+    for (const e of entries) ins.run({ s: targetId, f: e.food_id, q: e.quantity_g, cal: e.calories, p: e.protein, c: e.carbs, ft: e.fat, fb: e.fiber });
+    res.status(201).json({ session_id: targetId, copied: entries.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/meals/sessions/:id/entries
 router.post('/sessions/:id/entries', (req, res) => {
   try {
