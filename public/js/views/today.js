@@ -973,23 +973,6 @@ export function renderToday(container) {
         </div>
       `;
 
-      // Long-press to duplicate
-      let lpTimer = null;
-      entryEl.addEventListener('touchstart', () => {
-        lpTimer = setTimeout(async () => {
-          try {
-            await api.post(`/api/meals/sessions/${session.id}/entries`, {
-              food_id: entry.food_id, quantity_g: entry.quantity_g,
-            });
-            showToast(`${entry.food_name} duplicated`, 'success');
-            load();
-          } catch (err) { showToast(err.message, 'error'); }
-        }, 600);
-      }, { passive: true });
-      ['touchend','touchmove','touchcancel'].forEach(ev =>
-        entryEl.addEventListener(ev, () => clearTimeout(lpTimer), { passive: true })
-      );
-
       entryEl.querySelector('.entry-copy-btn').addEventListener('click', () => openCopyEntry(entry, viewDate, () => load()));
       entryEl.querySelector('.entry-edit-btn').addEventListener('click', () => openEditEntry(entry, () => load()));
       entryEl.querySelector('.entry-del-btn').addEventListener('click', async () => {
