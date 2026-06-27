@@ -1,17 +1,14 @@
 import { api }                            from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
-import { openFoodEntry, openEditEntry, openCopyEntry, openCopyMeal } from './log.js';
+import { openFoodEntry, openQuickLog, renderMealCard } from './log.js';
 import { renderMacroBar }                  from '../components/macroBar.js';
-import { fmtE, unitLabel, wireEnergyUnitToggle } from '../utils/energy.js';
-import { getFoodIcon }                     from '../utils/foodIcon.js';
+import { fmtE, unitLabel } from '../utils/energy.js';
 import { localDate }                       from '../utils/date.js';
 import { classifyDay, isFlagged, LOG_STRONG } from '../utils/logCheck.js';
 import { assert } from '../utils/bugReport.js';
 
 const CIRC = 2 * Math.PI * 60;
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-
-function fmt(n, dec = 0) { return n == null ? '–' : Number(n).toFixed(dec); }
 
 // Build one calorie ring SVG. variant: '' (goal, accent) | 'workout' | 'target'.
 // overflowPct (0-100): the exceeded portion, drawn on top in the darker --over
@@ -36,12 +33,6 @@ function fmtDateNav(iso) {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-function formatTime(iso) {
-  if (!iso) return '';
-  const d = new Date(iso + (iso.includes('Z') ? '' : 'Z'));
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-}
-
 function timeAgo(iso) {
   if (!iso) return null;
   const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
@@ -64,65 +55,6 @@ async function fetchIronLog(dateStr) {
     if (data.connected) return data;
     return data.last_synced ? { ...data, _stale: true } : null;
   } catch { return null; }
-}
-
-// ── Meal name presets ────────────────────────────────────────
-const MEAL_PRESETS = [
-  { emoji: '🌅', name: 'Breakfast'    },
-  { emoji: '☕', name: 'Brunch'       },
-  { emoji: '🌞', name: 'Lunch'        },
-  { emoji: '🌙', name: 'Dinner'       },
-  { emoji: '🍎', name: 'Snack'        },
-  { emoji: '💪', name: 'Pre-Workout'  },
-  { emoji: '🥤', name: 'Post-Workout' },
-  { emoji: '🍽', name: 'Meal Out'     },
-];
-
-function openRenameSession(sessionId, currentName, onSuccess) {
-  showSheet(content => {
-    content.innerHTML = `
-      <div class="sheet-header">
-        <span class="sheet-title">Name this meal</span>
-        <button class="sheet-close" id="rn-close">✕</button>
-      </div>
-      <div style="padding:0 16px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
-          ${MEAL_PRESETS.map(p => `
-            <button class="btn btn-secondary rn-preset" data-name="${p.name}"
-              style="height:46px;font-size:14px;justify-content:flex-start;gap:10px;${currentName===p.name?'border-color:var(--accent);color:var(--accent)':''}">
-              ${p.emoji} ${p.name}
-            </button>
-          `).join('')}
-        </div>
-        <div class="form-group">
-          <label class="form-label">Custom name</label>
-          <input class="input" id="rn-input" placeholder="e.g. Late Night Snack" />
-        </div>
-        <button class="btn btn-primary btn-full" id="rn-save">Save</button>
-      </div>
-    `;
-    document.getElementById('rn-input').value = currentName;
-    document.getElementById('rn-close').addEventListener('click', hideSheet);
-
-    async function doRename(name) {
-      try {
-        await api.patch(`/api/meals/sessions/${sessionId}`, { name });
-        hideSheet();
-        onSuccess?.();
-      } catch (err) { showToast(err.message, 'error'); }
-    }
-
-    content.querySelectorAll('.rn-preset').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.getElementById('rn-input').value = btn.dataset.name;
-        doRename(btn.dataset.name);
-      });
-    });
-    document.getElementById('rn-save').addEventListener('click', () => {
-      const name = document.getElementById('rn-input').value.trim();
-      if (name) doRename(name);
-    });
-  });
 }
 
 // ── Log weight ───────────────────────────────────────────────
@@ -240,190 +172,6 @@ async function openFromTemplate(date, onSuccess) {
           showToast(err.message, 'error');
         }
       });
-    });
-  });
-}
-
-function openSaveAsTemplate(session) {
-  if (session.entries.length === 0) {
-    showToast('Add foods to this meal before saving as a template', 'error');
-    return;
-  }
-  showSheet(content => {
-    content.innerHTML = `
-      <div class="sheet-header">
-        <span class="sheet-title">🔖 Save as Template</span>
-        <button class="sheet-close" id="st-close">✕</button>
-      </div>
-      <div style="padding:0 16px">
-        <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">
-          Save <strong>${esc(session.name)}</strong> (${session.entries.length} foods) as a reusable template.
-        </div>
-        <div class="form-group">
-          <label class="form-label">Template name</label>
-          <input class="input" id="st-name" placeholder="e.g. My Breakfast" />
-        </div>
-        <button class="btn btn-primary btn-full" id="st-save">Save Template</button>
-      </div>
-    `;
-    document.getElementById('st-name').value = session.name;
-    document.getElementById('st-close').addEventListener('click', hideSheet);
-    setTimeout(() => document.getElementById('st-name')?.focus(), 200);
-
-    document.getElementById('st-save').addEventListener('click', async () => {
-      const name = document.getElementById('st-name').value.trim();
-      if (!name) { showToast('Enter a template name', 'error'); return; }
-      const btn = document.getElementById('st-save');
-      btn.disabled = true; btn.textContent = 'Saving…';
-      try {
-        await api.post('/api/templates', {
-          name,
-          items: session.entries.map(e => ({ food_id: e.food_id, food_name: e.food_name, quantity_g: e.quantity_g })),
-        });
-        hideSheet();
-        showToast(`Template "${name}" saved`, 'success');
-      } catch (err) {
-        showToast(err.message, 'error');
-        btn.disabled = false; btn.textContent = 'Save Template';
-      }
-    });
-  });
-}
-
-// ── Copy past meal ───────────────────────────────────────────
-async function openCopyPastMeal(targetSessionId, onSuccess) {
-  showSheet(async content => {
-    content.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-muted)">Loading past meals…</div>`;
-
-    const days = Array.from({ length: 7 }, (_, i) => addDays(localDate(), -(i + 1)));
-    const dayResults = await Promise.all(days.map(d => api.get(`/api/meals/day/${d}`).catch(() => null)));
-
-    const sessions = [];
-    dayResults.forEach((data, i) => {
-      (data?.sessions || []).forEach(s => {
-        if (s.entries.length > 0) sessions.push({ ...s, date: days[i] });
-      });
-    });
-
-    const ul = unitLabel();
-    content.innerHTML = `
-      <div class="sheet-header">
-        <span class="sheet-title">♻️ Copy past meal</span>
-        <button class="sheet-close" id="cp-close">✕</button>
-      </div>
-      ${sessions.length === 0
-        ? '<div class="empty-state"><div class="empty-text">No past meals to copy from</div></div>'
-        : sessions.map((s, idx) => {
-            const kcal = s.entries.reduce((sum, e) => sum + (e.calories || 0), 0);
-            return `
-              <button class="food-list-item cp-session" data-idx="${idx}"
-                style="width:100%;text-align:left">
-                <div style="font-size:20px;width:36px;text-align:center">🍽</div>
-                <div class="food-list-info">
-                  <div class="food-list-name">${esc(s.name)}</div>
-                  <div style="font-size:12px;color:var(--text-muted)">${s.date} · ${s.entries.length} items · ${fmtE(kcal)} ${ul}</div>
-                </div>
-              </button>`;
-          }).join('')
-      }
-    `;
-
-    document.getElementById('cp-close').addEventListener('click', hideSheet);
-
-    content.querySelectorAll('.cp-session').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const s = sessions[parseInt(btn.dataset.idx)];
-        btn.style.opacity = '0.5';
-        try {
-          await Promise.all(s.entries.map(e =>
-            api.post(`/api/meals/sessions/${targetSessionId}/entries`, {
-              food_id: e.food_id, quantity_g: e.quantity_g,
-            })
-          ));
-          hideSheet();
-          showToast(`Copied ${s.entries.length} foods from ${s.name}`, 'success');
-          onSuccess?.();
-        } catch (err) {
-          showToast(err.message, 'error');
-          btn.style.opacity = '1';
-        }
-      });
-    });
-  });
-}
-
-// ── Quick Log ────────────────────────────────────────────────
-function openQuickLog(sessionId, onSuccess) {
-  showSheet(content => {
-    content.innerHTML = `
-      <div class="sheet-header">
-        <span class="sheet-title">⚡ Quick Log</span>
-        <button class="sheet-close" id="ql-close">✕</button>
-      </div>
-      <div style="padding:0 16px">
-        <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">
-          For meals out — enter rough calories from Google. Won't be saved to your food database.
-        </div>
-        <div class="form-group">
-          <label class="form-label">Meal description *</label>
-          <input class="input" id="ql-name" placeholder="e.g. Burger from Burgerfuel" autocomplete="off" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Calories *</label>
-          <div style="display:flex;gap:6px">
-            <input class="input" id="ql-cal" type="text" placeholder="e.g. 650" inputmode="decimal" style="flex:1;min-width:0" />
-            <div style="display:flex;gap:4px;flex-shrink:0" id="ql-cal-unit">
-              <button type="button" class="eunit-btn active" data-unit="kcal">kcal</button>
-              <button type="button" class="eunit-btn" data-unit="kj">kJ</button>
-            </div>
-          </div>
-        </div>
-        <div class="label" style="margin-bottom:10px">Macros — optional</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
-          ${['pro','carb','fat'].map((id, i) => {
-            const [label, color] = [['Protein','var(--protein)'],['Carbs','var(--carbs)'],['Fat','var(--fat)']][i];
-            return `<div style="position:relative">
-              <input class="input" id="ql-${id}" type="text" placeholder="${label}" inputmode="decimal"
-                style="height:42px;padding-right:20px;border-color:${color}44"/>
-              <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:${color}">${label[0]}</span>
-            </div>`;
-          }).join('')}
-        </div>
-        <button class="btn btn-primary btn-full" id="ql-submit">Log Meal</button>
-      </div>
-    `;
-    document.getElementById('ql-close').addEventListener('click', hideSheet);
-    setTimeout(() => document.getElementById('ql-name')?.focus(), 200);
-
-    const getCalKcal = wireEnergyUnitToggle(
-      document.getElementById('ql-cal-unit'),
-      document.getElementById('ql-cal')
-    );
-
-    document.getElementById('ql-submit').addEventListener('click', async () => {
-      const name    = document.getElementById('ql-name').value.trim();
-      const calKcal = getCalKcal();
-      if (!name)   { showToast('Enter a meal description', 'error'); return; }
-      if (!calKcal) { showToast('Enter the calories', 'error'); return; }
-      const pro  = parseFloat(document.getElementById('ql-pro').value)  || null;
-      const carb = parseFloat(document.getElementById('ql-carb').value) || null;
-      const fat  = parseFloat(document.getElementById('ql-fat').value)  || null;
-      const btn = document.getElementById('ql-submit');
-      btn.disabled = true; btn.textContent = 'Logging…';
-      try {
-        const food = await api.post('/api/foods', {
-          name, calories_per_100g: calKcal,
-          protein_per_100g: pro, carbs_per_100g: carb, fat_per_100g: fat,
-          serving_size_g: 100, source: 'quick',
-        });
-        await api.post(`/api/meals/sessions/${sessionId}/entries`, { food_id: food.id, quantity_g: 100 });
-        hideSheet();
-        showToast('Meal logged', 'success');
-        onSuccess?.();
-      } catch (err) {
-        showToast(err.message, 'error');
-        btn.disabled = false; btn.textContent = 'Log Meal';
-      }
     });
   });
 }
@@ -789,7 +537,16 @@ export function renderToday(container) {
     if (mealData.sessions.length === 0 && !showMorningPrompt) {
       mealsList.innerHTML = '<div class="empty-state"><div class="empty-icon">🍽</div><div class="empty-text">No meals yet</div></div>';
     } else {
-      mealData.sessions.forEach(session => renderSession(mealsList, session));
+      const isPastDay = viewDate < localDate();
+      mealData.sessions.forEach(session => {
+        mealsList.appendChild(renderMealCard(session, viewDate, {
+          showTime: true,
+          showMoveToday: isPastDay,
+          showTemplate: true,
+          showPullIn: true,
+          showQuickLog: true,
+        }, () => load()));
+      });
     }
 
     // Date nav — mark as intentional so load() doesn't auto-snap to today
@@ -911,122 +668,6 @@ export function renderToday(container) {
       ${e.amount_ml}ml
       <button data-water-id="${e.id}" style="color:var(--text-faint);font-size:14px;line-height:1;margin-left:2px">×</button>
     </span>`;
-  }
-
-  function renderSession(container, session) {
-    const sessionEl  = document.createElement('div');
-    sessionEl.className = 'meal-session';
-    const sessionKcal    = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
-    const sessionProtein = Math.round(session.entries.reduce((s, e) => s + (e.protein || 0), 0));
-    const sessionCarb    = Math.round(session.entries.reduce((s, e) => s + (e.carbs || 0), 0));
-    const sessionFat     = Math.round(session.entries.reduce((s, e) => s + (e.fat   || 0), 0));
-    const timeStr        = formatTime(session.logged_at);
-    const ul          = unitLabel();
-    const isPastDay   = viewDate < localDate();
-
-    sessionEl.innerHTML = `
-      <div class="meal-session-header">
-        <button class="session-rename-btn" style="text-align:left;flex:1;min-width:0">
-          <div class="meal-session-title" style="display:flex;align-items:center;gap:6px">
-            ${esc(session.name)}
-            <span style="font-size:11px;color:var(--text-faint)">✎</span>
-          </div>
-          ${timeStr ? `<div class="meal-session-kcal">${timeStr}</div>` : ''}
-        </button>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-          <span class="meal-session-kcal num">${fmtE(sessionKcal)} ${ul}${sessionProtein > 0 ? ` · <span style="color:var(--protein);font-weight:600">${sessionProtein}g P</span>` : ''}${sessionCarb > 0 ? ` · <span style="color:var(--carbs);font-weight:600">${sessionCarb}g C</span>` : ''}${sessionFat > 0 ? ` · <span style="color:var(--fat);font-weight:600">${sessionFat}g F</span>` : ''}</span>
-          ${isPastDay ? `<button class="session-move-btn" title="Move to today"
-            style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">
-            → Today
-          </button>` : ''}
-          <button class="session-save-tmpl-btn" title="Save as template" style="color:var(--text-faint);padding:4px;font-size:15px">🔖</button>
-          <button class="session-copy-btn" title="Pull a past meal in" style="color:var(--text-faint);padding:4px;font-size:15px">♻️</button>
-          <button class="session-copyout-btn" title="Copy this meal to…" style="color:var(--text-faint);padding:4px;font-size:14px">⧉</button>
-          <button class="session-del-btn" title="Delete" style="color:var(--text-faint);padding:4px">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-    `;
-
-    // Entry rows
-    session.entries.forEach(entry => {
-      const entryEl = document.createElement('div');
-      entryEl.className = 'meal-entry';
-      entryEl.innerHTML = `
-        <div style="font-size:20px;flex-shrink:0;width:30px;text-align:center">${getFoodIcon(entry.food_name)}</div>
-        <div class="meal-entry-info">
-          <div class="meal-entry-name">${esc(entry.food_name)}</div>
-          <div class="meal-entry-sub"><span style="color:var(--text)">${fmt(entry.quantity_g)}g</span> <span style="color:var(--text-faint)">·</span>
-            <span style="color:var(--protein)">${fmt(entry.protein)}P</span>
-            <span style="color:var(--carbs)">${fmt(entry.carbs)}C</span>
-            <span style="color:var(--fat)">${fmt(entry.fat)}F</span>
-          </div>
-        </div>
-        <div class="meal-entry-kcal">${fmtE(entry.calories)}</div>
-        <div style="display:flex;gap:4px;flex-shrink:0">
-          <button class="entry-copy-btn" title="Copy to…" style="width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:13px">⧉</button>
-          <button class="entry-edit-btn" title="Edit" style="width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:12px">✏️</button>
-          <button class="entry-del-btn" title="Delete" style="width:30px;height:30px;border-radius:50%;background:rgba(255,107,107,.1);color:var(--error);display:flex;align-items:center;justify-content:center;font-size:15px">×</button>
-        </div>
-      `;
-
-      entryEl.querySelector('.entry-copy-btn').addEventListener('click', () => openCopyEntry(entry, viewDate, () => load()));
-      entryEl.querySelector('.entry-edit-btn').addEventListener('click', () => openEditEntry(entry, () => load()));
-      entryEl.querySelector('.entry-del-btn').addEventListener('click', async () => {
-        try {
-          await api.delete(`/api/meals/entries/${entry.id}`);
-          entryEl.style.opacity = '0'; entryEl.style.transition = 'opacity .2s';
-          setTimeout(() => load(), 200);
-        } catch (err) { showToast(err.message, 'error'); }
-      });
-      sessionEl.appendChild(entryEl);
-    });
-
-    // Footer
-    const footer = document.createElement('div');
-    footer.style.cssText = 'display:flex;border-top:1px solid var(--border)';
-    const addBtn = document.createElement('button');
-    addBtn.className = 'meal-session-add'; addBtn.style.flex = '1';
-    addBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> Add Food`;
-    addBtn.addEventListener('click', () => openFoodEntry(session.id, () => load()));
-    const qlBtn = document.createElement('button');
-    qlBtn.className = 'meal-session-add';
-    qlBtn.style.cssText = 'flex:0 0 auto;border-left:1px solid var(--border);color:var(--carbs)';
-    qlBtn.textContent = '⚡ Quick Log';
-    qlBtn.addEventListener('click', () => openQuickLog(session.id, () => load()));
-    footer.appendChild(addBtn); footer.appendChild(qlBtn);
-    sessionEl.appendChild(footer);
-    container.appendChild(sessionEl);
-
-    // Session events
-    sessionEl.querySelector('.session-rename-btn').addEventListener('click', () =>
-      openRenameSession(session.id, session.name, () => load())
-    );
-    sessionEl.querySelector('.session-save-tmpl-btn').addEventListener('click', () =>
-      openSaveAsTemplate(session)
-    );
-    sessionEl.querySelector('.session-copy-btn').addEventListener('click', () =>
-      openCopyPastMeal(session.id, () => load())
-    );
-    sessionEl.querySelector('.session-copyout-btn').addEventListener('click', () =>
-      openCopyMeal(session, viewDate, () => load())
-    );
-    sessionEl.querySelector('.session-del-btn').addEventListener('click', async () => {
-      if (!confirm(`Delete "${session.name}" and all its entries?`)) return;
-      try { await api.delete(`/api/meals/sessions/${session.id}`); showToast('Meal deleted', 'success'); load(); }
-      catch (err) { showToast(err.message, 'error'); }
-    });
-
-    sessionEl.querySelector('.session-move-btn')?.addEventListener('click', async () => {
-      try {
-        await api.patch(`/api/meals/sessions/${session.id}`, { date: localDate() });
-        showToast(`"${session.name}" moved to today`, 'success');
-        load();
-      } catch (err) { showToast(err.message, 'error'); }
-    });
   }
 
   async function logWater(ml) {

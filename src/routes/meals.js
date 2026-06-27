@@ -208,6 +208,7 @@ router.post('/sessions/:id/copy', (req, res) => {
 
     let targetId = parseInt(req.body.target_session_id) || null;
     if (targetId) {
+      if (targetId === src.id) return res.status(400).json({ error: 'Pick a different meal to merge into' });
       const own = db.prepare('SELECT 1 FROM meal_sessions WHERE id = $s AND profile_id = $p').get({ s: targetId, p: pid });
       if (!own) return res.status(404).json({ error: 'Target meal not found' });
     } else {
@@ -219,7 +220,16 @@ router.post('/sessions/:id/copy', (req, res) => {
 
     const ins = db.prepare(`INSERT INTO meal_entries (meal_session_id, food_id, quantity_g, calories, protein, carbs, fat, fiber)
       VALUES ($s, $f, $q, $cal, $p, $c, $ft, $fb)`);
-    for (const e of entries) ins.run({ s: targetId, f: e.food_id, q: e.quantity_g, cal: e.calories, p: e.protein, c: e.carbs, ft: e.fat, fb: e.fiber });
+    const bumpStats = db.prepare(`
+      INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used)
+      VALUES ($pid, $fid, 1, datetime('now'))
+      ON CONFLICT(profile_id, food_id)
+      DO UPDATE SET use_count = use_count + 1, last_used = datetime('now')
+    `);
+    for (const e of entries) {
+      ins.run({ s: targetId, f: e.food_id, q: e.quantity_g, cal: e.calories, p: e.protein, c: e.carbs, ft: e.fat, fb: e.fiber });
+      bumpStats.run({ pid, fid: e.food_id });
+    }
     res.status(201).json({ session_id: targetId, copied: entries.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
