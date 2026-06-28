@@ -1,3 +1,8 @@
+/* Space Grotesk + Space Mono are a matched pair from the same foundry —
+   used only on Today (see .today-view below) as a deliberate, scoped
+   typographic identity rather than an app-wide change. */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
 /* ─── Design Tokens ──────────────────────────────────────── */
 :root {
   --bg:           #0d0d0f;
@@ -25,6 +30,8 @@
   --nav-h:        64px;
   --safe-bottom:  env(safe-area-inset-bottom, 0px);
   --safe-top:     env(safe-area-inset-top, 0px);
+  --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:    'Space Mono', ui-monospace, 'SF Mono', monospace;
 }
 
 /* ─── Reset ──────────────────────────────────────────────── */
@@ -818,6 +825,23 @@ img { display: block; max-width: 100%; }
 }
 .today-date { font-size: 22px; font-weight: 700; }
 .today-day  { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+
+/* ─── Today's type identity ──────────────────────────────────
+   Scoped to .today-view only, so History/Trends/Settings keep the
+   system stack untouched. Space Grotesk carries section labels and
+   titles; Space Mono carries every numeric readout — calories, grams,
+   ml, kg — so Today reads like an instrument display, not a form. */
+.today-view .today-date,
+.today-view .label,
+.today-view .ring-title,
+.today-view .section-header h2 {
+  font-family: var(--font-display);
+}
+.today-view .num,
+.today-view .meal-session-kcal,
+.today-view .meal-entry-kcal {
+  font-family: var(--font-mono);
+}
 
 /* ─── Summary Cards Row ──────────────────────────────────── */
 .summary-row {

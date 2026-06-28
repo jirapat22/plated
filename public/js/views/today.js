@@ -10,14 +10,42 @@ import { assert } from '../utils/bugReport.js';
 const CIRC = 2 * Math.PI * 60;
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
+// ── Line icons (match the bottom-nav's hand-drawn stroke style) ───────────
+function icon(path, size = 16) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;flex-shrink:0">${path}</svg>`;
+}
+const ICON_WATER     = '<path d="M12 3c-4.2 5-7 8.6-7 12a7 7 0 0 0 14 0c0-3.4-2.8-7-7-12Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>';
+const ICON_SCALE      = '<rect x="3" y="9" width="18" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 9a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.7"/><path d="M12 12v3.2M12 12l2.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
+const ICON_BOLT       = '<path d="M13 2 5 14h6l-1 8 9-12h-6l1-8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>';
+const ICON_CLIPBOARD  = '<rect x="5" y="4" width="14" height="17" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" stroke="currentColor" stroke-width="1.7"/><path d="M8.5 10.5h7M8.5 14h7M8.5 17.5h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
+const ICON_FLAME      = '<path d="M12 2.5c1.2 3.6-3.4 5-3.4 8.7a3.4 3.4 0 0 0 6.8 0c0-1-.5-1.8-.5-1.8s.3 1.6-.8 2c.9-2.6-1.7-3.4-2.1-8.9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>';
+const ICON_CHART      = '<path d="M4 19V9M9.5 19V5M15 19v-7M20 19V3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
+
+// Graduation ticks around the ring track — a bezel detail (à la a kitchen
+// scale's dial), drawn just outside the stroke band so they read as markings
+// rather than competing with the progress arc.
+function ringTicks(count = 12) {
+  let marks = '';
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * 2 * Math.PI;
+    const x1 = 70 + 66 * Math.cos(a), y1 = 70 + 66 * Math.sin(a);
+    const x2 = 70 + 70 * Math.cos(a), y2 = 70 + 70 * Math.sin(a);
+    marks += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--border)" stroke-width="1.5" stroke-linecap="round"/>`;
+  }
+  return marks;
+}
+
 // Build one calorie ring SVG. variant: '' (goal, accent) | 'workout' | 'target'.
 // overflowPct (0-100): the exceeded portion, drawn on top in the darker --over
 // colour so only the slice past the goal is dark, not the whole ring.
-function calRingSvg(pct, variant = '', small = false, overflowPct = 0) {
+// ticks: draw the dial-bezel graduations — reserved for the primary ring so
+// the two side rings stay clean at their smaller physical size.
+function calRingSvg(pct, variant = '', small = false, overflowPct = 0, ticks = false) {
   const base = (Math.min(pct, 100) / 100) * CIRC;
   const over = (Math.min(Math.max(overflowPct, 0), 100) / 100) * CIRC;
   return `
     <svg class="calorie-ring${small ? ' ring-sm' : ''}" viewBox="0 0 140 140">
+      ${ticks ? ringTicks() : ''}
       <circle class="ring-bg" cx="70" cy="70" r="60"/>
       <circle class="ring-fill ${variant}" cx="70" cy="70" r="60"
         style="stroke-dasharray:${base} ${CIRC}"/>
@@ -178,6 +206,7 @@ async function openFromTemplate(date, onSuccess) {
 
 // ── Main render ──────────────────────────────────────────────
 export function renderToday(container) {
+  container.classList.add('today-view');
   let viewDate      = localDate();
   let userNavigated = false;   // true only when user manually tapped ← › or swiped
   let ironlogExpanded = false;
@@ -345,7 +374,7 @@ export function renderToday(container) {
 
       <!-- Past-day warning banner -->
       ${!isToday ? `
-      <div style="padding:0 16px 4px">
+      <div style="padding:0 16px 6px">
         <div style="background:var(--accent-dim);border:1px solid rgba(200,184,255,.25);border-radius:var(--radius-sm);padding:9px 14px;display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:12px;color:var(--accent)">📅 Viewing a past day — not today</span>
           <button id="go-today-btn" style="font-size:12px;font-weight:700;color:var(--accent)">Today →</button>
@@ -365,7 +394,7 @@ export function renderToday(container) {
 
       <!-- "Did you forget to log?" check -->
       ${showLogCheck ? `
-      <div style="padding:0 16px 4px">
+      <div style="padding:0 16px 10px">
         <div class="logcheck-banner">
           <div class="logcheck-text">
             <div class="logcheck-title">${dayStatus === LOG_STRONG ? '⚠️ This day looks under-logged' : '🤔 Did you log everything?'}</div>
@@ -379,7 +408,7 @@ export function renderToday(container) {
       </div>` : ''}
 
       <!-- Calorie ring(s) -->
-      <div style="padding:0 16px 4px">
+      <div style="padding:0 16px 14px">
         <div class="card">
           <div class="tri-rings">
             <div class="ring-col">
@@ -395,7 +424,7 @@ export function renderToday(container) {
             <div class="ring-col">
               <div class="ring-title">Daily Goal</div>
               <div class="ring-wrap-relative">
-                ${calRingSvg(midPct, '', false, midOver)}
+                ${calRingSvg(midPct, '', false, midOver, true)}
                 <div class="ring-center">
                   <div class="num ring-kcal">${fmtE(eaten)}</div>
                   <div class="ring-goal muted">/ ${fmtE(baseGoal)} ${ul}</div>
@@ -408,7 +437,7 @@ export function renderToday(container) {
               <div class="ring-wrap-relative">
                 ${calRingSvg(rightPct, 'workout', true, 0)}
                 <div class="ring-center">
-                  <div class="num ring-kcal-sm">${fmtE(burned)}🔥</div>
+                  <div class="num ring-kcal-sm">${fmtE(burned)} ${icon(ICON_FLAME, 12)}</div>
                   <div class="ring-goal-sm">${hasWorkout ? 'burned' : 'rest day'}</div>
                 </div>
               </div>
@@ -419,10 +448,10 @@ export function renderToday(container) {
       </div>
 
       <!-- Water -->
-      <div style="padding:0 16px 4px">
+      <div style="padding:0 16px 14px">
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <span class="label">💧 Water</span>
+            <span class="label">${icon(ICON_WATER, 13)} Water</span>
             <div style="display:flex;align-items:center;gap:8px">
               <span class="num" style="font-size:13px">${waterData.total_ml}
                 <span style="font-size:11px;color:var(--text-muted)">/ ${waterGoal} ml</span>
@@ -449,15 +478,15 @@ export function renderToday(container) {
       </div>
 
       <!-- Bodyweight -->
-      <div style="padding:0 16px 4px">
+      <div style="padding:0 16px 14px">
         <div class="card" style="display:flex;justify-content:space-between;align-items:center">
           <div>
-            <div class="label">⚖️ Bodyweight</div>
+            <div class="label">${icon(ICON_SCALE, 13)} Bodyweight</div>
             ${todayWeight
               ? `<div class="num" style="font-size:20px;margin-top:2px">${todayWeight.weight_kg} <span style="font-size:12px;color:var(--text-muted)">kg</span></div>`
               : (isToday && ironlog?.bodyweight)
               ? `<div class="num" style="font-size:20px;margin-top:2px">${ironlog.bodyweight.weight_kg} <span style="font-size:12px;color:var(--text-muted)">kg</span></div>
-                 <div style="font-size:11px;color:var(--accent);margin-top:2px">⚡ via IronLog${ironlog.bodyweight.is_today ? ' · today' : ' · ' + ironlog.bodyweight.date}</div>`
+                 <div style="font-size:11px;color:var(--accent);margin-top:2px">${icon(ICON_BOLT, 11)} via IronLog${ironlog.bodyweight.is_today ? ' · today' : ' · ' + ironlog.bodyweight.date}</div>`
               : `<div style="font-size:12px;color:var(--text-faint);margin-top:3px">Not logged today</div>`
             }
           </div>
@@ -469,10 +498,10 @@ export function renderToday(container) {
 
       <!-- IronLog + Phase (collapsible) -->
       ${(ironlog || tdee) ? `
-      <div style="padding:0 16px 4px">
+      <div style="padding:0 16px 14px">
         <button id="ironlog-toggle" class="card" style="width:100%;display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:12px">
           <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-            ${ironlog ? '<span style="font-size:12px;color:var(--accent)">⚡</span>' : '<span style="font-size:12px">📊</span>'}
+            ${ironlog ? `<span style="color:var(--accent)">${icon(ICON_BOLT, 13)}</span>` : `<span style="color:var(--text-faint)">${icon(ICON_CHART, 13)}</span>`}
             <span style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
               ${burned > 0 ? `Burned ${fmtE(burned)} ${ul} · ` : ''}${phaseLabel}
             </span>
@@ -484,7 +513,7 @@ export function renderToday(container) {
           ${ironlog ? `
           <div class="card ironlog-panel" style="margin-top:4px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-              <span class="label">⚡ IronLog</span>
+              <span class="label">${icon(ICON_BOLT, 13)} IronLog</span>
               ${ironlog.last_synced ? `<span style="font-size:11px;color:var(--text-faint)">${ironlog._stale ? '⚠ cached · ' : ''}${timeAgo(ironlog.last_synced)}</span>` : ''}
             </div>
             <div class="ironlog-row">
@@ -521,10 +550,10 @@ export function renderToday(container) {
           New Meal
         </button>
         <button class="new-meal-btn" id="quick-log-standalone" style="margin:0;flex:1;color:var(--carbs);border-color:var(--carbs)44">
-          ⚡ Quick Log
+          ${icon(ICON_BOLT, 14)} Quick Log
         </button>
         <button class="new-meal-btn" id="from-template-btn" style="margin:0;flex:1;color:var(--text-muted)">
-          📋 Template
+          ${icon(ICON_CLIPBOARD, 14)} Template
         </button>
       </div>
     `;
