@@ -158,6 +158,8 @@ function initDb() {
 
   migrateSchema(db);
 
+  ensureIndexes(db);
+
   seedNzFoods(db);
 
   console.log(`DB ready: ${dbPath}`);
@@ -221,6 +223,20 @@ function migrateSchema(db) {
   }
 }
 
+// Indexes for the hot read paths. Runs after migrateSchema so the profile_id
+// columns (added by ALTER TABLE there) exist. Without these, every day-load,
+// summary, and food-search join falls back to a full table scan and slows as
+// the logs grow. PK/UNIQUE columns are already indexed; these cover the
+// foreign-key joins and (profile_id, date) filters that run on every screen.
+function ensureIndexes(db) {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_meal_entries_session   ON meal_entries(meal_session_id);
+    CREATE INDEX IF NOT EXISTS idx_meal_sessions_pid_date ON meal_sessions(profile_id, date);
+    CREATE INDEX IF NOT EXISTS idx_weight_log_pid_date    ON weight_log(profile_id, date);
+    CREATE INDEX IF NOT EXISTS idx_foods_name             ON foods(name);
+  `);
+}
+
 // Default per-profile settings, seeded when a profile is created.
 const PROFILE_DEFAULTS = [
   ['calorie_goal', '2000'], ['protein_goal', '150'], ['carb_goal', '250'],
@@ -277,7 +293,16 @@ function countProfiles(db) {
   return db.prepare('SELECT COUNT(*) AS c FROM profiles').get().c;
 }
 
+// Bump this whenever the seed lists below change — it forces a one-time
+// re-seed on the next startup, then boots skip the (multi-thousand-row) build
+// entirely. Keeps cold start fast without losing the "add new foods on
+// upgrade" behaviour.
+const SEED_VERSION = '2024-nzfcd14-ausnut23-v1';
+
 function seedNzFoods(db) {
+  const seededVersion = db.prepare("SELECT value FROM settings WHERE key = 'seed_version'").get()?.value;
+  if (seededVersion === SEED_VERSION) return;   // this exact seed set is already applied
+
   const alreadyExists = db.prepare(
     "SELECT 1 FROM foods WHERE name = $name AND source = 'nz_seed'"
   );
@@ -356,6 +381,9 @@ function seedNzFoods(db) {
   if (added > 0) console.log('Seeded ' + added + ' foods (NZFCD 14th Ed. + AUSNUT 2023 + extras)');
 
   removeUnwantedSeeds(db);
+
+  // Mark this seed set as applied so subsequent boots skip the whole build.
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('seed_version', $v)").run({ v: SEED_VERSION });
 }
 
 // One-off cleanup of seeded foods that shouldn't be in a personal tracker

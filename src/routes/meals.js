@@ -44,19 +44,25 @@ function loadDay(db, date, pid) {
   const sessions = db.prepare(`
     SELECT * FROM meal_sessions WHERE date = $date AND profile_id = $pid ORDER BY meal_index ASC
   `).all({ date, pid });
+  if (!sessions.length) return [];
 
-  return sessions.map(s => {
-    const entries = db.prepare(`
-      SELECT me.*, f.name AS food_name, f.brand AS food_brand,
-             f.calories_per_100g, f.protein_per_100g, f.carbs_per_100g,
-             f.fat_per_100g, f.fiber_per_100g, f.serving_size_g
-      FROM meal_entries me
-      JOIN foods f ON f.id = me.food_id
-      WHERE me.meal_session_id = $sid
-      ORDER BY me.logged_at ASC
-    `).all({ sid: s.id });
-    return { ...s, entries };
-  });
+  // One query for all entries across the day's sessions instead of one per
+  // session (N+1). Session ids are our own integer PKs, so inlining the IN
+  // list is injection-safe and avoids dynamic placeholder juggling.
+  const ids = sessions.map(s => s.id);
+  const entries = db.prepare(`
+    SELECT me.*, f.name AS food_name, f.brand AS food_brand,
+           f.calories_per_100g, f.protein_per_100g, f.carbs_per_100g,
+           f.fat_per_100g, f.fiber_per_100g, f.serving_size_g
+    FROM meal_entries me
+    JOIN foods f ON f.id = me.food_id
+    WHERE me.meal_session_id IN (${ids.join(',')})
+    ORDER BY me.logged_at ASC
+  `).all();
+
+  const bySession = {};
+  for (const e of entries) (bySession[e.meal_session_id] ||= []).push(e);
+  return sessions.map(s => ({ ...s, entries: bySession[s.id] || [] }));
 }
 
 // GET /api/meals/today
