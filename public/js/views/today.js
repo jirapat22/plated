@@ -11,15 +11,21 @@ const CIRC = 2 * Math.PI * 60;
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
 // ── Line icons (match the bottom-nav's hand-drawn stroke style) ───────────
-function icon(path, size = 16) {
-  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;flex-shrink:0">${path}</svg>`;
+// valign: only needed where the icon sits inline next to text in a non-flex
+// container (label spans, ring-center divs) — flex parents already center
+// their children and ignore vertical-align, so omit it there.
+function icon(path, size = 16, valign = null) {
+  const style = valign != null ? `vertical-align:${valign}px;flex-shrink:0` : 'flex-shrink:0';
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" style="${style}">${path}</svg>`;
 }
-const ICON_WATER     = '<path d="M12 3c-4.2 5-7 8.6-7 12a7 7 0 0 0 14 0c0-3.4-2.8-7-7-12Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>';
-const ICON_SCALE      = '<rect x="3" y="9" width="18" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 9a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.7"/><path d="M12 12v3.2M12 12l2.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
-const ICON_BOLT       = '<path d="M13 2 5 14h6l-1 8 9-12h-6l1-8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>';
-const ICON_CLIPBOARD  = '<rect x="5" y="4" width="14" height="17" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" stroke="currentColor" stroke-width="1.7"/><path d="M8.5 10.5h7M8.5 14h7M8.5 17.5h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
-const ICON_FLAME      = '<path d="M12 2.5c1.2 3.6-3.4 5-3.4 8.7a3.4 3.4 0 0 0 6.8 0c0-1-.5-1.8-.5-1.8s.3 1.6-.8 2c.9-2.6-1.7-3.4-2.1-8.9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>';
-const ICON_CHART      = '<path d="M4 19V9M9.5 19V5M15 19v-7M20 19V3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
+const ICON_WATER      = '<path d="M12 3c-4.2 5-7 8.6-7 12a7 7 0 0 0 14 0c0-3.4-2.8-7-7-12Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>';
+const ICON_SCALE       = '<rect x="3" y="9" width="18" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 9a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.7"/><path d="M12 12v3.2M12 12l2.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
+const ICON_BOLT        = '<path d="M13 2 5 14h6l-1 8 9-12h-6l1-8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>';
+const ICON_CLIPBOARD   = '<rect x="5" y="4" width="14" height="17" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" stroke="currentColor" stroke-width="1.7"/><path d="M8.5 10.5h7M8.5 14h7M8.5 17.5h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
+const ICON_FLAME       = '<path d="M12 2.5c1.2 3.6-3.4 5-3.4 8.7a3.4 3.4 0 0 0 6.8 0c0-1-.5-1.8-.5-1.8s.3 1.6-.8 2c.9-2.6-1.7-3.4-2.1-8.9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>';
+const ICON_CHART       = '<path d="M4 19V9M9.5 19V5M15 19v-7M20 19V3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
+const ICON_TREND_DOWN  = '<path d="M5 6l14 14M19 13v7h-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>';
+const ICON_TREND_UP    = '<path d="M5 18 19 4M12 4h7v7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>';
 
 // Graduation ticks around the ring track — a bezel detail (à la a kitchen
 // scale's dial), drawn just outside the stroke band so they read as markings
@@ -437,7 +443,7 @@ export function renderToday(container) {
               <div class="ring-wrap-relative">
                 ${calRingSvg(rightPct, 'workout', true, 0)}
                 <div class="ring-center">
-                  <div class="num ring-kcal-sm">${fmtE(burned)} ${icon(ICON_FLAME, 12)}</div>
+                  <div class="num ring-kcal-sm">${fmtE(burned)} ${icon(ICON_FLAME, 12, -2)}</div>
                   <div class="ring-goal-sm">${hasWorkout ? 'burned' : 'rest day'}</div>
                 </div>
               </div>
@@ -451,7 +457,7 @@ export function renderToday(container) {
       <div style="padding:0 16px 14px">
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <span class="label">${icon(ICON_WATER, 13)} Water</span>
+            <span class="label">${icon(ICON_WATER, 13, -3)} Water</span>
             <div style="display:flex;align-items:center;gap:8px">
               <span class="num" style="font-size:13px">${waterData.total_ml}
                 <span style="font-size:11px;color:var(--text-muted)">/ ${waterGoal} ml</span>
@@ -481,12 +487,12 @@ export function renderToday(container) {
       <div style="padding:0 16px 14px">
         <div class="card" style="display:flex;justify-content:space-between;align-items:center">
           <div>
-            <div class="label">${icon(ICON_SCALE, 13)} Bodyweight</div>
+            <div class="label">${icon(ICON_SCALE, 13, -3)} Bodyweight</div>
             ${todayWeight
               ? `<div class="num" style="font-size:20px;margin-top:2px">${todayWeight.weight_kg} <span style="font-size:12px;color:var(--text-muted)">kg</span></div>`
               : (isToday && ironlog?.bodyweight)
               ? `<div class="num" style="font-size:20px;margin-top:2px">${ironlog.bodyweight.weight_kg} <span style="font-size:12px;color:var(--text-muted)">kg</span></div>
-                 <div style="font-size:11px;color:var(--accent);margin-top:2px">${icon(ICON_BOLT, 11)} via IronLog${ironlog.bodyweight.is_today ? ' · today' : ' · ' + ironlog.bodyweight.date}</div>`
+                 <div style="font-size:11px;color:var(--accent);margin-top:2px">${icon(ICON_BOLT, 11, -2)} via IronLog${ironlog.bodyweight.is_today ? ' · today' : ' · ' + ironlog.bodyweight.date}</div>`
               : `<div style="font-size:12px;color:var(--text-faint);margin-top:3px">Not logged today</div>`
             }
           </div>
@@ -513,7 +519,7 @@ export function renderToday(container) {
           ${ironlog ? `
           <div class="card ironlog-panel" style="margin-top:4px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-              <span class="label">${icon(ICON_BOLT, 13)} IronLog</span>
+              <span class="label">${icon(ICON_BOLT, 13, -3)} IronLog</span>
               ${ironlog.last_synced ? `<span style="font-size:11px;color:var(--text-faint)">${ironlog._stale ? '⚠ cached · ' : ''}${timeAgo(ironlog.last_synced)}</span>` : ''}
             </div>
             <div class="ironlog-row">
@@ -713,9 +719,13 @@ export function renderToday(container) {
 }
 
 function phaseBadge(phase) {
-  const map = { cut: ['🔻','#ff6b6b'], maintain: ['⚖️','#5dca8a'], bulk: ['📈','#c8b8ff'] };
-  const [icon, color] = map[phase] || map.maintain;
-  return `<span style="font-size:11px;font-weight:700;color:${color};background:${color}18;padding:3px 10px;border-radius:999px;border:1px solid ${color}44">${icon} ${(phase||'maintain').toUpperCase()}</span>`;
+  const map = {
+    cut:      { glyph: ICON_TREND_DOWN, color: '#ff6b6b' },
+    maintain: { glyph: ICON_SCALE,      color: '#5dca8a' },
+    bulk:     { glyph: ICON_TREND_UP,   color: '#c8b8ff' },
+  };
+  const { glyph, color } = map[phase] || map.maintain;
+  return `<span style="font-size:11px;font-weight:700;color:${color};background:${color}18;padding:3px 10px;border-radius:999px;border:1px solid ${color}44;display:inline-flex;align-items:center;gap:4px">${icon(glyph, 12)} ${(phase||'maintain').toUpperCase()}</span>`;
 }
 
 function phaseProgressCard(settings, totals, burned) {

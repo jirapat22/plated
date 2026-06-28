@@ -1,7 +1,7 @@
-/* Space Grotesk + Space Mono are a matched pair from the same foundry —
-   used only on Today (see .today-view below) as a deliberate, scoped
-   typographic identity rather than an app-wide change. */
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap');
+/* Space Grotesk + Space Mono are loaded via <link> in index.html (not
+   @import here) so the fetch runs in parallel with style.css instead of
+   behind it. They're a matched pair from the same foundry, used only on
+   Today (see .today-view below) as a scoped typographic identity. */
 
 /* ─── Design Tokens ──────────────────────────────────────── */
 :root {
@@ -837,7 +837,12 @@ img { display: block; max-width: 100%; }
 .today-view .section-header h2 {
   font-family: var(--font-display);
 }
-.today-view .num,
+/* :not(.ring-kcal-sm) — the two small side rings are clamped down to
+   58-82px on narrow phones (see the @media block below); monospace
+   digits run wider per-glyph than the system-sans tabular figures this
+   was tuned against, so the small rings keep the plain numeral face
+   to avoid risking overflow at that breakpoint. */
+.today-view .num:not(.ring-kcal-sm),
 .today-view .meal-session-kcal,
 .today-view .meal-entry-kcal {
   font-family: var(--font-mono);
