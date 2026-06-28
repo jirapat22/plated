@@ -322,8 +322,10 @@ export function renderTrends(container) {
     const wkP = wkAvgOf('protein'), wkC = wkAvgOf('carbs'), wkF = wkAvgOf('fat');
 
     // ── Weekly averages over the selected range (Mon–Sun buckets), per macro ──
+    // Excludes the in-progress week — the "This week" card above already covers
+    // it, and a 2–3 day partial week isn't comparable to full weeks here.
     const weekMap = {};
-    rows.forEach(r => { if ((r.meal_count || 0) > 0) (weekMap[mondayOf(r.date)] ||= []).push(r); });
+    rows.forEach(r => { if ((r.meal_count || 0) > 0 && mondayOf(r.date) !== thisMon) (weekMap[mondayOf(r.date)] ||= []).push(r); });
     const avgOf = (arr, k) => arr.reduce((s, r) => s + (r[k] || 0), 0) / arr.length;
     const weekData = Object.entries(weekMap)
       .sort((a, b) => a[0].localeCompare(b[0]))
@@ -345,11 +347,10 @@ export function renderTrends(container) {
       box.innerHTML = weekData.slice().reverse().map(w => {   // most recent week on top
         const mon = new Date(w.mon + 'T00:00:00');
         const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
-        const isThis = w.mon === thisMon;
         const val = w[metric];
         const over = m.goal && val > m.goal;
         return `<div style="display:flex;align-items:center;gap:10px;margin:9px 0">
-          <span style="width:82px;flex-shrink:0;font-size:11px;${isThis ? 'color:var(--accent);font-weight:700' : 'color:var(--text-muted)'}">${isThis ? 'This week' : `${f(mon)}–${sun.getDate()}`}</span>
+          <span style="width:82px;flex-shrink:0;font-size:11px;color:var(--text-muted)">${f(mon)}–${sun.getDate()}</span>
           <div style="flex:1;height:20px;background:var(--surface-2);border-radius:5px;position:relative;overflow:hidden">
             <div style="height:100%;width:${Math.round(val / max * 100)}%;background:${m.color};border-radius:5px"></div>
             ${goalPct != null ? `<div title="goal" style="position:absolute;top:-1px;bottom:-1px;left:${goalPct}%;width:2px;background:var(--text);opacity:.5"></div>` : ''}
