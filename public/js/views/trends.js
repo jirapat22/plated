@@ -420,7 +420,10 @@ export function renderTrends(container) {
     trendsBody.innerHTML = `
       <!-- Verdict (hero) -->
       <div class="card" style="margin-bottom:12px;border:1px solid ${haveVerdict ? (verdictGood ? 'rgba(93,202,138,.45)' : 'rgba(249,115,22,.45)') : 'var(--border)'}">
-        <div class="label" style="margin-bottom:6px">${phase === 'cut' ? 'Is your cut working?' : phase === 'bulk' ? 'Is your bulk working?' : 'Holding maintenance?'}</div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px">
+          <div class="label">${phase === 'cut' ? 'Is your cut working?' : phase === 'bulk' ? 'Is your bulk working?' : 'Holding maintenance?'}</div>
+          <div style="font-size:10px;color:var(--text-faint);flex-shrink:0">last 4 weeks · fixed</div>
+        </div>
         ${haveVerdict ? `
           <div style="font-size:22px;font-weight:800;color:${verdictGood ? 'var(--success)' : FLAG}">${verdictGood ? 'On track ✓' : 'Off track ⚠'}</div>
           <div style="font-size:13px;color:var(--text-muted);margin:2px 0 12px">${verdictSub}</div>
@@ -465,7 +468,7 @@ export function renderTrends(container) {
       <!-- Weekly averages (Mon–Sun), per macro — "am I eating more than usual?" -->
       ${weekData.length >= 2 ? `
       <div class="card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Weekly average — Mon to Sun</div>
+        <div class="label" style="margin-bottom:10px">Weekly average — Mon to Sun · ${days}d</div>
         <div class="search-tabs" id="wk-metric" style="padding:0;margin-bottom:10px">
           <button class="search-tab active" data-m="cal">Calories</button>
           <button class="search-tab" data-m="protein">Protein</button>

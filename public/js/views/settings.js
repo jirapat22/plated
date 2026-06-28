@@ -65,12 +65,14 @@ export function renderSettings(container) {
           <!-- 1. Maintenance / TDEE — the basis everything is derived from -->
           <label class="form-label">① Maintenance (TDEE)</label>
           <div style="font-size:11px;color:var(--text-faint);margin:2px 0 6px">Calories you burn per day. Synced from IronLog, or set it manually.</div>
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
             <input class="input settings-row-input" type="text" inputmode="decimal" value="${s.tdee || ''}"
               data-key="tdee" placeholder="e.g. 2700" style="height:40px;flex:1;width:auto" />
             <span style="font-size:12px;color:var(--text-muted)">kcal</span>
             <button class="btn btn-secondary" id="manual-tdee-apply" style="height:40px;padding:0 14px;font-size:13px">Apply</button>
           </div>
+          <button class="btn btn-secondary btn-full" id="ironlog-sync" style="height:36px;font-size:12px;margin-bottom:4px">⟳ Sync from IronLog</button>
+          <div id="tdee-sync-status" style="font-size:11px;color:var(--text-muted);margin-bottom:16px"></div>
 
           <!-- 2. Phase -->
           <label class="form-label">② Phase</label>
@@ -92,13 +94,11 @@ export function renderSettings(container) {
         </div>
       </div>
 
-      <!-- Energy unit toggle -->
-      <div class="card" style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div>
-            <div style="font-size:14px;font-weight:600">Energy unit</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Affects all calorie displays</div>
-          </div>
+      <!-- Goals -->
+      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
+        <div class="sec-head">🍎 Daily Goals<span class="sec-chevron">▾</span></div>
+        <div class="settings-row">
+          <span class="settings-row-label">Energy unit</span>
           <div style="display:flex;gap:6px">
             <button class="unit-btn${s.energy_unit !== 'kj' ? ' active' : ''}" data-unit="kcal"
               style="height:34px;padding:0 14px;border-radius:var(--radius-full);font-size:13px;font-weight:700;border:1.5px solid ${s.energy_unit !== 'kj' ? 'var(--accent)' : 'var(--border)'};background:${s.energy_unit !== 'kj' ? 'var(--accent-dim)' : 'var(--surface-2)'};color:${s.energy_unit !== 'kj' ? 'var(--accent)' : 'var(--text-muted)'}">
@@ -110,11 +110,6 @@ export function renderSettings(container) {
             </button>
           </div>
         </div>
-      </div>
-
-      <!-- Goals -->
-      <div class="card sec" style="margin-bottom:12px;padding:0">
-        <div class="sec-head">🍎 Daily Goals<span class="sec-chevron">▾</span></div>
         ${goalRow('calorie_goal',      'Calories',      s.calorie_goal,      'kcal')}
         ${goalRow('protein_goal',      'Protein',       s.protein_goal,      'g')}
         ${goalRow('carb_goal',         'Carbs',         s.carb_goal,         'g')}
@@ -126,7 +121,7 @@ export function renderSettings(container) {
       </div>
 
       <!-- Target weight -->
-      <div class="card sec" style="margin-bottom:12px;padding:0">
+      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
         <div class="sec-head">⚖️ Target Weight<span class="sec-chevron">▾</span></div>
         ${goalRow('target_weight_kg', 'Goal weight', s.target_weight_kg, 'kg')}
         <div style="padding:10px 16px 14px;font-size:11px;color:var(--text-faint)">Used on the Trends page to track progress toward your goal.</div>
@@ -147,8 +142,8 @@ export function renderSettings(container) {
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-secondary" id="ironlog-save" style="flex:1;min-width:100px">Save</button>
             <button class="btn btn-secondary" id="ironlog-test" style="flex:1;min-width:100px">Test</button>
-            <button class="btn btn-primary"   id="ironlog-sync" style="flex:1;min-width:120px">⟳ Sync Goals</button>
           </div>
+          <div style="font-size:11px;color:var(--text-faint);margin-top:6px">Pulling fresh goals from IronLog happens in Goal Phase above (① Maintenance).</div>
           <button class="btn btn-secondary btn-full" id="ironlog-inspect" style="margin-top:8px;font-size:12px;height:36px">
             🔍 Inspect raw IronLog data
           </button>
@@ -171,7 +166,7 @@ export function renderSettings(container) {
       </div>
 
       <!-- Ideas & Bugs — report to the team dashboard -->
-      <div class="card sec" style="margin-bottom:12px;padding:0">
+      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
         <div class="sec-head">💡 Ideas &amp; Bugs<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
@@ -392,9 +387,9 @@ export function renderSettings(container) {
       }
     });
 
-    // IronLog sync
+    // Sync from IronLog (lives in Goal Phase — pulls TDEE + macro goals)
     document.getElementById('ironlog-sync').addEventListener('click', async () => {
-      const statusEl = document.getElementById('ironlog-status');
+      const statusEl = document.getElementById('tdee-sync-status');
       const btn = document.getElementById('ironlog-sync');
       btn.disabled = true;
       btn.textContent = 'Syncing…';
@@ -443,7 +438,7 @@ export function renderSettings(container) {
         statusEl.innerHTML = `✕ ${err.message}<br/><span style="color:var(--text-faint);font-size:11px">${detail}<br/>Enter TDEE manually above instead.</span>`;
       } finally {
         btn.disabled = false;
-        btn.textContent = '⟳ Sync Goals';
+        btn.textContent = '⟳ Sync from IronLog';
       }
     });
 
