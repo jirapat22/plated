@@ -473,14 +473,16 @@ export function renderTrends(container) {
         actualChangeKg = anchorWeight - lastActual;                 // +ve = actual loss
       }
     }
-    const fmtChange = loss => (loss >= 0 ? '−' : '+') + Math.abs(loss).toFixed(1) + ' kg';
+    // +ve arg = a downward change (loss); shown as −, gains as +. Phase-neutral
+    // so the caption reads correctly whether you're cutting, bulking, or holding.
+    const fmtChange = chg => (chg >= 0 ? '−' : '+') + Math.abs(chg).toFixed(1) + ' kg';
     const expectedCaption = expectedLossKg == null ? null : (() => {
-      const gap = expectedLossKg - actualChangeKg;   // +ve = you lost less than predicted
+      const gap = expectedLossKg - actualChangeKg;   // +ve = scale heavier than predicted
       const read = Math.abs(gap) < 0.3
-        ? 'Your scale is tracking your calories closely — logging and TDEE look about right.'
+        ? 'The scale is tracking your calories closely — logging and TDEE look about right.'
         : gap > 0
-          ? 'Losing slower than your calories predict — usually some under-logging, or your TDEE is set too high.'
-          : 'Losing faster than your calories predict — your TDEE may be higher than set, or recent water loss.';
+          ? `The scale is ${gap.toFixed(1)} kg above what your calories predict — usually some under-logging, or your TDEE is set too high.`
+          : `The scale is ${Math.abs(gap).toFixed(1)} kg below what your calories predict — your TDEE may be higher than set, or you over-logged / dropped water.`;
       return `Predicted ${fmtChange(expectedLossKg)} from your logged calories vs set TDEE; scale shows ${fmtChange(actualChangeKg)}. ${read}`;
     })();
 
