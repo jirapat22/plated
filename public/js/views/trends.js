@@ -118,6 +118,23 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
     });
   }
 
+  // Expected curve (e.g. weight predicted from logged calories). Array aligned
+  // to labels; nulls are skipped so it can cover just part of the x-axis.
+  if (opts.expectedData) {
+    datasets.push({
+      label: 'expected',
+      data: opts.expectedData,
+      borderColor: '#c8b8ff',
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      borderDash: [5, 4],
+      pointRadius: 0,
+      tension: 0.3,
+      fill: false,
+      spanGaps: false,
+    });
+  }
+
   new Chart(ctx, {
     type: 'line',
     data: { labels, datasets },
@@ -129,9 +146,9 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
           callbacks: {
             label: c => {
               const lbl = c.dataset.label;
+              if ((lbl === 'trend' || lbl === 'expected') && c.parsed.y == null) return null;
               const suffix = lbl === 'goal' ? ' (goal)' : lbl === '7d avg' ? ' (7d avg)'
-                : lbl === 'trend' ? ' (trend)' : '';
-              if (lbl === 'trend' && c.parsed.y == null) return null;
+                : lbl === 'trend' ? ' (trend)' : lbl === 'expected' ? ' (expected)' : '';
               return `${c.parsed.y.toFixed(1)} ${yLabel}${suffix}`;
             },
           },
@@ -426,6 +443,47 @@ export function renderTrends(container) {
       return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     })() : null;
 
+    // ── Expected weight from logged calories (fixed last 28 days) ──
+    // Anchor to the first weigh-in in the window, then walk each day applying
+    // (logged intake − set TDEE) / 7700 kcal-per-kg. Days with no log count as
+    // maintenance (no change). Overlaid on the weight chart as a dashed line so
+    // you can see the scale track — or drift from — what your calories predict.
+    const TDEE_PER_KG = 7700;
+    const byDateAll = Object.fromEntries(fullRows.map(r => [r.date, r]));
+    let expectedAligned = null, expectedLossKg = null, actualChangeKg = null;
+    const wWin28 = weightSorted.filter(([dt]) => dt >= win28);   // weigh-ins in the window
+    if (cfgTdee && wWin28.length > 1) {
+      const [anchorDate, anchorWeight] = wWin28[0];
+      const expectedByDate = { [anchorDate]: anchorWeight };
+      let cum = anchorWeight;
+      const cur = new Date(anchorDate + 'T00:00:00'); cur.setDate(cur.getDate() + 1);
+      const end = new Date(todayISO + 'T00:00:00');
+      while (cur <= end) {
+        const iso = localDate(cur);
+        const row = byDateAll[iso];
+        const intake = row && (row.meal_count || 0) > 0 ? (row.calories || 0) : cfgTdee;
+        cum += (intake - cfgTdee) / TDEE_PER_KG;
+        expectedByDate[iso] = cum;
+        cur.setDate(cur.getDate() + 1);
+      }
+      expectedAligned = weightEntries.map(([dt]) => dt >= anchorDate ? (expectedByDate[dt] ?? null) : null);
+      const [lastDate, lastActual] = weightEntries[weightEntries.length - 1];
+      if (expectedByDate[lastDate] != null) {
+        expectedLossKg = anchorWeight - expectedByDate[lastDate];   // +ve = predicted loss
+        actualChangeKg = anchorWeight - lastActual;                 // +ve = actual loss
+      }
+    }
+    const fmtChange = loss => (loss >= 0 ? '−' : '+') + Math.abs(loss).toFixed(1) + ' kg';
+    const expectedCaption = expectedLossKg == null ? null : (() => {
+      const gap = expectedLossKg - actualChangeKg;   // +ve = you lost less than predicted
+      const read = Math.abs(gap) < 0.3
+        ? 'Your scale is tracking your calories closely — logging and TDEE look about right.'
+        : gap > 0
+          ? 'Losing slower than your calories predict — usually some under-logging, or your TDEE is set too high.'
+          : 'Losing faster than your calories predict — your TDEE may be higher than set, or recent water loss.';
+      return `Predicted ${fmtChange(expectedLossKg)} from your logged calories vs set TDEE; scale shows ${fmtChange(actualChangeKg)}. ${read}`;
+    })();
+
     const trendsBody = document.getElementById('trends-body');
     if (!trendsBody) return;   // view torn down before render
     trendsBody.innerHTML = `
@@ -529,13 +587,17 @@ export function renderTrends(container) {
         </div>
       </div>` : ''}
 
-      <!-- Bodyweight + target -->
+      <!-- Bodyweight + target + expected -->
       <div class="card" style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
           <div class="label">Bodyweight — ${days}d</div>
-          ${targetWeight ? `<div style="font-size:10px;color:var(--text-faint);display:flex;align-items:center;gap:4px"><span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>target ${targetWeight} kg</div>` : ''}
+          <div style="display:flex;gap:10px;font-size:10px;color:var(--text-faint);flex-wrap:wrap">
+            ${expectedAligned ? `<span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:0;border-top:2px dashed #c8b8ff;display:inline-block"></span>expected from calories</span>` : ''}
+            ${targetWeight ? `<span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>target ${targetWeight} kg</span>` : ''}
+          </div>
         </div>
         <div style="height:170px;position:relative"><canvas id="chart-wt"></canvas></div>
+        ${expectedCaption ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">${expectedCaption}<br><span style="opacity:.7">Last 28 days · days you didn't log are counted as maintenance.</span></div>` : ''}
       </div>
 
       <!-- Calories chart -->
@@ -611,7 +673,7 @@ export function renderTrends(container) {
         pointColors, pointRadii, trendData: calTrend,
       });
       makeChart('chart-pro',  labels, proteins, '#1E88E5', 'g', { goalLine: proteinGoal });
-      if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg', { trendData: wTrend, goalLine: targetWeight ?? undefined });
+      if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg', { trendData: wTrend, goalLine: targetWeight ?? undefined, expectedData: expectedAligned ?? undefined });
       else {
         const c = document.getElementById('chart-wt');
         if (c) c.closest('.card').querySelector('div[style*="height"]').innerHTML =
