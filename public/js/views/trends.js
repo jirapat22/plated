@@ -3,7 +3,7 @@ import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
 import { localDate }                  from '../utils/date.js';
 import { showToast }                  from '../app.js';
 import { openFoodEntry }              from './log.js';
-import { classifyDay, isFlagged, LOG_STRONG } from '../utils/logCheck.js';
+import { classifyDay, isFlagged, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY } from '../utils/logCheck.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -149,9 +149,10 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
   });
 }
 
-function calcStreak(summary, goal) {
-  // Allow 1 missed (zero-cal / no-log) day per 7-day window.
-  // A day with logged calories outside ±10% of goal still breaks the streak.
+// Consecutive fully-logged days (a consistency streak — not a hit-your-calorie-
+// target streak). Allows 1 skipped (no-log) day per 7-day window. An
+// under-logged day breaks it; today is in progress so it can only extend it.
+function calcStreak(summary, goal, todayISO) {
   const byDate = Object.fromEntries(summary.map(r => [r.date, r]));
   const todayD = new Date();
   let streak       = 0;
@@ -160,27 +161,26 @@ function calcStreak(summary, goal) {
     const d = new Date(todayD);
     d.setDate(d.getDate() - i);
     const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    const cal = byDate[iso]?.calories ?? 0;
-    const hit = cal > 0 && Math.abs(cal - goal) / goal <= 0.10;
-    const noLog = cal === 0;
+    const status = classifyDay(byDate[iso] || { date: iso, calories: 0, meal_count: 0 }, goal, todayISO);
+    const logged = status === LOG_COMPLETE;   // fully logged (or "ate light" confirmed)
+    const empty  = status === LOG_EMPTY;      // nothing logged that day
 
     if (i > 0 && i % 7 === 0) graceUsed = 0;   // reset grace counter every 7 days back
 
     if (i === 0) {
-      // Today is still in progress: it can extend the streak once you've hit
-      // goal, but a not-yet-complete today must never break it (otherwise the
-      // streak collapses to 0 the moment you log your first food each morning).
-      if (hit) streak++;
+      // Today is still in progress: it extends the streak as soon as it's
+      // logged, but a not-yet-logged today never breaks it.
+      if (logged) streak++;
       continue;
     }
 
-    if (hit) {
+    if (logged) {
       streak++;
-    } else if (noLog && graceUsed < 1) {
+    } else if (empty && graceUsed < 1) {
       graceUsed++;
-      streak++;                                  // no-log day counts (grace)
+      streak++;                                  // one skipped day per week is OK
     } else {
-      break;                                     // logged but missed goal = break
+      break;                                     // under-logged, or a 2nd skip in the week
     }
   }
   return streak;
@@ -226,8 +226,10 @@ export function renderTrends(container) {
       '<div class="skeleton skel-line" style="height:180px;border-radius:14px"></div>';
     try {
       const [summary, weights, settings] = await Promise.all([
-        // Fetch enough for the fixed 28-day verdict window even on the 7d range.
-        api.get(`/api/meals/summary?days=${Math.max(days, 28)}`),
+        // Fetch the server max (90d) regardless of chart range so the consistency
+        // streak isn't capped short — the streak walks the full summary, while the
+        // charts slice it down to `days`. (Server clamps days to 90.)
+        api.get(`/api/meals/summary?days=${Math.max(days, 90)}`),
         api.get('/api/weight?limit=90'),
         api.get('/api/settings'),
       ]);
@@ -254,7 +256,7 @@ export function renderTrends(container) {
     const fatGoal     = parseFloat(settings.fat_goal)  || 65;
     const ul          = unitLabel();
     const todayISO    = localDate();
-    const streak      = calcStreak(summary, goal);
+    const streak      = calcStreak(summary, goal, todayISO);
 
     // Tag every day; charts + consistency use the selected range, the verdict
     // uses a fixed 28-day window (below) regardless of range.
