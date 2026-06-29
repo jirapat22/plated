@@ -60,13 +60,6 @@ function calRingSvg(pct, variant = '', small = false, overflowPct = 0, ticks = f
     </svg>`;
 }
 
-function fmtDateNav(iso) {
-  const today = localDate();
-  if (iso === today) return 'Today';
-  const d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-}
-
 function timeAgo(iso) {
   if (!iso) return null;
   const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
@@ -75,12 +68,6 @@ function timeAgo(iso) {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
-}
-
-function addDays(iso, n) {
-  const d = new Date(iso + 'T00:00:00');
-  d.setDate(d.getDate() + n);
-  return localDate(d);
 }
 
 async function fetchIronLog(dateStr) {
@@ -213,31 +200,16 @@ async function openFromTemplate(date, onSuccess) {
 // ── Main render ──────────────────────────────────────────────
 export function renderToday(container) {
   container.classList.add('today-view');
+  // Today is always today. Other days live in History — no day-switching here,
+  // which also kills the accidental swipe-to-change-day. viewDate is re-read
+  // from localDate() on every load so it rolls over correctly past midnight.
   let viewDate      = localDate();
-  let userNavigated = false;   // true only when user manually tapped ← › or swiped
   let ironlogExpanded = false;
   let loadGen = 0;             // increments on each load; stale responses discarded
   const ironCache = new Map(); // past days are immutable — cache their IronLog data
 
-  // Swipe navigation
-  let swipeStartX = 0, swipeStartY = 0;
-  container.addEventListener('touchstart', e => {
-    swipeStartX = e.touches[0].clientX;
-    swipeStartY = e.touches[0].clientY;
-  }, { passive: true });
-  container.addEventListener('touchend', e => {
-    const dx = e.changedTouches[0].clientX - swipeStartX;
-    const dy = Math.abs(e.changedTouches[0].clientY - swipeStartY);
-    // High threshold (90px) + strict horizontal (dy<20) to avoid accidental
-    // nav while scrolling the long Today list
-    if (Math.abs(dx) > 90 && dy < 20) {
-      const next = addDays(viewDate, dx < 0 ? -1 : 1);
-      if (next <= localDate()) { userNavigated = true; viewDate = next; load(); }
-    }
-  }, { passive: true });
-
   async function load() {
-    if (!userNavigated) viewDate = localDate();
+    viewDate = localDate();
     const myGen = ++loadGen;
     try {
       const [mealData, waterData, settings, todayWeight] = await Promise.all([
@@ -364,28 +336,16 @@ export function renderToday(container) {
     const showMorningPrompt = false; // removed per user preference
 
     container.innerHTML = `
-      <!-- Date navigation -->
+      <!-- Header -->
       <div class="today-header" style="padding-bottom:4px">
-        <div style="display:flex;align-items:center;gap:12px">
-          <button id="nav-prev" style="width:32px;height:32px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:18px">‹</button>
-          <div style="text-align:center">
-            <div class="today-date" style="font-size:18px">${fmtDateNav(viewDate)}</div>
-          </div>
-          <button id="nav-next" style="width:32px;height:32px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:${isToday ? 'var(--text-faint)' : 'var(--text-muted)'};font-size:18px" ${isToday ? 'disabled' : ''}>›</button>
+        <div>
+          <div class="today-date">Today</div>
+          <div class="today-day">${new Date(viewDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
           ${phaseBadge(settings.phase)}
         </div>
       </div>
-
-      <!-- Past-day warning banner -->
-      ${!isToday ? `
-      <div style="padding:0 16px 6px">
-        <div style="background:var(--accent-dim);border:1px solid rgba(200,184,255,.25);border-radius:var(--radius-sm);padding:9px 14px;display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:12px;color:var(--accent)">📅 Viewing a past day — not today</span>
-          <button id="go-today-btn" style="font-size:12px;font-weight:700;color:var(--accent)">Today →</button>
-        </div>
-      </div>` : ''}
 
       <!-- Concerns: at-a-glance "what to be aware of" -->
       ${showConcernRow ? `
@@ -536,7 +496,7 @@ export function renderToday(container) {
 
       <!-- Meals -->
       <div class="section-header">
-        <h2>${isToday ? 'Meals' : 'Meals on ' + fmtDateNav(viewDate)}</h2>
+        <h2>Meals</h2>
       </div>
       ${showMorningPrompt ? `
       <div style="padding:0 16px 12px">
@@ -572,30 +532,16 @@ export function renderToday(container) {
     if (mealData.sessions.length === 0 && !showMorningPrompt) {
       mealsList.innerHTML = '<div class="empty-state"><div class="empty-icon">🍽</div><div class="empty-text">No meals yet</div></div>';
     } else {
-      const isPastDay = viewDate < localDate();
       mealData.sessions.forEach(session => {
         mealsList.appendChild(renderMealCard(session, viewDate, {
           showTime: true,
-          showMoveToday: isPastDay,
+          showMoveToday: false,   // always today — nothing to "move to today"
           showTemplate: true,
           showPullIn: true,
           showQuickLog: true,
         }, () => load()));
       });
     }
-
-    // Date nav — mark as intentional so load() doesn't auto-snap to today
-    document.getElementById('nav-prev').addEventListener('click', () => {
-      userNavigated = true; viewDate = addDays(viewDate, -1); load();
-    });
-    document.getElementById('nav-next')?.addEventListener('click', () => {
-      const next = addDays(viewDate, 1);
-      if (next <= localDate()) { userNavigated = true; viewDate = next; load(); }
-    });
-    document.getElementById('go-today-btn')?.addEventListener('click', () => {
-      userNavigated = false; viewDate = localDate(); load();
-    });
-
 
     // Log-check banner: add a meal, or confirm "I ate light"
     document.querySelector('.logcheck-add')?.addEventListener('click', async () => {
