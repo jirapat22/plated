@@ -166,6 +166,14 @@ function calcStreak(summary, goal) {
 
     if (i > 0 && i % 7 === 0) graceUsed = 0;   // reset grace counter every 7 days back
 
+    if (i === 0) {
+      // Today is still in progress: it can extend the streak once you've hit
+      // goal, but a not-yet-complete today must never break it (otherwise the
+      // streak collapses to 0 the moment you log your first food each morning).
+      if (hit) streak++;
+      continue;
+    }
+
     if (hit) {
       streak++;
     } else if (noLog && graceUsed < 1) {
