@@ -515,7 +515,7 @@ export function renderTrends(container) {
               <div style="font-size:13px"><span class="num" style="font-weight:700">${fmtE(avgCal)}</span> <span style="color:var(--text-muted);font-size:11px">${ul}/day · this wk ${fmtE(wkAvg)}</span></div>
             </div>
             ${cfgTdee ? `<div class="gp-row" style="padding:6px 0"><span class="gp-lbl">vs set TDEE · ${fmtE(cfgTdee)}</span><span class="gp-val">${defStr(cfgTdee)} <span style="font-size:11px;color:var(--text-faint);font-weight:400">planned</span></span></div>` : ''}
-            ${realTDEE != null ? `<div class="gp-row" style="padding:6px 0"><span class="gp-lbl">vs real maint. · ${fmtE(realTDEE)}</span><span class="gp-val">${defStr(realTDEE)} <span style="font-size:11px;color:var(--text-faint);font-weight:400">actual</span></span></div>` : ''}
+            ${realTDEE != null ? `<div class="gp-row" style="padding:6px 0"><span class="gp-lbl">vs real maintenance · ${fmtE(realTDEE)}</span><span class="gp-val">${defStr(realTDEE)} <span style="font-size:11px;color:var(--text-faint);font-weight:400">actual</span></span></div>` : ''}
           </div>` : ''}
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>`
             : realTDEE == null ? ''
@@ -524,6 +524,14 @@ export function renderTrends(container) {
                 : realTDEE > cfgTdee + 200 ? ` That's above your set TDEE (${fmtE(cfgTdee)}); if your logging's been accurate you could raise it.`
                 : ` In line with your set TDEE (${fmtE(cfgTdee)}).`) : ''}</div>`}
           ${etaLabel ? `<div style="font-size:11px;color:var(--text-faint);margin-top:4px">At this rate you reach ${targetWeight} kg around ${etaLabel}.</div>` : ''}
+          <details style="margin-top:12px">
+            <summary style="cursor:pointer;list-style:none;font-size:11px;color:var(--accent);font-weight:700">ⓘ TDEE vs real maintenance — how is this worked out?</summary>
+            <div style="font-size:11px;color:var(--text-faint);line-height:1.7;margin-top:8px">
+              <b style="color:var(--text-muted)">Set TDEE</b> is a starting estimate from your stats (in Settings). It never looks at your results — it's a formula's best guess.<br><br>
+              <b style="color:var(--text-muted)">Real maintenance</b> is measured from what actually happened: your average logged calories minus your real weight change (1&nbsp;kg ≈ 7,700&nbsp;${ul}). If you're losing while eating ${fmtE(avgCal)}, your maintenance has to sit above that — the scale shows by how much. So it folds your weigh-ins in, and it's usually the more accurate of the two — <i>as long as your logging is honest</i>.<br><br>
+              If real maintenance reads below your set TDEE, it's one of two things — your TDEE was set too high, <i>or</i> you're under-logging — and from this data alone they look identical. To tell which: weigh your food carefully for ~2 weeks. If the number holds, your TDEE was genuinely high; if it climbs back toward your set TDEE, you were under-logging.
+            </div>
+          </details>
         ` : `
           <div style="font-size:13px;color:var(--text-muted);line-height:1.55">Keep logging to unlock your verdict — it weighs your intake against your real weight change to say whether it's working, and estimates your true maintenance calories.<br><span style="color:var(--text-faint)">Needs ~2 weeks of weigh-ins (have ${wWinVals.length}) and ≥5 fully-logged days (have ${validForAvg.length}).</span></div>
         `}
@@ -537,8 +545,8 @@ export function renderTrends(container) {
           <div style="font-size:11px;color:var(--text-faint)">${wkLabel}</div>
         </div>
         <div class="stat-grid">
-          <div class="stat-cell"><div class="stat-num">${fmtE(wkAvg)}</div><div class="stat-lbl">avg / day</div></div>
           <div class="stat-cell"><div class="stat-num">${fmtE(wkTotal)}</div><div class="stat-lbl">total ${ul}</div></div>
+          <div class="stat-cell"><div class="stat-num">${fmtE(wkAvg)}</div><div class="stat-lbl">avg / day</div></div>
           <div class="stat-cell"><div class="stat-num">${wkRows.length}<span style="font-size:13px;color:var(--text-muted)">/7</span></div><div class="stat-lbl">days logged</div></div>
         </div>
         <div style="font-size:12px;color:${wkAvg > goal ? 'var(--warning)' : 'var(--text-muted)'};margin-top:10px">${wkAvg > goal ? `+${fmtE(wkAvg - goal)} over` : `${fmtE(goal - wkAvg)} under`} your ${fmtE(goal)} ${ul} goal, on average</div>
