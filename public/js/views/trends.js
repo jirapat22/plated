@@ -486,6 +486,11 @@ export function renderTrends(container) {
       return `Predicted ${fmtChange(expectedLossKg)} from your logged calories vs set TDEE; scale shows ${fmtChange(actualChangeKg)}. ${read}`;
     })();
 
+    // Signed daily gap of avg intake vs a maintenance baseline: −ve label = a
+    // deficit (eating under), +ve = surplus. Used for the "deficit two ways"
+    // block — intake vs set TDEE (planned) and vs estimated real maint (actual).
+    const defStr = base => { const d = Math.round(base - avgCal); return (d >= 0 ? '−' : '+') + fmtE(Math.abs(d)); };
+
     const trendsBody = document.getElementById('trends-body');
     if (!trendsBody) return;   // view torn down before render
     trendsBody.innerHTML = `
@@ -503,6 +508,15 @@ export function renderTrends(container) {
             <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div></div>
             <div class="stat-cell"><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl">${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div></div>
           </div>
+          ${(cfgTdee || realTDEE != null) ? `
+          <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+              <div class="label">Your intake vs maintenance</div>
+              <div style="font-size:13px"><span class="num" style="font-weight:700">${fmtE(avgCal)}</span> <span style="color:var(--text-muted);font-size:11px">${ul}/day · this wk ${fmtE(wkAvg)}</span></div>
+            </div>
+            ${cfgTdee ? `<div class="gp-row" style="padding:6px 0"><span class="gp-lbl">vs set TDEE · ${fmtE(cfgTdee)}</span><span class="gp-val">${defStr(cfgTdee)} <span style="font-size:11px;color:var(--text-faint);font-weight:400">planned</span></span></div>` : ''}
+            ${realTDEE != null ? `<div class="gp-row" style="padding:6px 0"><span class="gp-lbl">vs real maint. · ${fmtE(realTDEE)}</span><span class="gp-val">${defStr(realTDEE)} <span style="font-size:11px;color:var(--text-faint);font-weight:400">actual</span></span></div>` : ''}
+          </div>` : ''}
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>`
             : realTDEE == null ? ''
             : `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">Estimated from ~${fmtE(avgCal)} ${ul}/day logged + your weight trend (includes activity).${cfgTdee ? (
