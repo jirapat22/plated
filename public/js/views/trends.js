@@ -491,6 +491,29 @@ export function renderTrends(container) {
     // block — intake vs set TDEE (planned) and vs estimated real maint (actual).
     const defStr = base => { const d = Math.round(base - avgCal); return (d >= 0 ? '−' : '+') + fmtE(Math.abs(d)); };
 
+    // Plain-English "bottom line" — translates the verdict numbers into what's
+    // happening and why. Only meaningful when real maintenance is estimable
+    // (realTDEE != null already implies a reliable weight trend).
+    const bottomLine = realTDEE == null ? null : (() => {
+      const rate = Math.abs(weeklyRate);
+      const motion = rate < 0.05 ? "your weight's basically flat"
+        : `you're ${weeklyRate < 0 ? 'losing' : 'gaining'} ~${rate.toFixed(1)} kg/week`;
+      const actualDef = Math.round(realTDEE - avgCal);
+      const underOver = actualDef >= 0 ? `${fmtE(actualDef)} ${ul} under` : `${fmtE(-actualDef)} ${ul} over`;
+      let s = `You're eating about ${underOver} your real maintenance (${fmtE(realTDEE)} ${ul}), so ${motion}.`;
+      if (cfgTdee) {
+        const plannedDef = Math.abs(Math.round(cfgTdee - avgCal));
+        if (realTDEE < cfgTdee - 150) {
+          s += ` Your set TDEE (${fmtE(cfgTdee)}) is higher than your real burn — your true gap is smaller than the ${fmtE(plannedDef)} you planned, which is why the scale's slow. (Or you're under-logging — see below.)`;
+        } else if (realTDEE > cfgTdee + 150) {
+          s += ` Your real maintenance is above your set TDEE (${fmtE(cfgTdee)}), so there's a bit more room than your plan assumes.`;
+        } else {
+          s += ` That's in line with your set TDEE (${fmtE(cfgTdee)}).`;
+        }
+      }
+      return s;
+    })();
+
     const trendsBody = document.getElementById('trends-body');
     if (!trendsBody) return;   // view torn down before render
     trendsBody.innerHTML = `
@@ -504,9 +527,9 @@ export function renderTrends(container) {
           <div style="font-size:22px;font-weight:800;color:${verdictGood ? 'var(--success)' : FLAG}">${verdictGood ? 'On track ✓' : 'Off track ⚠'}</div>
           <div style="font-size:13px;color:var(--text-muted);margin:2px 0 12px">${verdictSub}</div>
           <div class="stat-grid">
-            <div class="stat-cell"><div class="stat-num">${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(2)}</div><div class="stat-lbl">kg / week</div></div>
-            <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div></div>
-            <div class="stat-cell"><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl">${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div></div>
+            <div class="stat-cell"><div class="stat-num">${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(2)}</div><div class="stat-lbl">kg / week</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">your real pace</div></div>
+            <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">what you burn</div></div>
+            <div class="stat-cell"><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl">${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">${weeksToTarget ? 'at this pace' : '&nbsp;'}</div></div>
           </div>
           ${(cfgTdee || realTDEE != null) ? `
           <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">
@@ -518,12 +541,8 @@ export function renderTrends(container) {
             ${realTDEE != null ? `<div class="gp-row" style="padding:6px 0"><span class="gp-lbl">vs real maintenance · ${fmtE(realTDEE)}</span><span class="gp-val">${defStr(realTDEE)} <span style="font-size:11px;color:var(--text-faint);font-weight:400">actual</span></span></div>` : ''}
           </div>` : ''}
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>`
-            : realTDEE == null ? ''
-            : `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">Estimated from ~${fmtE(avgCal)} ${ul}/day logged + your weight trend (includes activity).${cfgTdee ? (
-                  realTDEE < cfgTdee - 200 ? ` That's below your set TDEE (${fmtE(cfgTdee)}) — usually a sign of under-logging, not a lower TDEE. Don't lower it unless you're sure you logged everything.`
-                : realTDEE > cfgTdee + 200 ? ` That's above your set TDEE (${fmtE(cfgTdee)}); if your logging's been accurate you could raise it.`
-                : ` In line with your set TDEE (${fmtE(cfgTdee)}).`) : ''}</div>`}
-          ${etaLabel ? `<div style="font-size:11px;color:var(--text-faint);margin-top:4px">At this rate you reach ${targetWeight} kg around ${etaLabel}.</div>` : ''}
+            : `<div style="background:var(--surface-2);border-radius:var(--radius-sm);padding:11px 13px;margin-top:12px;font-size:12px;color:var(--text-muted);line-height:1.65"><b style="color:var(--text)">Bottom line:</b> ${bottomLine}</div>`}
+          ${etaLabel ? `<div style="font-size:11px;color:var(--text-faint);margin-top:6px">At this rate you reach ${targetWeight} kg around ${etaLabel}.</div>` : ''}
           <details style="margin-top:12px">
             <summary style="cursor:pointer;list-style:none;font-size:11px;color:var(--accent);font-weight:700">ⓘ TDEE vs real maintenance — how is this worked out?</summary>
             <div style="font-size:11px;color:var(--text-faint);line-height:1.7;margin-top:8px">
