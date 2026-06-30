@@ -532,25 +532,25 @@ export function renderTrends(container) {
       const realDef = Math.round(maint - intake);
       const planDef = cfgTdee ? Math.round(cfgTdee - intake) : null;
       return `
-        <svg viewBox="0 0 320 78" width="100%" style="display:block;overflow:visible;font-family:var(--font-mono)">
+        <svg viewBox="0 0 320 78" width="100%" preserveAspectRatio="xMidYMid meet" style="display:block;width:100%;max-width:440px;margin:0 auto;overflow:visible;font-family:var(--font-mono)">
           <line x1="16" y1="43" x2="304" y2="43" stroke="#2c2c35" stroke-width="2" stroke-linecap="round"/>
           ${showTdee ? `<line x1="${xM.toFixed(1)}" y1="43" x2="${xT.toFixed(1)}" y2="43" stroke="#4a4a55" stroke-width="2" stroke-dasharray="3 3"/>` : ''}
           <line x1="${xI.toFixed(1)}" y1="43" x2="${xM.toFixed(1)}" y2="43" stroke="#c8b8ff" stroke-width="4" stroke-linecap="round"/>
           <circle cx="${xI.toFixed(1)}" cy="43" r="5.5" fill="#c8b8ff" stroke="#16161a" stroke-width="3"/>
           <line x1="${xM.toFixed(1)}" y1="34" x2="${xM.toFixed(1)}" y2="52" stroke="#f0eff4" stroke-width="2.5" stroke-linecap="round"/>
           ${showTdee ? `<line x1="${xT.toFixed(1)}" y1="36" x2="${xT.toFixed(1)}" y2="50" stroke="#8b8a96" stroke-width="2" stroke-dasharray="2 2"/>` : ''}
-          <g fill="#f0eff4" font-size="13" font-weight="700">
+          <g fill="#f0eff4" font-size="15" font-weight="700">
             ${T(xI, 25, fmtE(intake))}
             ${T(xM, close ? 13 : 25, fmtE(maint))}
             ${showTdee ? T(xT, 25, fmtE(cfgTdee)) : ''}
           </g>
-          <g fill="#8b8a96" font-size="9" letter-spacing="0.5">
+          <g fill="#8b8a96" font-size="10" letter-spacing="0.5">
             ${T(xI, close ? 73 : 66, 'YOU EAT')}
             ${T(xM, close ? 61 : 66, 'REAL MAINT.')}
             ${showTdee ? T(xT, 66, 'SET TDEE') : ''}
           </g>
         </svg>
-        <div style="font-size:11px;color:var(--text-faint);margin-top:4px">Real deficit <b style="color:var(--accent)">${sign(realDef)} ${ul}</b>${planDef != null ? ` · you planned <span style="color:var(--text-muted)">${sign(planDef)}</span>` : ''}</div>`;
+        <div style="font-size:11px;color:var(--text-faint);margin-top:4px;text-align:center;max-width:440px;margin-left:auto;margin-right:auto">Real deficit <b style="color:var(--accent)">${sign(realDef)} ${ul}</b>${planDef != null ? ` · you planned <span style="color:var(--text-muted)">${sign(planDef)}</span>` : ''}</div>`;
     })();
 
     const trendsBody = document.getElementById('trends-body');
