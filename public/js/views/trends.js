@@ -571,10 +571,13 @@ export function renderTrends(container) {
             <div class="stat-cell"><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl">${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">${weeksToTarget ? 'at this pace' : '&nbsp;'}</div></div>
           </div>
           ${numberLine ? `
-          <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px">
-            <div class="label" style="margin-bottom:2px">Where you sit · ${ul}/day</div>
-            ${numberLine}
-          </div>` : ''}
+          <details open class="nl-details" style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px">
+            <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:6px">
+              <span class="label">Where you sit · ${ul}/day</span>
+              <span class="nl-chev" style="font-size:9px;color:var(--text-faint)">▾</span>
+            </summary>
+            <div style="margin-top:8px">${numberLine}</div>
+          </details>` : ''}
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>`
             : `<div style="background:var(--surface-2);border-radius:var(--radius-sm);padding:11px 13px;margin-top:12px;font-size:12px;color:var(--text-muted);line-height:1.65"><b style="color:var(--text)">Bottom line:</b> ${bottomLine}</div>`}
           ${etaLabel ? `<div style="font-size:11px;color:var(--text-faint);margin-top:6px">At this rate you reach ${targetWeight} kg around ${etaLabel}.</div>` : ''}
