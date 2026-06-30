@@ -848,6 +848,21 @@ img { display: block; max-width: 100%; }
   font-family: var(--font-mono);
 }
 
+/* ─── Trends' instrument type (scoped) ───────────────────────
+   Same Space Grotesk + Space Mono pairing as Today, applied to Trends
+   so the analytics page reads like a lab instrument: Grotesk on the
+   uppercase labels, Mono on every figure. The number-line signature
+   lives in trends.js. */
+.trends-view .label,
+.trends-view .stat-lbl,
+.trends-view .today-date {
+  font-family: var(--font-display);
+}
+.trends-view .num,
+.trends-view .stat-num {
+  font-family: var(--font-mono);
+}
+
 /* ─── Summary Cards Row ──────────────────────────────────── */
 .summary-row {
   display: flex;

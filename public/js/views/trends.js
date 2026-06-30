@@ -204,6 +204,7 @@ function calcStreak(summary, goal, todayISO) {
 }
 
 export function renderTrends(container) {
+  container.classList.add('trends-view');
   let days = 30;
 
   container.innerHTML = `
@@ -486,11 +487,6 @@ export function renderTrends(container) {
       return `Predicted ${fmtChange(expectedLossKg)} from your logged calories vs set TDEE; scale shows ${fmtChange(actualChangeKg)}. ${read}`;
     })();
 
-    // Signed daily gap of avg intake vs a maintenance baseline: −ve label = a
-    // deficit (eating under), +ve = surplus. Used for the "deficit two ways"
-    // block — intake vs set TDEE (planned) and vs estimated real maint (actual).
-    const defStr = base => { const d = Math.round(base - avgCal); return (d >= 0 ? '−' : '+') + fmtE(Math.abs(d)); };
-
     // Plain-English "bottom line" — translates the verdict numbers into what's
     // happening and why. Only meaningful when real maintenance is estimable
     // (realTDEE != null already implies a reliable weight trend).
@@ -514,31 +510,70 @@ export function renderTrends(container) {
       return s;
     })();
 
+    // ── Signature: the calorie number-line ────────────────────────────────
+    // Plots intake, real maintenance, and set TDEE on one axis so the two
+    // deficits read as distances. The solid accent segment (intake→real maint)
+    // is your real deficit; the dashed extension (→ set TDEE) is the phantom
+    // deficit your set TDEE assumed but the scale says isn't there. SVG uses
+    // hex (CSS vars don't resolve in SVG presentation attributes). Falls back
+    // to a labels-only readout if real maintenance isn't estimable.
+    const numberLine = realTDEE == null ? null : (() => {
+      const intake = avgCal, maint = realTDEE;
+      const showTdee = cfgTdee && Math.abs(cfgTdee - maint) >= 100;   // hide a colliding tick
+      const pts = showTdee ? [intake, maint, cfgTdee] : [intake, maint];
+      const lo = Math.min(...pts), hi = Math.max(...pts);
+      const pad = Math.max(hi - lo, 1) * 0.18;
+      const aMin = lo - pad, aMax = hi + pad;
+      const X = v => 16 + ((v - aMin) / (aMax - aMin)) * 288;   // x within [16,304]
+      const xI = X(intake), xM = X(maint), xT = showTdee ? X(cfgTdee) : 0;
+      const close = Math.abs(xM - xI) < 38;                     // value labels would collide
+      const T = (x, y, s, extra = '') => `<text x="${x.toFixed(1)}" y="${y}" text-anchor="middle" ${extra}>${s}</text>`;
+      const sign = d => (d >= 0 ? '−' : '+') + fmtE(Math.abs(d));
+      const realDef = Math.round(maint - intake);
+      const planDef = cfgTdee ? Math.round(cfgTdee - intake) : null;
+      return `
+        <svg viewBox="0 0 320 78" width="100%" style="display:block;overflow:visible;font-family:var(--font-mono)">
+          <line x1="16" y1="43" x2="304" y2="43" stroke="#2c2c35" stroke-width="2" stroke-linecap="round"/>
+          ${showTdee ? `<line x1="${xM.toFixed(1)}" y1="43" x2="${xT.toFixed(1)}" y2="43" stroke="#4a4a55" stroke-width="2" stroke-dasharray="3 3"/>` : ''}
+          <line x1="${xI.toFixed(1)}" y1="43" x2="${xM.toFixed(1)}" y2="43" stroke="#c8b8ff" stroke-width="4" stroke-linecap="round"/>
+          <circle cx="${xI.toFixed(1)}" cy="43" r="5.5" fill="#c8b8ff" stroke="#16161a" stroke-width="3"/>
+          <line x1="${xM.toFixed(1)}" y1="34" x2="${xM.toFixed(1)}" y2="52" stroke="#f0eff4" stroke-width="2.5" stroke-linecap="round"/>
+          ${showTdee ? `<line x1="${xT.toFixed(1)}" y1="36" x2="${xT.toFixed(1)}" y2="50" stroke="#8b8a96" stroke-width="2" stroke-dasharray="2 2"/>` : ''}
+          <g fill="#f0eff4" font-size="13" font-weight="700">
+            ${T(xI, 25, fmtE(intake))}
+            ${T(xM, close ? 13 : 25, fmtE(maint))}
+            ${showTdee ? T(xT, 25, fmtE(cfgTdee)) : ''}
+          </g>
+          <g fill="#8b8a96" font-size="9" letter-spacing="0.5">
+            ${T(xI, close ? 73 : 66, 'YOU EAT')}
+            ${T(xM, close ? 61 : 66, 'REAL MAINT.')}
+            ${showTdee ? T(xT, 66, 'SET TDEE') : ''}
+          </g>
+        </svg>
+        <div style="font-size:11px;color:var(--text-faint);margin-top:4px">Real deficit <b style="color:var(--accent)">${sign(realDef)} ${ul}</b>${planDef != null ? ` · you planned <span style="color:var(--text-muted)">${sign(planDef)}</span>` : ''}</div>`;
+    })();
+
     const trendsBody = document.getElementById('trends-body');
     if (!trendsBody) return;   // view torn down before render
     trendsBody.innerHTML = `
       <!-- Verdict (hero) -->
-      <div class="card" style="margin-bottom:12px;border:1px solid ${haveVerdict ? (verdictGood ? 'rgba(93,202,138,.45)' : 'rgba(249,115,22,.45)') : 'var(--border)'}">
+      <div class="card" style="margin-bottom:12px;border:1px solid ${haveVerdict ? (verdictGood ? 'rgba(93,202,138,.45)' : 'rgba(249,115,22,.45)') : 'var(--border)'};background:${haveVerdict ? `linear-gradient(180deg, ${verdictGood ? 'rgba(93,202,138,.09)' : 'rgba(249,115,22,.10)'} 0%, transparent 58%), var(--surface)` : 'var(--surface)'}">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px">
           <div class="label">${phase === 'cut' ? 'Is your cut working?' : phase === 'bulk' ? 'Is your bulk working?' : 'Holding maintenance?'}</div>
           <div style="font-size:10px;color:var(--text-faint);flex-shrink:0">last 4 weeks · fixed</div>
         </div>
         ${haveVerdict ? `
-          <div style="font-size:22px;font-weight:800;color:${verdictGood ? 'var(--success)' : FLAG}">${verdictGood ? 'On track ✓' : 'Off track ⚠'}</div>
+          <div style="font-family:var(--font-display);font-size:24px;font-weight:800;text-transform:uppercase;letter-spacing:.02em;color:${verdictGood ? 'var(--success)' : FLAG}">${verdictGood ? 'On track ✓' : 'Off track ⚠'}</div>
           <div style="font-size:13px;color:var(--text-muted);margin:2px 0 12px">${verdictSub}</div>
           <div class="stat-grid">
             <div class="stat-cell"><div class="stat-num">${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(2)}</div><div class="stat-lbl">kg / week</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">your real pace</div></div>
             <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">what you burn</div></div>
             <div class="stat-cell"><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl">${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">${weeksToTarget ? 'at this pace' : '&nbsp;'}</div></div>
           </div>
-          ${(cfgTdee || realTDEE != null) ? `
-          <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
-              <div class="label">Your intake vs maintenance</div>
-              <div style="font-size:13px"><span class="num" style="font-weight:700">${fmtE(avgCal)}</span> <span style="color:var(--text-muted);font-size:11px">${ul}/day · this wk ${fmtE(wkAvg)}</span></div>
-            </div>
-            ${cfgTdee ? `<div class="gp-row" style="padding:6px 0"><span class="gp-lbl">vs set TDEE · ${fmtE(cfgTdee)}</span><span class="gp-val">${defStr(cfgTdee)} <span style="font-size:11px;color:var(--text-faint);font-weight:400">planned</span></span></div>` : ''}
-            ${realTDEE != null ? `<div class="gp-row" style="padding:6px 0"><span class="gp-lbl">vs real maintenance · ${fmtE(realTDEE)}</span><span class="gp-val">${defStr(realTDEE)} <span style="font-size:11px;color:var(--text-faint);font-weight:400">actual</span></span></div>` : ''}
+          ${numberLine ? `
+          <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px">
+            <div class="label" style="margin-bottom:2px">Where you sit · ${ul}/day</div>
+            ${numberLine}
           </div>` : ''}
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>`
             : `<div style="background:var(--surface-2);border-radius:var(--radius-sm);padding:11px 13px;margin-top:12px;font-size:12px;color:var(--text-muted);line-height:1.65"><b style="color:var(--text)">Bottom line:</b> ${bottomLine}</div>`}
