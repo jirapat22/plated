@@ -570,31 +570,27 @@ export function renderTrends(container) {
             <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">what you burn</div></div>
             <div class="stat-cell"><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl">${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">${weeksToTarget ? 'at this pace' : '&nbsp;'}</div></div>
           </div>
-          ${numberLine ? `
-          <details open class="nl-details" style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px">
-            <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:6px">
-              <span class="label">Where you sit · ${ul}/day</span>
-              <span class="nl-chev" style="font-size:9px;color:var(--text-faint)">▾</span>
-            </summary>
-            <div style="margin-top:8px">${numberLine}</div>
-          </details>` : ''}
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>`
-            : `<details open class="nl-details" style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+            : `<details class="nl-details" style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
                 <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:6px">
-                  <span class="label">Bottom line</span>
+                  <span class="label">See the breakdown</span>
                   <span class="nl-chev" style="font-size:9px;color:var(--text-faint)">▾</span>
                 </summary>
-                <div style="background:var(--surface-2);border-radius:var(--radius-sm);padding:11px 13px;margin-top:8px;font-size:12px;color:var(--text-muted);line-height:1.65">${bottomLine}</div>
-                ${etaLabel ? `<div style="font-size:11px;color:var(--text-faint);margin-top:6px">At this rate you reach ${targetWeight} kg around ${etaLabel}.</div>` : ''}
+                <div style="margin-top:12px">
+                  ${numberLine ? `<div class="label" style="margin-bottom:2px">Where you sit · ${ul}/day</div>${numberLine}` : ''}
+                  <div class="label" style="margin-top:16px;margin-bottom:6px">Bottom line</div>
+                  <div style="background:var(--surface-2);border-radius:var(--radius-sm);padding:11px 13px;font-size:12px;color:var(--text-muted);line-height:1.65">${bottomLine}</div>
+                  ${etaLabel ? `<div style="font-size:11px;color:var(--text-faint);margin-top:6px">At this rate you reach ${targetWeight} kg around ${etaLabel}.</div>` : ''}
+                  <details style="margin-top:14px">
+                    <summary style="cursor:pointer;list-style:none;font-size:11px;color:var(--accent);font-weight:700">ⓘ TDEE vs real maintenance — how is this worked out?</summary>
+                    <div style="font-size:11px;color:var(--text-faint);line-height:1.7;margin-top:8px">
+                      <b style="color:var(--text-muted)">Set TDEE</b> is a starting estimate from your stats (in Settings). It never looks at your results — it's a formula's best guess.<br><br>
+                      <b style="color:var(--text-muted)">Real maintenance</b> is measured from what actually happened: your average logged calories minus your real weight change (1&nbsp;kg ≈ 7,700&nbsp;${ul}). If you're losing while eating ${fmtE(avgCal)}, your maintenance has to sit above that — the scale shows by how much. So it folds your weigh-ins in, and it's usually the more accurate of the two — <i>as long as your logging is honest</i>.<br><br>
+                      If real maintenance reads below your set TDEE, it's one of two things — your TDEE was set too high, <i>or</i> you're under-logging — and from this data alone they look identical. To tell which: weigh your food carefully for ~2 weeks. If the number holds, your TDEE was genuinely high; if it climbs back toward your set TDEE, you were under-logging.
+                    </div>
+                  </details>
+                </div>
               </details>`}
-          <details style="margin-top:12px">
-            <summary style="cursor:pointer;list-style:none;font-size:11px;color:var(--accent);font-weight:700">ⓘ TDEE vs real maintenance — how is this worked out?</summary>
-            <div style="font-size:11px;color:var(--text-faint);line-height:1.7;margin-top:8px">
-              <b style="color:var(--text-muted)">Set TDEE</b> is a starting estimate from your stats (in Settings). It never looks at your results — it's a formula's best guess.<br><br>
-              <b style="color:var(--text-muted)">Real maintenance</b> is measured from what actually happened: your average logged calories minus your real weight change (1&nbsp;kg ≈ 7,700&nbsp;${ul}). If you're losing while eating ${fmtE(avgCal)}, your maintenance has to sit above that — the scale shows by how much. So it folds your weigh-ins in, and it's usually the more accurate of the two — <i>as long as your logging is honest</i>.<br><br>
-              If real maintenance reads below your set TDEE, it's one of two things — your TDEE was set too high, <i>or</i> you're under-logging — and from this data alone they look identical. To tell which: weigh your food carefully for ~2 weeks. If the number holds, your TDEE was genuinely high; if it climbs back toward your set TDEE, you were under-logging.
-            </div>
-          </details>
         ` : `
           <div style="font-size:13px;color:var(--text-muted);line-height:1.55">Keep logging to unlock your verdict — it weighs your intake against your real weight change to say whether it's working, and estimates your true maintenance calories.<br><span style="color:var(--text-faint)">Needs ~2 weeks of weigh-ins (have ${wWinVals.length}) and ≥5 fully-logged days (have ${validForAvg.length}).</span></div>
         `}
