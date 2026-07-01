@@ -579,8 +579,14 @@ export function renderTrends(container) {
             <div style="margin-top:8px">${numberLine}</div>
           </details>` : ''}
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>`
-            : `<div style="background:var(--surface-2);border-radius:var(--radius-sm);padding:11px 13px;margin-top:12px;font-size:12px;color:var(--text-muted);line-height:1.65"><b style="color:var(--text)">Bottom line:</b> ${bottomLine}</div>`}
-          ${etaLabel ? `<div style="font-size:11px;color:var(--text-faint);margin-top:6px">At this rate you reach ${targetWeight} kg around ${etaLabel}.</div>` : ''}
+            : `<details open class="nl-details" style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+                <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:6px">
+                  <span class="label">Bottom line</span>
+                  <span class="nl-chev" style="font-size:9px;color:var(--text-faint)">▾</span>
+                </summary>
+                <div style="background:var(--surface-2);border-radius:var(--radius-sm);padding:11px 13px;margin-top:8px;font-size:12px;color:var(--text-muted);line-height:1.65">${bottomLine}</div>
+                ${etaLabel ? `<div style="font-size:11px;color:var(--text-faint);margin-top:6px">At this rate you reach ${targetWeight} kg around ${etaLabel}.</div>` : ''}
+              </details>`}
           <details style="margin-top:12px">
             <summary style="cursor:pointer;list-style:none;font-size:11px;color:var(--accent);font-weight:700">ⓘ TDEE vs real maintenance — how is this worked out?</summary>
             <div style="font-size:11px;color:var(--text-faint);line-height:1.7;margin-top:8px">
