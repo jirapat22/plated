@@ -1,4 +1,4 @@
-const CACHE_NAME = 'plated-v89';
+const CACHE_NAME = 'plated-v90';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -26,10 +26,18 @@ const STATIC_ASSETS = [
 ];
 
 self.addEventListener('install', event => {
+  // Precache the new shell but DON'T skipWaiting — the new worker stays in
+  // "waiting" so the page can show a "new version" prompt and only activate
+  // when the user taps Refresh (or on the next cold launch). Swapping silently
+  // meant users never knew an update landed.
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
   );
-  self.skipWaiting();
+});
+
+// The page posts this when the user accepts the update prompt.
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'skip-waiting') self.skipWaiting();
 });
 
 self.addEventListener('activate', event => {

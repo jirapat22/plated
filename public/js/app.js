@@ -87,9 +87,54 @@ export function navigateTo(view) {
   if (typeof cleanup === 'function') cleanupFn = cleanup;
 }
 
-// ─── Service Worker ──────────────────────────────────────────
+// ─── Service Worker + update prompt ──────────────────────────
+let updateAccepted = false; // set only when the user taps "Refresh"
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(console.warn);
+  // Reload once the new worker takes control — but ONLY after the user accepted
+  // the update. First install also fires controllerchange, and reloading then
+  // would bounce the page on the very first load.
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!updateAccepted || reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+
+  navigator.serviceWorker.register('/sw.js').then(reg => {
+    // A new version may already be waiting from a previous visit.
+    if (reg.waiting && navigator.serviceWorker.controller) showUpdateBanner(reg.waiting);
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      if (!nw) return;
+      nw.addEventListener('statechange', () => {
+        // "installed" while a controller already exists = an update (not the
+        // first install). Prompt instead of swapping silently.
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateBanner(nw);
+      });
+    });
+    // Actively check for a new worker whenever the app is reopened — installed
+    // PWAs (esp. iOS) stay warm and rarely check on their own.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
+  }).catch(console.warn);
+}
+
+function showUpdateBanner(worker) {
+  if (document.getElementById('update-banner')) return;
+  const banner = document.createElement('div');
+  banner.id = 'update-banner';
+  banner.className = 'update-banner';
+  banner.innerHTML = `
+    <span>A new version is available</span>
+    <button id="update-refresh">Refresh</button>`;
+  document.body.appendChild(banner);
+  requestAnimationFrame(() => banner.classList.add('visible'));
+  banner.querySelector('#update-refresh').onclick = () => {
+    updateAccepted = true;
+    worker.postMessage({ type: 'skip-waiting' });
+    banner.remove();
+  };
 }
 
 // ─── Offline indicator ───────────────────────────────────────
