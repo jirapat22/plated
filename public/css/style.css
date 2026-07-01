@@ -862,6 +862,15 @@ img { display: block; max-width: 100%; }
 .trends-view .stat-num {
   font-family: var(--font-mono);
 }
+/* One consistent window indicator on every card so it's clear which cards
+   follow the 7d/30d/90d toggle ("N days") vs which are fixed. */
+.trends-view .range-chip {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-faint);
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
 /* Collapsible sections on Trends — hide the native marker, flip the chevron. */
 .trends-view summary::-webkit-details-marker { display: none; }
 .nl-chev { display: inline-block; transition: transform 0.15s; }

@@ -556,7 +556,7 @@ export function renderTrends(container) {
     // so the signature says something before you expand it.
     const gapSummary = realTDEE == null ? '' : (() => {
       const s = d => (d >= 0 ? '−' : '+') + fmtE(Math.abs(d));
-      return `real ${s(Math.round(realTDEE - avgCal))}${cfgTdee ? ` · planned ${s(Math.round(cfgTdee - avgCal))}` : ''}`;
+      return `${s(Math.round(realTDEE - avgCal))} vs real maint${cfgTdee ? ` · ${s(Math.round(cfgTdee - avgCal))} vs TDEE` : ''}`;
     })();
 
     // The method explainer — shown in both the reliable breakdown and the noisy
@@ -608,12 +608,44 @@ export function renderTrends(container) {
         `}
       </div>
 
+      <!-- Bodyweight + target + expected (the verdict's weight evidence) -->
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+          <div class="label">Bodyweight <span class="range-chip">· ${days} days</span></div>
+          <div style="display:flex;gap:10px;font-size:10px;color:var(--text-faint);flex-wrap:wrap">
+            ${expectedAligned ? `<span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:0;border-top:2px dashed #c8b8ff;display:inline-block"></span>expected from calories</span>` : ''}
+            ${targetWeight ? `<span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>target ${targetWeight} kg</span>` : ''}
+          </div>
+        </div>
+        <div style="height:170px;position:relative"><canvas id="chart-wt"></canvas></div>
+        ${expectedCaption ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">${expectedCaption}<br><span style="opacity:.7">Last 28 days · days you didn't log are counted as maintenance.</span></div>` : ''}
+      </div>
+
+      <!-- Calories chart (the verdict's intake evidence) -->
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div class="label">Calories <span class="range-chip">· ${days} days</span></div>
+          <div style="display:flex;gap:10px;font-size:10px;color:var(--text-faint)">
+            <span style="display:flex;align-items:center;gap:4px">
+              <span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>goal
+            </span>
+            <span style="display:flex;align-items:center;gap:4px">
+              <span style="width:7px;height:7px;background:${FLAG};display:inline-block;border-radius:50%"></span>under-logged
+            </span>
+          </div>
+        </div>
+        <div style="height:160px;position:relative"><canvas id="chart-cal"></canvas></div>
+      </div>
+
+      <!-- ── Shift from "is it working" to "your week & logging" ── -->
+      <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);font-family:var(--font-display);margin:18px 4px 10px">Your week &amp; logging</div>
+
       <!-- This week (Mon–Sun) -->
       ${wkRows.length ? `
       <div class="card" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
           <div class="label">This week</div>
-          <div style="font-size:11px;color:var(--text-faint)">${wkLabel}</div>
+          <span class="range-chip">${wkLabel}</span>
         </div>
         <div class="stat-grid">
           <div class="stat-cell"><div class="stat-num">${fmtE(wkTotal)}</div><div class="stat-lbl">total ${ul}</div></div>
@@ -632,7 +664,7 @@ export function renderTrends(container) {
       <!-- Weekly averages (Mon–Sun), per macro — "am I eating more than usual?" -->
       ${weekData.length >= 2 ? `
       <div class="card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Weekly average — Mon to Sun · ${days}d</div>
+        <div class="label" style="margin-bottom:10px">Weekly average <span class="range-chip">· ${days} days · Mon–Sun</span></div>
         <div class="search-tabs" id="wk-metric" style="padding:0;margin-bottom:10px">
           <button class="search-tab active" data-m="cal">Calories</button>
           <button class="search-tab" data-m="protein">Protein</button>
@@ -642,11 +674,19 @@ export function renderTrends(container) {
         <div id="wk-bars"></div>
       </div>` : ''}
 
-      <!-- Consistency (streak folded in) -->
+      <!-- Consistency -->
       <div class="card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Consistency — ${days}d</div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+          <div class="label">Consistency</div>
+          <span class="range-chip">${days} days</span>
+        </div>
+        <!-- Current streak — an ongoing run, not tied to the range above -->
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--surface-2);border-radius:var(--radius-sm);margin-bottom:10px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M12 2.5c1.2 3.6-3.4 5-3.4 8.7a3.4 3.4 0 0 0 6.8 0c0-1-.5-1.8-.5-1.8s.3 1.6-.8 2c.9-2.6-1.7-3.4-2.1-8.9Z" stroke="#FFA726" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          <span class="num" style="font-size:22px;line-height:1">${streak || '–'}</span>
+          <span style="font-size:12px;color:var(--text-muted);line-height:1.3">day logging streak<br><span style="font-size:10px;color:var(--text-faint)">current run · all-time</span></span>
+        </div>
         <div class="stat-grid">
-          <div class="stat-cell"><div class="stat-num">${streak || '–'}</div><div class="stat-lbl">streak 🔥</div></div>
           <div class="stat-cell"><div class="stat-num">${loggedCount}</div><div class="stat-lbl">days logged</div></div>
           <div class="stat-cell"><div class="stat-num">${completePct}%</div><div class="stat-lbl">fully logged</div></div>
           <div class="stat-cell"><div class="stat-num" style="color:${recentFlagged.length ? FLAG : 'var(--text)'}">${recentFlagged.length}</div><div class="stat-lbl">need a look</div></div>
@@ -682,38 +722,9 @@ export function renderTrends(container) {
         </div>
       </div>` : ''}
 
-      <!-- Bodyweight + target + expected -->
-      <div class="card" style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
-          <div class="label">Bodyweight — ${days}d</div>
-          <div style="display:flex;gap:10px;font-size:10px;color:var(--text-faint);flex-wrap:wrap">
-            ${expectedAligned ? `<span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:0;border-top:2px dashed #c8b8ff;display:inline-block"></span>expected from calories</span>` : ''}
-            ${targetWeight ? `<span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>target ${targetWeight} kg</span>` : ''}
-          </div>
-        </div>
-        <div style="height:170px;position:relative"><canvas id="chart-wt"></canvas></div>
-        ${expectedCaption ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">${expectedCaption}<br><span style="opacity:.7">Last 28 days · days you didn't log are counted as maintenance.</span></div>` : ''}
-      </div>
-
-      <!-- Calories chart -->
-      <div class="card" style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div class="label">Calories — ${days}d</div>
-          <div style="display:flex;gap:10px;font-size:10px;color:var(--text-faint)">
-            <span style="display:flex;align-items:center;gap:4px">
-              <span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>goal
-            </span>
-            <span style="display:flex;align-items:center;gap:4px">
-              <span style="width:7px;height:7px;background:${FLAG};display:inline-block;border-radius:50%"></span>under-logged
-            </span>
-          </div>
-        </div>
-        <div style="height:160px;position:relative"><canvas id="chart-cal"></canvas></div>
-      </div>
-
       <!-- Protein chart -->
       <div class="card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Protein — ${days}d</div>
+        <div class="label" style="margin-bottom:10px">Protein <span class="range-chip">· ${days} days</span></div>
         <div style="height:160px;position:relative"><canvas id="chart-pro"></canvas></div>
       </div>
 
@@ -721,11 +732,11 @@ export function renderTrends(container) {
       <details id="more-macros" style="margin-bottom:12px">
         <summary style="cursor:pointer;list-style:none;font-size:13px;font-weight:700;color:var(--text-muted);padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md)">More macros · carbs & fat</summary>
         <div class="card" style="margin-top:10px">
-          <div class="label" style="margin-bottom:10px">Carbs — ${days}d</div>
+          <div class="label" style="margin-bottom:10px">Carbs <span class="range-chip">· ${days} days</span></div>
           <div style="height:150px;position:relative"><canvas id="chart-carb"></canvas></div>
         </div>
         <div class="card" style="margin-top:12px">
-          <div class="label" style="margin-bottom:10px">Fat — ${days}d</div>
+          <div class="label" style="margin-bottom:10px">Fat <span class="range-chip">· ${days} days</span></div>
           <div style="height:150px;position:relative"><canvas id="chart-fat"></canvas></div>
         </div>
       </details>
