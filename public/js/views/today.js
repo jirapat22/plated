@@ -206,7 +206,6 @@ export function renderToday(container) {
   let viewDate      = localDate();
   let ironlogExpanded = false;
   let loadGen = 0;             // increments on each load; stale responses discarded
-  const ironCache = new Map(); // past days are immutable — cache their IronLog data
 
   async function load() {
     viewDate = localDate();
@@ -219,15 +218,7 @@ export function renderToday(container) {
         api.get(`/api/weight/day/${viewDate}`).catch(() => null),
       ]);
       if (myGen !== loadGen) return;            // a newer load() superseded us
-      // Pull IronLog for the viewed day (endpoint matches workouts by local date).
-      // Cache past days (immutable); always re-fetch today since workouts change.
-      let ironlog;
-      if (viewDate !== localDate() && ironCache.has(viewDate)) {
-        ironlog = ironCache.get(viewDate);
-      } else {
-        ironlog = await fetchIronLog(viewDate);
-        if (viewDate !== localDate()) ironCache.set(viewDate, ironlog);
-      }
+      const ironlog = await fetchIronLog(viewDate);   // always today — fetch fresh
       if (myGen !== loadGen) return;            // and again after the IronLog fetch
       render(mealData, waterData, settings, ironlog, todayWeight);
     } catch (err) {

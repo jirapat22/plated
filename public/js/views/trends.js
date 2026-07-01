@@ -321,11 +321,9 @@ export function renderTrends(container) {
     // ── 7-day average — excludes flagged (likely-incomplete) days ──
     const recent7  = rows.slice(-7);
     const valid7   = recent7.filter(r => (r.meal_count || 0) > 0 && !isFlagged(r.status));
-    const skipped7 = recent7.filter(r => isFlagged(r.status)).length;
     const weeklyAvgKcal = valid7.length
       ? valid7.reduce((s, r) => s + (r.calories ?? 0), 0) / valid7.length
       : null;
-    const weeklyAvg        = weeklyAvgKcal != null ? fmtE(weeklyAvgKcal) : null;
     const weeklyAvgDisplay = weeklyAvgKcal != null ? toDisplay(weeklyAvgKcal) : null;
     const goalDisplay = toDisplay(goal);
 
@@ -550,8 +548,28 @@ export function renderTrends(container) {
             ${showTdee ? T(xT, 66, 'SET TDEE') : ''}
           </g>
         </svg>
-        <div style="font-size:11px;color:var(--text-faint);margin-top:4px;text-align:center;max-width:440px;margin-left:auto;margin-right:auto">Real deficit <b style="color:var(--accent)">${sign(realDef)} ${ul}</b>${planDef != null ? ` · you planned <span style="color:var(--text-muted)">${sign(planDef)}</span>` : ''}</div>`;
+        <div style="font-size:11px;color:var(--text-faint);margin-top:4px;text-align:center;max-width:440px;margin-left:auto;margin-right:auto">${realDef >= 0 ? 'Real deficit' : 'Real surplus'} <b style="color:var(--accent)">${sign(realDef)} ${ul}</b>${planDef != null ? ` · you planned <span style="color:var(--text-muted)">${sign(planDef)}</span>` : ''}</div>
+        <div style="font-size:9px;color:var(--text-faint);text-align:center;margin-top:3px">“You eat” is your average intake over the last 4 weeks</div>`;
     })();
+
+    // Compact "real vs planned deficit" shown on the collapsed breakdown summary,
+    // so the signature says something before you expand it.
+    const gapSummary = realTDEE == null ? '' : (() => {
+      const s = d => (d >= 0 ? '−' : '+') + fmtE(Math.abs(d));
+      return `real ${s(Math.round(realTDEE - avgCal))}${cfgTdee ? ` · planned ${s(Math.round(cfgTdee - avgCal))}` : ''}`;
+    })();
+
+    // The method explainer — shown in both the reliable breakdown and the noisy
+    // fallback, so it's never lost when weigh-ins are too noisy to estimate.
+    const howWorkedOut = `
+      <details style="margin-top:14px">
+        <summary style="cursor:pointer;list-style:none;font-size:11px;color:var(--accent);font-weight:700">ⓘ TDEE vs real maintenance — how is this worked out?</summary>
+        <div style="font-size:11px;color:var(--text-faint);line-height:1.7;margin-top:8px">
+          <b style="color:var(--text-muted)">Set TDEE</b> is a starting estimate from your stats (in Settings). It never looks at your results — it's a formula's best guess.<br><br>
+          <b style="color:var(--text-muted)">Real maintenance</b> is measured from what actually happened: your average logged calories minus your real weight change (1&nbsp;kg ≈ 7,700&nbsp;${ul}). ${realTDEE != null ? `If you're losing while eating ${fmtE(avgCal)}, your maintenance has to sit above that — the scale shows by how much. ` : ''}It folds your weigh-ins in, so it's usually the more accurate of the two — <i>as long as your logging is honest</i>.<br><br>
+          If real maintenance reads below your set TDEE, it's one of two things — your TDEE was set too high, <i>or</i> you're under-logging — and from this data alone they look identical. To tell which: weigh your food carefully for ~2 weeks. If the number holds, your TDEE was genuinely high; if it climbs back toward your set TDEE, you were under-logging.
+        </div>
+      </details>`;
 
     const trendsBody = document.getElementById('trends-body');
     if (!trendsBody) return;   // view torn down before render
@@ -570,25 +588,19 @@ export function renderTrends(container) {
             <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">what you burn</div></div>
             <div class="stat-cell"><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl">${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">${weeksToTarget ? 'at this pace' : '&nbsp;'}</div></div>
           </div>
-          ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>`
+          ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>${howWorkedOut}`
             : `<details class="nl-details" style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
-                <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:6px">
+                <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">
                   <span class="label">See the breakdown</span>
-                  <span class="nl-chev" style="font-size:9px;color:var(--text-faint)">▾</span>
+                  ${gapSummary ? `<span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);margin-left:auto">${gapSummary}</span>` : ''}
+                  <span class="nl-chev" style="font-size:9px;color:var(--text-faint);${gapSummary ? '' : 'margin-left:auto'}">▾</span>
                 </summary>
                 <div style="margin-top:12px">
                   ${numberLine ? `<div class="label" style="margin-bottom:2px">Where you sit · ${ul}/day</div>${numberLine}` : ''}
                   <div class="label" style="margin-top:16px;margin-bottom:6px">Bottom line</div>
                   <div style="background:var(--surface-2);border-radius:var(--radius-sm);padding:11px 13px;font-size:12px;color:var(--text-muted);line-height:1.65">${bottomLine}</div>
                   ${etaLabel ? `<div style="font-size:11px;color:var(--text-faint);margin-top:6px">At this rate you reach ${targetWeight} kg around ${etaLabel}.</div>` : ''}
-                  <details style="margin-top:14px">
-                    <summary style="cursor:pointer;list-style:none;font-size:11px;color:var(--accent);font-weight:700">ⓘ TDEE vs real maintenance — how is this worked out?</summary>
-                    <div style="font-size:11px;color:var(--text-faint);line-height:1.7;margin-top:8px">
-                      <b style="color:var(--text-muted)">Set TDEE</b> is a starting estimate from your stats (in Settings). It never looks at your results — it's a formula's best guess.<br><br>
-                      <b style="color:var(--text-muted)">Real maintenance</b> is measured from what actually happened: your average logged calories minus your real weight change (1&nbsp;kg ≈ 7,700&nbsp;${ul}). If you're losing while eating ${fmtE(avgCal)}, your maintenance has to sit above that — the scale shows by how much. So it folds your weigh-ins in, and it's usually the more accurate of the two — <i>as long as your logging is honest</i>.<br><br>
-                      If real maintenance reads below your set TDEE, it's one of two things — your TDEE was set too high, <i>or</i> you're under-logging — and from this data alone they look identical. To tell which: weigh your food carefully for ~2 weeks. If the number holds, your TDEE was genuinely high; if it climbs back toward your set TDEE, you were under-logging.
-                    </div>
-                  </details>
+                  ${howWorkedOut}
                 </div>
               </details>`}
         ` : `
