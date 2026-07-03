@@ -2,6 +2,7 @@ import { api }                        from '../api.js';
 import { showToast, reloadEnergyUnit, getProfile, applyProfile, logoutToLock, ACCENTS } from '../app.js';
 import { setEnergyUnit }             from '../utils/energy.js';
 import { submitReport }              from '../utils/bugReport.js';
+import { localDate }                 from '../utils/date.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -539,7 +540,7 @@ export function renderSettings(container) {
       const val = parseFloat(document.getElementById('weight-input').value);
       if (!val || val <= 0) { showToast('Enter a valid weight', 'error'); return; }
       try {
-        await api.post('/api/weight', { weight_kg: val });
+        await api.post('/api/weight', { weight_kg: val, date: localDate() });
         document.getElementById('weight-input').value = '';
         showToast('Weight logged', 'success');
         loadWeights();

@@ -78,45 +78,6 @@ async function fetchIronLog(dateStr) {
   } catch { return null; }
 }
 
-// ── Log weight ───────────────────────────────────────────────
-function openLogWeight(date, existing, onSuccess) {
-  showSheet(content => {
-    content.innerHTML = `
-      <div class="sheet-header">
-        <span class="sheet-title">⚖️ Log Bodyweight</span>
-        <button class="sheet-close" id="wt-close">✕</button>
-      </div>
-      <div style="padding:0 16px">
-        <div class="form-group">
-          <label class="form-label">Weight (kg)</label>
-          <input class="input" id="wt-input" type="text" step="0.1" placeholder="e.g. 75.5"
-            value="${existing?.weight_kg || ''}" inputmode="decimal"
-            style="height:52px;font-size:22px;text-align:center;font-weight:700" />
-        </div>
-        <button class="btn btn-primary btn-full" id="wt-save" style="height:48px">Save</button>
-      </div>
-    `;
-    document.getElementById('wt-close').addEventListener('click', hideSheet);
-    setTimeout(() => document.getElementById('wt-input')?.focus(), 200);
-
-    document.getElementById('wt-save').addEventListener('click', async () => {
-      const weight_kg = parseFloat(document.getElementById('wt-input').value);
-      if (!weight_kg || weight_kg <= 0) { showToast('Enter a valid weight', 'error'); return; }
-      const btn = document.getElementById('wt-save');
-      btn.disabled = true; btn.textContent = 'Saving…';
-      try {
-        await api.post('/api/weight', { weight_kg, date });
-        hideSheet();
-        showToast('Weight logged', 'success');
-        onSuccess?.();
-      } catch (err) {
-        showToast(err.message, 'error');
-        btn.disabled = false; btn.textContent = 'Save';
-      }
-    });
-  });
-}
-
 // ── Meal templates ───────────────────────────────────────────
 async function openFromTemplate(date, onSuccess) {
   showSheet(async content => {
@@ -434,22 +395,24 @@ export function renderToday(container) {
         </div>
       </div>
 
-      <!-- Bodyweight -->
+      <!-- Bodyweight — inline quick logger (type + tap, no sheet) -->
       <div style="padding:0 16px 14px">
-        <div class="card" style="display:flex;justify-content:space-between;align-items:center">
-          <div>
+        <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+          <div style="min-width:0">
             <div class="label">${icon(ICON_SCALE, 13, -3)} Bodyweight</div>
             ${todayWeight
-              ? `<div class="num" style="font-size:20px;margin-top:2px">${todayWeight.weight_kg} <span style="font-size:12px;color:var(--text-muted)">kg</span></div>`
+              ? `<div class="num" style="font-size:20px;margin-top:2px">${todayWeight.weight_kg} <span style="font-size:12px;color:var(--text-muted)">kg · today</span></div>`
               : (isToday && ironlog?.bodyweight)
               ? `<div class="num" style="font-size:20px;margin-top:2px">${ironlog.bodyweight.weight_kg} <span style="font-size:12px;color:var(--text-muted)">kg</span></div>
                  <div style="font-size:11px;color:var(--accent);margin-top:2px">${icon(ICON_BOLT, 11, -2)} via IronLog${ironlog.bodyweight.is_today ? ' · today' : ' · ' + ironlog.bodyweight.date}</div>`
-              : `<div style="font-size:12px;color:var(--text-faint);margin-top:3px">Not logged today</div>`
+              : `<div style="font-size:12px;color:var(--text-faint);margin-top:3px">Weigh in and tap Log →</div>`
             }
           </div>
-          <button id="log-weight-btn" class="btn btn-secondary" style="height:36px;padding:0 16px;font-size:13px">
-            ${todayWeight ? 'Update' : 'Log weight'}
-          </button>
+          <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+            <input id="wt-inline" type="text" inputmode="decimal" placeholder="${todayWeight ? todayWeight.weight_kg : '75.5'}"
+              style="width:74px;height:40px;text-align:center;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;background:var(--surface-2);border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);outline:none"/>
+            <button id="wt-inline-save" class="btn btn-primary" style="height:40px;padding:0 14px;font-size:13px">${todayWeight ? 'Update' : 'Log'}</button>
+          </div>
         </div>
       </div>
 
@@ -614,10 +577,24 @@ export function renderToday(container) {
       } catch (err) { showToast(err.message, 'error'); }
     });
 
-    // Weight
-    document.getElementById('log-weight-btn').addEventListener('click', () => {
-      openLogWeight(viewDate, todayWeight, () => load());
-    });
+    // Weight — inline save (Enter or tap). Always logs to today's local date.
+    const wtInput = document.getElementById('wt-inline');
+    const saveWeight = async () => {
+      const weight_kg = parseFloat(wtInput.value);
+      if (!weight_kg || weight_kg <= 0) { showToast('Enter a valid weight', 'error'); wtInput.focus(); return; }
+      const btn = document.getElementById('wt-inline-save');
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        await api.post('/api/weight', { weight_kg, date: viewDate });
+        showToast('Weight logged', 'success');
+        load();
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false; btn.textContent = todayWeight ? 'Update' : 'Log';
+      }
+    };
+    document.getElementById('wt-inline-save').addEventListener('click', saveWeight);
+    wtInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveWeight(); });
 
     // New meal / quick log / template
     document.getElementById('new-meal-btn').addEventListener('click', async () => {
