@@ -137,7 +137,7 @@ export function renderHistory(container) {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="9" width="18" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 9a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.7"/><path d="M12 12v3.2M12 12l2.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
           Bodyweight <span class="num" style="color:var(--text);font-weight:700">${dayWeight.weight_kg} kg</span>
         </div>` : ''}
-        ${n >= 2 ? `
+        ${date <= localDate() && n >= 2 ? `
         <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">
           <div style="font-size:10px;font-weight:700;color:var(--text-faint);letter-spacing:.06em;margin-bottom:6px">
             7-DAY AVG · ${n} of 7 days logged

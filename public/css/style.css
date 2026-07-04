@@ -910,8 +910,9 @@ img { display: block; max-width: 100%; }
   white-space: nowrap;
   font-family: var(--font-mono);
 }
-/* Collapsible sections on Trends — hide the native marker, flip the chevron. */
-.trends-view summary::-webkit-details-marker { display: none; }
+/* Collapsible disclosures (Trends + Today) — hide the native marker, flip the chevron. */
+.trends-view summary::-webkit-details-marker,
+.today-view summary::-webkit-details-marker { display: none; }
 .nl-chev { display: inline-block; transition: transform 0.15s; }
 .nl-details:not([open]) .nl-chev { transform: rotate(-90deg); }
 
