@@ -395,30 +395,32 @@ export function renderToday(container) {
         </div>
       </div>
 
-      <!-- Bodyweight — full inline logger until today's weigh-in exists, then
-           collapses to a slim row (expand to correct the value) -->
+      <!-- Bodyweight — collapses to a slim row whenever there's a value to show
+           (manual weigh-in OR IronLog); the logger sits behind the chevron.
+           Full logger only when there's no weight at all. -->
       <div style="padding:0 16px 14px">
-        ${todayWeight ? `
+        ${(todayWeight || (isToday && ironlog?.bodyweight)) ? `
         <details class="card nl-details">
           <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">
             <span class="label">${icon(ICON_SCALE, 13, -3)} Bodyweight</span>
-            <span class="num" style="margin-left:auto;font-size:15px;font-weight:700">${todayWeight.weight_kg} <span style="font-size:11px;color:var(--text-muted);font-weight:400">kg · today ✓</span></span>
+            <span class="num" style="margin-left:auto;font-size:15px;font-weight:700">
+              ${todayWeight
+                ? `${todayWeight.weight_kg} <span style="font-size:11px;color:var(--text-muted);font-weight:400">kg · today ✓</span>`
+                : `${ironlog.bodyweight.weight_kg} <span style="font-size:11px;color:var(--accent);font-weight:400">kg ${icon(ICON_BOLT, 10, -1)} ${ironlog.bodyweight.is_today ? 'today' : ironlog.bodyweight.date}</span>`}
+            </span>
             <span class="nl-chev" style="font-size:9px;color:var(--text-faint)">▾</span>
           </summary>
           <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:12px">
-            <input id="wt-inline" type="text" inputmode="decimal" placeholder="${todayWeight.weight_kg}"
+            ${!todayWeight ? `<span style="font-size:11px;color:var(--text-faint);margin-right:auto">Log today's weigh-in</span>` : ''}
+            <input id="wt-inline" type="text" inputmode="decimal" placeholder="${todayWeight ? todayWeight.weight_kg : ironlog.bodyweight.weight_kg}"
               style="width:74px;height:40px;text-align:center;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;background:var(--surface-2);border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);outline:none"/>
-            <button id="wt-inline-save" class="btn btn-primary" style="height:40px;padding:0 14px;font-size:13px">Update</button>
+            <button id="wt-inline-save" class="btn btn-primary" style="height:40px;padding:0 14px;font-size:13px">${todayWeight ? 'Update' : 'Log'}</button>
           </div>
         </details>` : `
         <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
           <div style="min-width:0">
             <div class="label">${icon(ICON_SCALE, 13, -3)} Bodyweight</div>
-            ${(isToday && ironlog?.bodyweight)
-              ? `<div class="num" style="font-size:20px;margin-top:2px">${ironlog.bodyweight.weight_kg} <span style="font-size:12px;color:var(--text-muted)">kg</span></div>
-                 <div style="font-size:11px;color:var(--accent);margin-top:2px">${icon(ICON_BOLT, 11, -2)} via IronLog${ironlog.bodyweight.is_today ? ' · today' : ' · ' + ironlog.bodyweight.date}</div>`
-              : `<div style="font-size:12px;color:var(--text-faint);margin-top:3px">Weigh in and tap Log →</div>`
-            }
+            <div style="font-size:12px;color:var(--text-faint);margin-top:3px">Weigh in and tap Log →</div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
             <input id="wt-inline" type="text" inputmode="decimal" placeholder="75.5"
