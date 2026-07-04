@@ -411,20 +411,20 @@ export function renderToday(container) {
             <span class="nl-chev" style="font-size:9px;color:var(--text-faint)">▾</span>
           </summary>
           <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:12px">
-            ${!todayWeight ? `<span style="font-size:11px;color:var(--text-faint);margin-right:auto">Log today's weigh-in</span>` : ''}
-            <input id="wt-inline" type="text" inputmode="decimal" placeholder="${todayWeight ? todayWeight.weight_kg : ironlog.bodyweight.weight_kg}"
-              style="width:74px;height:40px;text-align:center;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;background:var(--surface-2);border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);outline:none"/>
+            ${!todayWeight ? `<span style="font-size:11px;color:var(--warning);margin-right:auto;font-weight:600">Not weighed today — log it here</span>` : ''}
+            <input id="wt-inline" type="text" inputmode="decimal" placeholder="kg"
+              style="width:74px;height:40px;text-align:center;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;background:var(--surface-2);border:1.5px solid ${todayWeight ? 'var(--border)' : 'var(--accent)'};border-radius:var(--radius-sm);color:var(--text);outline:none"/>
             <button id="wt-inline-save" class="btn btn-primary" style="height:40px;padding:0 14px;font-size:13px">${todayWeight ? 'Update' : 'Log'}</button>
           </div>
         </details>` : `
         <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
           <div style="min-width:0">
             <div class="label">${icon(ICON_SCALE, 13, -3)} Bodyweight</div>
-            <div style="font-size:12px;color:var(--text-faint);margin-top:3px">Weigh in and tap Log →</div>
+            <div style="font-size:12px;color:var(--warning);margin-top:3px;font-weight:600">Not weighed today — log it here →</div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
-            <input id="wt-inline" type="text" inputmode="decimal" placeholder="75.5"
-              style="width:74px;height:40px;text-align:center;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;background:var(--surface-2);border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);outline:none"/>
+            <input id="wt-inline" type="text" inputmode="decimal" placeholder="kg"
+              style="width:74px;height:40px;text-align:center;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;background:var(--surface-2);border:1.5px solid var(--accent);border-radius:var(--radius-sm);color:var(--text);outline:none"/>
             <button id="wt-inline-save" class="btn btn-primary" style="height:40px;padding:0 14px;font-size:13px">Log</button>
           </div>
         </div>`}
