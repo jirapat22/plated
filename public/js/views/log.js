@@ -43,7 +43,7 @@ function destinationSheet(title, subtitle, viewDate, others, handlers) {
         </div>
         <label class="form-label">…or another day</label>
         <div style="display:flex;gap:8px;margin-top:6px">
-          <input class="input" id="cp-date" type="date" max="${localDate()}" value="${viewDate}" style="flex:1"/>
+          <input class="input" id="cp-date" type="date" max="${addDaysIso(localDate(), 7)}" value="${viewDate}" style="flex:1"/>
           <button class="btn btn-primary" id="cp-date-go">Copy</button>
         </div>
       </div>`;
@@ -687,6 +687,18 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
         await api.delete(`/api/meals/entries/${entry.id}`);
         entryEl.style.opacity = '0'; entryEl.style.transition = 'opacity .2s';
         setTimeout(() => onDone?.(), 200);
+        // Undo re-adds the same food+quantity to the same meal (macros recalc
+        // from the food record — same math that created the original entry).
+        showToast(`${entry.food_name} deleted`, 'info', {
+          actionLabel: 'Undo',
+          onAction: async () => {
+            try {
+              await api.post(`/api/meals/sessions/${entry.meal_session_id}/entries`,
+                { food_id: entry.food_id, quantity_g: entry.quantity_g });
+              onDone?.();
+            } catch (err) { showToast(err.message, 'error'); }
+          },
+        });
       } catch (err) { showToast(err.message, 'error'); }
     });
     sessionEl.appendChild(entryEl);

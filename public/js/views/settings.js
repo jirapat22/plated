@@ -604,33 +604,87 @@ export function renderSettings(container) {
     });
   }
 
+  let weightsExpanded = false;   // "show older" survives list reloads within the view
   async function loadWeights() {
     try {
-      const weights = await api.get('/api/weight?limit=10');
+      const weights = await api.get('/api/weight?limit=365');
       const list = document.getElementById('weight-list');
       if (!list) return;
       if (weights.length === 0) {
         list.innerHTML = '<div class="muted" style="font-size:13px">No entries yet</div>';
         return;
       }
-      list.innerHTML = weights.map(w => `
-        <div class="weight-entry">
-          <div>
-            <div class="weight-val">${w.weight_kg} kg</div>
+
+      const RECENT = 10;
+      const shown  = weightsExpanded ? weights : weights.slice(0, RECENT);
+      const older  = weights.length - RECENT;
+
+      const row = w => `
+        <div class="weight-entry" data-id="${w.id}">
+          <div style="flex:1;min-width:0">
+            <button class="weight-val weight-edit" data-id="${w.id}" data-kg="${w.weight_kg}" style="padding:0" title="Tap to edit">${w.weight_kg} kg <span style="font-size:11px;color:var(--text-faint)">✎</span></button>
             <div class="weight-date">${w.date}</div>
           </div>
-          <button class="weight-del" data-id="${w.id}">
+          <button class="weight-del" data-id="${w.id}" data-kg="${w.weight_kg}" data-date="${w.date}">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
             </svg>
           </button>
-        </div>
-      `).join('');
+        </div>`;
+
+      list.innerHTML = shown.map(row).join('') + (older > 0 && !weightsExpanded
+        ? `<button id="weight-show-older" class="btn btn-ghost btn-full" style="height:38px;font-size:13px;margin-top:6px">Show ${older} older ▾</button>`
+        : weightsExpanded && older > 0
+        ? `<button id="weight-show-older" class="btn btn-ghost btn-full" style="height:38px;font-size:13px;margin-top:6px">Show recent only ▴</button>`
+        : '');
+
+      document.getElementById('weight-show-older')?.addEventListener('click', () => {
+        weightsExpanded = !weightsExpanded;
+        loadWeights();
+      });
+
+      // Tap a value → inline edit → PATCH (date stays put)
+      list.querySelectorAll('.weight-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const entryEl = btn.closest('.weight-entry');
+          const cur = btn.dataset.kg;
+          btn.outerHTML = `<span style="display:inline-flex;gap:6px;align-items:center">
+            <input class="input weight-edit-input" type="text" inputmode="decimal" value="${cur}"
+              style="width:76px;height:34px;padding:0 8px;text-align:center;font-weight:700"/>
+            <button class="btn btn-primary weight-edit-save" data-id="${btn.dataset.id}" style="height:34px;padding:0 12px;font-size:12px">Save</button>
+          </span>`;
+          const input = entryEl.querySelector('.weight-edit-input');
+          input.focus(); input.select();
+          const save = async () => {
+            const v = parseFloat(input.value);
+            if (!v || v <= 0) { showToast('Enter a valid weight', 'error'); return; }
+            try {
+              await api.patch(`/api/weight/${btn.dataset.id}`, { weight_kg: v });
+              showToast('Weight updated', 'success');
+              loadWeights();
+            } catch (err) { showToast(err.message, 'error'); }
+          };
+          entryEl.querySelector('.weight-edit-save').addEventListener('click', save);
+          input.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+        });
+      });
+
+      // Delete → undo toast re-logs the same value on the same date
       list.querySelectorAll('.weight-del').forEach(btn => {
         btn.addEventListener('click', async () => {
+          const { kg, date } = btn.dataset;
           try {
             await api.delete(`/api/weight/${btn.dataset.id}`);
             loadWeights();
+            showToast(`${kg} kg on ${date} deleted`, 'info', {
+              actionLabel: 'Undo',
+              onAction: async () => {
+                try {
+                  await api.post('/api/weight', { weight_kg: parseFloat(kg), date });
+                  loadWeights();
+                } catch (err) { showToast(err.message, 'error'); }
+              },
+            });
           } catch (err) {
             showToast(err.message, 'error');
           }

@@ -12,6 +12,7 @@ function fmtDateFull(iso) {
   const d = new Date(iso + 'T00:00:00');
   const today = isoDate(new Date());
   if (iso === today) return 'Today';
+  if (iso === isoDate(addDays(new Date(), 1))) return 'Tomorrow';
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
@@ -39,14 +40,17 @@ export function renderHistory(container) {
     if (!strip) return;   // view torn down (tab switch) during async load
     strip.innerHTML = '';
     const summaryByDate = Object.fromEntries(summary.map(r => [r.date, r]));
+    const todayIso = isoDate(new Date());
 
-    for (let i = 29; i >= 0; i--) {
+    // 30 days back through 7 days ahead — future days let you pre-log planned
+    // meals (they render dimmer so "the future" reads at a glance).
+    for (let i = 29; i >= -7; i--) {
       const d   = addDays(new Date(), -i);
       const iso = isoDate(d);
       const has = !!summaryByDate[iso];
 
       const el = document.createElement('button');
-      el.className = `cal-day${has ? ' has-data' : ''}${iso === selectedDate ? ' selected' : ''}`;
+      el.className = `cal-day${has ? ' has-data' : ''}${iso === selectedDate ? ' selected' : ''}${iso > todayIso ? ' future' : ''}`;
       el.dataset.date = iso;
       el.innerHTML = `
         <div class="cal-day-name">${fmtWeekday(d)}</div>
@@ -72,12 +76,13 @@ export function renderHistory(container) {
     if (!dayEl) return;   // view torn down before/while loading
     dayEl.innerHTML = '<div class="skeleton skel-line" style="margin-bottom:10px"></div><div class="skeleton skel-line" style="width:70%"></div>';
     try {
-      const [mealData, settings] = await Promise.all([
+      const [mealData, settings, dayWeight] = await Promise.all([
         api.get(`/api/meals/day/${date}`),
         api.get('/api/settings'),
+        api.get(`/api/weight/day/${date}`).catch(() => null),
       ]);
       if (!document.getElementById('history-day')) return;   // navigated away during fetch
-      renderDay(dayEl, mealData, settings, date);
+      renderDay(dayEl, mealData, settings, date, dayWeight);
     } catch (err) {
       dayEl.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
     }
@@ -91,7 +96,7 @@ export function renderHistory(container) {
     loadDay(date);
   }
 
-  function renderDay(el, mealData, settings, date) {
+  function renderDay(el, mealData, settings, date, dayWeight) {
     const goals = {
       cal:    parseFloat(settings.calorie_goal) || 2000,
       protein:parseFloat(settings.protein_goal) || 150,
@@ -127,6 +132,11 @@ export function renderHistory(container) {
           </div>
         </div>
         <div id="hist-macro-bar"></div>
+        ${dayWeight ? `
+        <div style="display:flex;align-items:center;gap:6px;border-top:1px solid var(--border);margin-top:12px;padding-top:10px;font-size:12px;color:var(--text-muted)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="9" width="18" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 9a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.7"/><path d="M12 12v3.2M12 12l2.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          Bodyweight <span class="num" style="color:var(--text);font-weight:700">${dayWeight.weight_kg} kg</span>
+        </div>` : ''}
         ${n >= 2 ? `
         <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">
           <div style="font-size:10px;font-weight:700;color:var(--text-faint);letter-spacing:.06em;margin-bottom:6px">
@@ -148,7 +158,8 @@ export function renderHistory(container) {
     renderMacroBar(el.querySelector('#hist-macro-bar'), t, goals, false);
 
     if (mealData.sessions.length === 0) {
-      el.insertAdjacentHTML('beforeend', '<div class="empty-state" style="padding:20px 0"><div class="empty-icon">🍽</div><div class="empty-text">No meals logged</div></div>');
+      const future = date > localDate();
+      el.insertAdjacentHTML('beforeend', `<div class="empty-state" style="padding:20px 0"><div class="empty-icon">🍽</div><div class="empty-text">${future ? 'Nothing planned yet — add a meal below to plan ahead' : 'No meals logged'}</div></div>`);
     } else {
       const isPast = date < localDate();
       mealData.sessions.forEach(session => {

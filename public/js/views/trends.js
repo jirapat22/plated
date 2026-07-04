@@ -277,8 +277,11 @@ export function renderTrends(container) {
     const streak      = calcStreak(summary, goal, todayISO);
 
     // Tag every day; charts + consistency use the selected range, the verdict
-    // uses a fixed 28-day window (below) regardless of range.
-    const fullRows = summary.map(r => ({ ...r, status: classifyDay(r, goal, todayISO) }));
+    // uses a fixed 28-day window (below) regardless of range. Future dates
+    // (pre-logged planned meals) are excluded — Trends reads what happened,
+    // not what's planned.
+    const fullRows = summary.filter(r => r.date <= todayISO)
+      .map(r => ({ ...r, status: classifyDay(r, goal, todayISO) }));
     const rows = fullRows.slice(-days);
     const loggedDays   = rows.filter(r => (r.meal_count || 0) > 0);
     const flaggedDays  = rows.filter(r => isFlagged(r.status));

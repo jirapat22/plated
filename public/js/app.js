@@ -15,18 +15,40 @@ let currentView = 'today';
 let cleanupFn   = null;
 
 // ─── Toast ─────────────────────────────────────────────────
-export function showToast(msg, type = 'info') {
+// opts: { actionLabel, onAction, duration } — an action (e.g. Undo) keeps the
+// toast up longer and runs onAction once when tapped.
+export function showToast(msg, type = 'info', opts = {}) {
   const container = document.getElementById('toast-container');
   const icons = { success: '✓', error: '✕', info: 'ℹ' };
   const el = document.createElement('div');
   el.className = `toast ${type}`;
   el.innerHTML = `<span class="toast-icon">${icons[type] || 'ℹ'}</span><span class="toast-msg"></span>`;
   el.querySelector('.toast-msg').textContent = msg;   // textContent = no HTML injection
-  container.appendChild(el);
-  setTimeout(() => {
+
+  const dismiss = () => {
     el.classList.add('out');
     setTimeout(() => el.remove(), 250);
-  }, 3000);
+  };
+  let timer;
+
+  if (opts.actionLabel && opts.onAction) {
+    const btn = document.createElement('button');
+    btn.textContent = opts.actionLabel;
+    btn.style.cssText = 'margin-left:auto;flex-shrink:0;color:var(--accent);font-size:13px;font-weight:700;padding:2px 8px';
+    let used = false;
+    btn.addEventListener('click', () => {
+      if (used) return;
+      used = true;
+      clearTimeout(timer);
+      dismiss();
+      opts.onAction();
+    });
+    el.appendChild(btn);
+    el.style.pointerEvents = 'auto';   // container is pointer-events:none
+  }
+
+  container.appendChild(el);
+  timer = setTimeout(dismiss, opts.duration || (opts.actionLabel ? 6000 : 3000));
 }
 
 // ─── Bottom Sheet ───────────────────────────────────────────

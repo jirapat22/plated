@@ -81,4 +81,24 @@ router.delete('/:id', (req, res) => {
   }
 });
 
+// PATCH /api/weight/:id — correct a weigh-in's value (date stays put)
+router.patch('/:id', (req, res) => {
+  try {
+    const weight_kg = parseFloat(req.body.weight_kg);
+    if (!weight_kg || weight_kg <= 0) {
+      return res.status(400).json({ error: 'weight_kg must be > 0' });
+    }
+    const db = getDb();
+    const result = db.prepare(
+      'UPDATE weight_log SET weight_kg = $w WHERE id = $id AND profile_id = $pid'
+    ).run({ w: weight_kg, id: req.params.id, pid: req.profileId });
+    if (result.changes === 0) return res.status(404).json({ error: 'Entry not found' });
+    const entry = db.prepare('SELECT * FROM weight_log WHERE id = $id').get({ id: req.params.id });
+    pushBodyweight(db, req.profileId, entry.date, weight_kg);  // keep IronLog in sync (best-effort)
+    res.json(entry);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
