@@ -206,6 +206,8 @@ function calcStreak(summary, goal, todayISO) {
 export function renderTrends(container) {
   container.classList.add('trends-view');
   let days = 30;
+  let weighInsOpen = false;       // weigh-ins disclosure survives re-renders
+  let weighInsExpanded = false;   // "show older" state, ditto
 
   container.innerHTML = `
     <div class="today-header">
@@ -622,6 +624,15 @@ export function renderTrends(container) {
         </div>
         <div style="height:170px;position:relative"><canvas id="chart-wt"></canvas></div>
         ${expectedCaption ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">${expectedCaption}<br><span style="opacity:.7">Last 28 days · days you didn't log are counted as maintenance.</span></div>` : ''}
+        ${localWeights.length ? `
+        <details id="wt-log-details" class="nl-details" ${weighInsOpen ? 'open' : ''} style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
+          <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">
+            <span class="label">Weigh-ins</span>
+            <span class="range-chip">${localWeights.length} logged</span>
+            <span class="nl-chev" style="font-size:9px;color:var(--text-faint);margin-left:auto">▾</span>
+          </summary>
+          <div id="wt-log-list" style="margin-top:4px"></div>
+        </details>` : ''}
       </div>
 
       <!-- Calories chart (the verdict's intake evidence) -->
@@ -744,6 +755,78 @@ export function renderTrends(container) {
         </div>
       </details>
     `;
+
+    // Weigh-ins list (browse / edit / delete with undo) under the weight chart.
+    // Manual entries only — IronLog weigh-ins are managed in IronLog. Any
+    // mutation re-runs load() so the chart and verdict stay in sync.
+    const wtDetails = document.getElementById('wt-log-details');
+    wtDetails?.addEventListener('toggle', () => { weighInsOpen = wtDetails.open; });
+    (function renderWeighIns() {
+      const box = document.getElementById('wt-log-list');
+      if (!box) return;
+      const RECENT = 8;
+      const shown = weighInsExpanded ? localWeights : localWeights.slice(0, RECENT);
+      const older = localWeights.length - RECENT;
+
+      box.innerHTML = shown.map(w => `
+        <div class="weight-entry" data-id="${w.id}" style="padding:9px 0">
+          <div style="flex:1;min-width:0">
+            <button class="wt-edit" data-id="${w.id}" data-kg="${w.weight_kg}" style="padding:0;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums" title="Tap to edit">${w.weight_kg} kg <span style="font-size:11px;color:var(--text-faint)">✎</span></button>
+            <div class="weight-date">${w.date}</div>
+          </div>
+          <button class="weight-del wt-del" data-id="${w.id}" data-kg="${w.weight_kg}" data-date="${w.date}">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+        </div>`).join('')
+        + (older > 0 ? `<button id="wt-show-older" class="btn btn-ghost btn-full" style="height:36px;font-size:12px;margin-top:4px">${weighInsExpanded ? 'Show recent only ▴' : `Show ${older} older ▾`}</button>` : '');
+
+      document.getElementById('wt-show-older')?.addEventListener('click', () => {
+        weighInsExpanded = !weighInsExpanded;
+        renderWeighIns();
+      });
+
+      box.querySelectorAll('.wt-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const entryEl = btn.closest('.weight-entry');
+          btn.outerHTML = `<span style="display:inline-flex;gap:6px;align-items:center">
+            <input class="input wt-edit-input" type="text" inputmode="decimal" value="${btn.dataset.kg}" style="width:76px;height:34px;padding:0 8px;text-align:center;font-weight:700"/>
+            <button class="btn btn-primary wt-edit-save" style="height:34px;padding:0 12px;font-size:12px">Save</button>
+          </span>`;
+          const input = entryEl.querySelector('.wt-edit-input');
+          input.focus(); input.select();
+          const save = async () => {
+            const v = parseFloat(input.value);
+            if (!v || v <= 0) { showToast('Enter a valid weight', 'error'); return; }
+            try {
+              await api.patch(`/api/weight/${btn.dataset.id}`, { weight_kg: v });
+              showToast('Weight updated', 'success');
+              load();
+            } catch (err) { showToast(err.message, 'error'); }
+          };
+          entryEl.querySelector('.wt-edit-save').addEventListener('click', save);
+          input.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+        });
+      });
+
+      box.querySelectorAll('.wt-del').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const { kg, date } = btn.dataset;
+          try {
+            await api.delete(`/api/weight/${btn.dataset.id}`);
+            load();
+            showToast(`${kg} kg on ${date} deleted`, 'info', {
+              actionLabel: 'Undo',
+              onAction: async () => {
+                try {
+                  await api.post('/api/weight', { weight_kg: parseFloat(kg), date });
+                  load();
+                } catch (err) { showToast(err.message, 'error'); }
+              },
+            });
+          } catch (err) { showToast(err.message, 'error'); }
+        });
+      });
+    })();
 
     // Review-list actions
     document.querySelectorAll('.review-add').forEach(btn => {

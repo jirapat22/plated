@@ -2,7 +2,6 @@ import { api }                        from '../api.js';
 import { showToast, reloadEnergyUnit, getProfile, applyProfile, logoutToLock, ACCENTS } from '../app.js';
 import { setEnergyUnit }             from '../utils/energy.js';
 import { submitReport }              from '../utils/bugReport.js';
-import { localDate }                 from '../utils/date.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -92,6 +91,15 @@ export function renderSettings(container) {
 
           <!-- 4. Resulting daily calorie goal -->
           <div id="phase-goal" class="phase-goal">${goalResult(s)}</div>
+
+          <!-- 5. Target weight — powers the Trends verdict ETA -->
+          <label class="form-label" style="margin-top:16px;display:block">④ Target weight <span style="font-weight:400;color:var(--text-faint)">(optional)</span></label>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+            <input class="input settings-row-input" type="text" inputmode="decimal" value="${s.target_weight_kg || ''}"
+              data-key="target_weight_kg" placeholder="e.g. 75" style="height:40px;flex:1;width:auto" />
+            <span style="font-size:12px;color:var(--text-muted)">kg</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-faint);margin-top:4px">Used on Trends to project when you'll get there.</div>
         </div>
       </div>
 
@@ -122,13 +130,6 @@ export function renderSettings(container) {
         <div style="padding:10px 16px 14px;font-size:11px;color:var(--text-faint)">These update automatically when you sync from IronLog.</div>
       </div>
 
-      <!-- Target weight -->
-      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
-        <div class="sec-head">⚖️ Target Weight<span class="sec-chevron">▾</span></div>
-        ${goalRow('target_weight_kg', 'Goal weight', s.target_weight_kg, 'kg')}
-        <div style="padding:10px 16px 14px;font-size:11px;color:var(--text-faint)">Used on the Trends page to track progress toward your goal.</div>
-      </div>
-
       <!-- IronLog -->
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
         <div class="sec-head">⚡ IronLog Integration<span class="sec-chevron">▾</span></div>
@@ -151,19 +152,6 @@ export function renderSettings(container) {
           </button>
           <div id="ironlog-status" style="margin-top:10px;font-size:12px;color:var(--text-muted);user-select:text;-webkit-user-select:text"></div>
           <pre id="ironlog-raw-box" style="display:none;margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;user-select:text;-webkit-user-select:text;max-height:300px;overflow-y:auto"></pre>
-        </div>
-      </div>
-
-      <!-- Weight Log -->
-      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
-        <div class="sec-head">📉 Weight Log<span class="sec-chevron">▾</span></div>
-        <div style="padding:14px 16px">
-          <div style="display:flex;gap:10px;margin-bottom:14px">
-            <input class="input" id="weight-input" type="text" inputmode="decimal" step="0.1" placeholder="e.g. 75.5" style="flex:1"/>
-            <span style="align-self:center;color:var(--text-muted);font-weight:600">kg</span>
-            <button class="btn btn-primary" id="weight-log-btn">Log</button>
-          </div>
-          <div id="weight-list"></div>
         </div>
       </div>
 
@@ -588,111 +576,7 @@ export function renderSettings(container) {
       }
     });
 
-    // Weight log
-    loadWeights();
-    document.getElementById('weight-log-btn').addEventListener('click', async () => {
-      const val = parseFloat(document.getElementById('weight-input').value);
-      if (!val || val <= 0) { showToast('Enter a valid weight', 'error'); return; }
-      try {
-        await api.post('/api/weight', { weight_kg: val, date: localDate() });
-        document.getElementById('weight-input').value = '';
-        showToast('Weight logged', 'success');
-        loadWeights();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    });
   }
-
-  let weightsExpanded = false;   // "show older" survives list reloads within the view
-  async function loadWeights() {
-    try {
-      const weights = await api.get('/api/weight?limit=365');
-      const list = document.getElementById('weight-list');
-      if (!list) return;
-      if (weights.length === 0) {
-        list.innerHTML = '<div class="muted" style="font-size:13px">No entries yet</div>';
-        return;
-      }
-
-      const RECENT = 10;
-      const shown  = weightsExpanded ? weights : weights.slice(0, RECENT);
-      const older  = weights.length - RECENT;
-
-      const row = w => `
-        <div class="weight-entry" data-id="${w.id}">
-          <div style="flex:1;min-width:0">
-            <button class="weight-val weight-edit" data-id="${w.id}" data-kg="${w.weight_kg}" style="padding:0" title="Tap to edit">${w.weight_kg} kg <span style="font-size:11px;color:var(--text-faint)">✎</span></button>
-            <div class="weight-date">${w.date}</div>
-          </div>
-          <button class="weight-del" data-id="${w.id}" data-kg="${w.weight_kg}" data-date="${w.date}">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-            </svg>
-          </button>
-        </div>`;
-
-      list.innerHTML = shown.map(row).join('') + (older > 0 && !weightsExpanded
-        ? `<button id="weight-show-older" class="btn btn-ghost btn-full" style="height:38px;font-size:13px;margin-top:6px">Show ${older} older ▾</button>`
-        : weightsExpanded && older > 0
-        ? `<button id="weight-show-older" class="btn btn-ghost btn-full" style="height:38px;font-size:13px;margin-top:6px">Show recent only ▴</button>`
-        : '');
-
-      document.getElementById('weight-show-older')?.addEventListener('click', () => {
-        weightsExpanded = !weightsExpanded;
-        loadWeights();
-      });
-
-      // Tap a value → inline edit → PATCH (date stays put)
-      list.querySelectorAll('.weight-edit').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const entryEl = btn.closest('.weight-entry');
-          const cur = btn.dataset.kg;
-          btn.outerHTML = `<span style="display:inline-flex;gap:6px;align-items:center">
-            <input class="input weight-edit-input" type="text" inputmode="decimal" value="${cur}"
-              style="width:76px;height:34px;padding:0 8px;text-align:center;font-weight:700"/>
-            <button class="btn btn-primary weight-edit-save" data-id="${btn.dataset.id}" style="height:34px;padding:0 12px;font-size:12px">Save</button>
-          </span>`;
-          const input = entryEl.querySelector('.weight-edit-input');
-          input.focus(); input.select();
-          const save = async () => {
-            const v = parseFloat(input.value);
-            if (!v || v <= 0) { showToast('Enter a valid weight', 'error'); return; }
-            try {
-              await api.patch(`/api/weight/${btn.dataset.id}`, { weight_kg: v });
-              showToast('Weight updated', 'success');
-              loadWeights();
-            } catch (err) { showToast(err.message, 'error'); }
-          };
-          entryEl.querySelector('.weight-edit-save').addEventListener('click', save);
-          input.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
-        });
-      });
-
-      // Delete → undo toast re-logs the same value on the same date
-      list.querySelectorAll('.weight-del').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const { kg, date } = btn.dataset;
-          try {
-            await api.delete(`/api/weight/${btn.dataset.id}`);
-            loadWeights();
-            showToast(`${kg} kg on ${date} deleted`, 'info', {
-              actionLabel: 'Undo',
-              onAction: async () => {
-                try {
-                  await api.post('/api/weight', { weight_kg: parseFloat(kg), date });
-                  loadWeights();
-                } catch (err) { showToast(err.message, 'error'); }
-              },
-            });
-          } catch (err) {
-            showToast(err.message, 'error');
-          }
-        });
-      });
-    } catch { /* non-fatal */ }
-  }
-
 
   load();
 }

@@ -64,6 +64,22 @@ router.post('/', (req, res) => {
   }
 });
 
+// PATCH /api/templates/:id — rename
+router.patch('/:id', (req, res) => {
+  try {
+    const name = req.body.name?.trim();
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const db = getDb();
+    const result = db
+      .prepare('UPDATE meal_templates SET name = $name WHERE id = $id AND profile_id = $pid')
+      .run({ name, id: req.params.id, pid: req.profileId });
+    if (result.changes === 0) return res.status(404).json({ error: 'Template not found' });
+    res.json(db.prepare('SELECT * FROM meal_templates WHERE id = $id').get({ id: req.params.id }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.delete('/:id', (req, res) => {
   try {
     const result = getDb()
