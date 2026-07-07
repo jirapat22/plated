@@ -6,6 +6,7 @@ import { fmtE, unitLabel } from '../utils/energy.js';
 import { localDate }                       from '../utils/date.js';
 import { classifyDay, isFlagged, LOG_STRONG } from '../utils/logCheck.js';
 import { assert } from '../utils/bugReport.js';
+import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
 
 const CIRC = 2 * Math.PI * 60;
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -274,14 +275,11 @@ export function renderToday(container) {
     const hiddenCount = Math.max(0, entries.length - 3);
 
     // IronLog/phase summary for collapsed row
-    const tdee  = parseFloat(settings.tdee);
-    const phase = settings.phase || 'maintain';
-    const deficit = parseInt(settings.cut_deficit) || 500;
-    const surplus = parseInt(settings.bulk_surplus) || 300;
-    const target  = phase === 'cut' ? tdee - deficit : phase === 'bulk' ? tdee + surplus : tdee;
-    const diff    = net - target;
-    const onTrack = tdee && Math.abs(diff) <= 150;
-    const phaseLabel = tdee
+    const { tdee, phase, deficit, surplus } = parsePhaseSettings(settings);
+    const target  = phaseCalorieGoal(tdee, phase, deficit, surplus);
+    const diff    = target != null ? net - target : null;
+    const onTrack = target != null && Math.abs(diff) <= 150;
+    const phaseLabel = target != null
       ? (onTrack ? 'On track ✓' : diff > 150 ? `+${fmtE(diff)} ${ul} over` : `${fmtE(-diff)} ${ul} under`)
       : phase;
 
@@ -657,14 +655,11 @@ function phaseBadge(phase) {
 }
 
 function phaseProgressCard(settings, totals, burned) {
-  const tdee = parseFloat(settings.tdee);
-  if (!tdee) return '';
+  const { tdee, phase, deficit, surplus } = parsePhaseSettings(settings);
+  const target = phaseCalorieGoal(tdee, phase, deficit, surplus);
+  if (target == null) return '';
   const ul      = unitLabel();
-  const phase   = settings.phase || 'maintain';
-  const deficit = parseInt(settings.cut_deficit)  || 500;
-  const surplus = parseInt(settings.bulk_surplus) || 300;
   const net     = (totals.calories || 0) - burned;
-  const target  = phase === 'cut' ? tdee - deficit : phase === 'bulk' ? tdee + surplus : tdee;
   const diff    = net - target;
   const onTrack = Math.abs(diff) <= 150;
   const over    = diff > 150;

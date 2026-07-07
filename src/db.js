@@ -35,6 +35,10 @@ function initDb() {
       fiber_per_100g    REAL,
       serving_size_g    REAL    DEFAULT 100,
       source            TEXT    DEFAULT 'custom',
+      -- Legacy pre-multi-profile columns. Live favouriting/use-count now lives
+      -- in profile_food_stats (per-profile); these are read exactly once, by
+      -- adoptOrphanData() when the first profile is created, to migrate old
+      -- single-user data. Never written to since.
       is_favourite      INTEGER DEFAULT 0,
       use_count         INTEGER DEFAULT 0,
       created_at        TEXT    DEFAULT (datetime('now'))
@@ -72,7 +76,7 @@ function initDb() {
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       date       TEXT    NOT NULL,
       weight_kg  REAL    NOT NULL,
-      note       TEXT,
+      note       TEXT,    -- unused: no UI sets or shows this yet
       logged_at  TEXT    DEFAULT (datetime('now'))
     );
 

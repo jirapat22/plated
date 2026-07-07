@@ -2,6 +2,7 @@ import { api }                        from '../api.js';
 import { showToast, reloadEnergyUnit, getProfile, applyProfile, logoutToLock, ACCENTS } from '../app.js';
 import { setEnergyUnit }             from '../utils/energy.js';
 import { submitReport }              from '../utils/bugReport.js';
+import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -186,7 +187,7 @@ export function renderSettings(container) {
         <div class="sec-head danger">⚠️ Danger Zone<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
-            Permanently deletes all logged meals, water, weight entries, and templates. Your food database and goal settings are kept.
+            Permanently deletes all logged meals, water, weight entries, templates, and meal-prep batches. Your food database and goal settings are kept.
           </div>
           <button class="btn btn-danger btn-full" id="reset-data-btn">🗑 Clear all logged data</button>
         </div>
@@ -300,12 +301,10 @@ export function renderSettings(container) {
     // and refresh the result box.
     async function refreshGoal() {
       const goalEl = document.getElementById('phase-goal');
-      const tdee = parseFloat(s.tdee);
-      if (tdee) {
-        const phase = s.phase || 'maintain';
-        const deficit = parseInt(s.cut_deficit) || 500;
-        const surplus = parseInt(s.bulk_surplus) || 300;
-        const cal = Math.round(phase === 'cut' ? tdee - deficit : phase === 'bulk' ? tdee + surplus : tdee);
+      const { tdee, phase, deficit, surplus } = parsePhaseSettings(s);
+      const goal = phaseCalorieGoal(tdee, phase, deficit, surplus);
+      if (goal != null) {
+        const cal = Math.round(goal);
         s.calorie_goal = String(cal);
         try { await api.patch('/api/settings', { calorie_goal: s.calorie_goal }); } catch { /* non-fatal */ }
         const ci = body.querySelector('[data-key="calorie_goal"]');
@@ -328,22 +327,23 @@ export function renderSettings(container) {
         document.getElementById('msplit-cg').textContent = Math.round(cal * c / 100 / 4) + ' g';
         document.getElementById('msplit-total').textContent = '= 100%';
       };
+      // Single clamp pass, reused by both inputs and the Apply handler: protein
+      // 0-100, fat capped to whatever protein leaves — so the pair can never
+      // total over 100 regardless of which field the user is typing in.
       const read = () => {
-        let p = clamp(parseInt(msP.value) || 0, 0, 100);
-        let f = clamp(parseInt(msF.value) || 0, 0, 100 - p);   // fat capped to what's left after protein
+        const p = clamp(parseInt(msP.value) || 0, 0, 100);
+        const f = clamp(parseInt(msF.value) || 0, 0, 100 - p);
         return { p, f };
       };
       msP.addEventListener('input', () => {
-        let p = clamp(parseInt(msP.value) || 0, 0, 100);
-        if (String(p) !== msP.value && (parseInt(msP.value) || 0) > 100) msP.value = p;
-        let f = parseInt(msF.value) || 0;
-        if (p + f > 100) { f = 100 - p; msF.value = f; }   // squeeze fat when protein grows
+        const { p, f } = read();
+        if (parseInt(msP.value) > p) msP.value = p;   // reject an over-100 keystroke
+        if (parseInt(msF.value) !== f) msF.value = f;  // squeeze fat when protein grows
         draw(p, f);
       });
       msF.addEventListener('input', () => {
-        let p = parseInt(msP.value) || 0;
-        let f = clamp(parseInt(msF.value) || 0, 0, 100 - p);
-        if (String(f) !== msF.value) msF.value = f;         // can't exceed the remainder
+        const { p, f } = read();
+        if (parseInt(msF.value) !== f) msF.value = f;  // can't exceed the remainder
         draw(p, f);
       });
       document.getElementById('msplit-apply').addEventListener('click', async () => {
@@ -410,11 +410,8 @@ export function renderSettings(container) {
     document.getElementById('manual-tdee-apply').addEventListener('click', async () => {
       const tdee = parseFloat(body.querySelector('[data-key="tdee"]')?.value);
       if (!tdee || tdee < 500) { showToast('Enter a valid TDEE (e.g. 2400)', 'error'); return; }
-      const phase   = s.phase || 'maintain';
-      const deficit = parseInt(s.cut_deficit)  || 500;
-      const surplus = parseInt(s.bulk_surplus) || 300;
-      const calGoal = phase === 'cut'  ? tdee - deficit
-                    : phase === 'bulk' ? tdee + surplus : tdee;
+      const { phase, deficit, surplus } = parsePhaseSettings(s);
+      const calGoal = phaseCalorieGoal(tdee, phase, deficit, surplus);
       try {
         await api.patch('/api/settings', { tdee: String(tdee), calorie_goal: String(calGoal) });
         s.tdee = String(tdee);
@@ -662,13 +659,8 @@ function phaseBtn(phase, label, current) {
 // Prominent "your daily calorie goal" result for the Goal Phase section.
 // Computes live from TDEE + phase + adjustment; falls back to the synced goal.
 function goalResult(s) {
-  const tdee    = parseFloat(s.tdee) || null;
-  const phase   = s.phase || 'maintain';
-  const deficit = parseInt(s.cut_deficit)  || 500;
-  const surplus = parseInt(s.bulk_surplus) || 300;
-  const goal = tdee != null
-    ? (phase === 'cut' ? tdee - deficit : phase === 'bulk' ? tdee + surplus : tdee)
-    : (parseFloat(s.calorie_goal) || null);
+  const { tdee, phase, deficit, surplus } = parsePhaseSettings(s);
+  const goal = phaseCalorieGoal(tdee, phase, deficit, surplus) ?? (parseFloat(s.calorie_goal) || null);
   if (goal == null) {
     return `<div class="phase-goal-empty">Enter your TDEE above (or sync IronLog) to see your daily calorie goal.</div>`;
   }

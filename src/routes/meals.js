@@ -65,18 +65,6 @@ function loadDay(db, date, pid) {
   return sessions.map(s => ({ ...s, entries: bySession[s.id] || [] }));
 }
 
-// GET /api/meals/today
-router.get('/today', (req, res) => {
-  try {
-    const db = getDb();
-    const date = new Date().toISOString().split('T')[0];
-    const sessions = loadDay(db, date, req.profileId);
-    res.json({ date, sessions, totals: sumTotals(sessions) });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // GET /api/meals/day/:date
 router.get('/day/:date', (req, res) => {
   try {

@@ -304,7 +304,7 @@ export function renderTrends(container) {
     const FLAG = '#f97316';
     const pointColors = rows.map(r => isFlagged(r.status) ? FLAG : '#c8b8ff');
     const pointRadii  = rows.map(r => isFlagged(r.status) ? 5 : 2);
-    const calTrend    = movingAvg(rows.map(r => toDisplay(r.calories ?? 0)), 7);
+    const calTrend    = movingAvg(cals, 7);
 
     // Weight series (IronLog + local merged by date). Normalize hard: IronLog
     // can send ISO timestamps and a 'weight' field — both produce NaN/NaN if

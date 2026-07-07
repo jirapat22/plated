@@ -40,24 +40,6 @@ router.patch('/', (req, res) => {
   }
 });
 
-// Test IronLog connection (this profile's URL)
-router.get('/ironlog/test', async (req, res) => {
-  try {
-    const db = getDb();
-    const row = db.prepare(
-      "SELECT value FROM profile_settings WHERE profile_id = $pid AND key = 'ironlog_api_url'"
-    ).get({ pid: req.profileId });
-    const url = row?.value?.trim();
-    if (!url) return res.status(400).json({ error: 'IronLog URL not configured' });
-
-    const resp = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000) });
-    const data = await resp.json();
-    res.json({ connected: true, data });
-  } catch (err) {
-    res.json({ connected: false, error: err.message });
-  }
-});
-
 // Delete this profile's logged data (meals, water, weight, templates) — keeps foods + settings
 router.delete('/data', (req, res) => {
   try {
@@ -69,6 +51,12 @@ router.delete('/data', (req, res) => {
       db.prepare('DELETE FROM water_log      WHERE profile_id = $pid').run({ pid });
       db.prepare('DELETE FROM weight_log     WHERE profile_id = $pid').run({ pid });
       db.prepare('DELETE FROM meal_templates WHERE profile_id = $pid').run({ pid });
+      // Batches are logged data too — clear them the same way the single-batch
+      // DELETE route does (hide the backing food, then drop the batch), so a
+      // "fresh start" doesn't leave a stale batch with old remaining_g behind.
+      db.prepare(`UPDATE foods SET hidden = 1 WHERE id IN
+        (SELECT food_id FROM batches WHERE profile_id = $pid AND food_id IS NOT NULL)`).run({ pid });
+      db.prepare('DELETE FROM batches WHERE profile_id = $pid').run({ pid });
       db.prepare('DELETE FROM daily_overrides WHERE profile_id = $pid').run({ pid });
       db.exec('COMMIT');
     } catch (e) {

@@ -16,6 +16,9 @@ function extractProfile(profileData) {
   };
 }
 
+// Mirrors public/js/utils/phase.js's phaseCalorieGoal on the frontend — can't
+// share a module across the fetch boundary without a build step, so keep the
+// two in sync by hand if this formula ever changes.
 function phaseCalories(tdee, phase, deficit, surplus) {
   if (phase === 'cut')  return Math.round(tdee - deficit);
   if (phase === 'bulk') return Math.round(tdee + surplus);

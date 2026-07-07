@@ -161,6 +161,12 @@ router.delete('/me', requireProfile, (req, res) => {
     db.prepare('DELETE FROM water_log      WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM weight_log     WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM meal_templates WHERE profile_id = $id').run({ id }); // cascades items
+    // Batches aren't cascade-deleted with the profile — hide their backing
+    // foods first (same treatment as the single-batch DELETE route) so they
+    // don't linger visible in search/Custom after the profile is gone.
+    db.prepare(`UPDATE foods SET hidden = 1 WHERE id IN
+      (SELECT food_id FROM batches WHERE profile_id = $id AND food_id IS NOT NULL)`).run({ id });
+    db.prepare('DELETE FROM batches WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM daily_overrides   WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM profile_settings  WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM profile_food_stats WHERE profile_id = $id').run({ id });
