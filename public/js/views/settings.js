@@ -85,10 +85,11 @@ export function renderSettings(container) {
 
           <!-- 3. Adjustment -->
           <label class="form-label">③ Adjustment</label>
-          <div class="form-row" style="margin:6px 0 16px">
+          <div class="form-row" style="margin:6px 0 8px">
             ${goalRow('cut_deficit',  'Cut deficit',   s.cut_deficit,  'kcal', true)}
             ${goalRow('bulk_surplus', 'Bulk surplus',  s.bulk_surplus, 'kcal', true)}
           </div>
+          <div id="rate-row" style="margin-bottom:16px"></div>
 
           <!-- 4. Resulting daily calorie goal -->
           <div id="phase-goal" class="phase-goal">${goalResult(s)}</div>
@@ -311,7 +312,45 @@ export function renderSettings(container) {
         if (ci) ci.value = cal;
       }
       if (goalEl) goalEl.innerHTML = goalResult(s);
+      renderRateRow();
     }
+
+    // Rate-of-change goal input — an alternate way to fill in ③ Adjustment:
+    // type a target kg/week and it back-calculates the kcal deficit/surplus
+    // (1 kg ≈ 7,700 kcal), synced with whichever kcal field is active for the
+    // current phase. Hidden at maintenance — there's no adjustment to set.
+    function renderRateRow() {
+      const box = document.getElementById('rate-row');
+      if (!box) return;
+      if (s.phase === 'maintain') { box.innerHTML = ''; return; }
+      const key  = s.phase === 'bulk' ? 'bulk_surplus' : 'cut_deficit';
+      const verb = s.phase === 'bulk' ? 'gain' : 'lose';
+      box.innerHTML = rateRowHtml(s[key], verb);
+      document.getElementById('rate-input').addEventListener('change', async e => {
+        const r = parseFloat(e.target.value);
+        if (!r || r <= 0) { showToast('Enter a rate above 0', 'error'); return; }
+        const kcalVal = Math.round(r * 7700 / 7);
+        s[key] = String(kcalVal);
+        const kcalInput = body.querySelector(`[data-key="${key}"]`);
+        if (kcalInput) kcalInput.value = kcalVal;
+        try {
+          await api.patch('/api/settings', { [key]: String(kcalVal) });
+          showToast(`Target set: ${r} kg/week`, 'success');
+          refreshGoal();
+        } catch (err) { showToast(err.message, 'error'); }
+      });
+    }
+    function rateRowHtml(kcalVal, verb) {
+      const kcal = parseFloat(kcalVal) || 0;
+      const rate = kcal ? (kcal * 7 / 7700).toFixed(2) : '';
+      return `
+        <label class="form-label">Or by target rate</label>
+        <div style="display:flex;gap:8px;align-items:center;margin:6px 0 0">
+          <input class="input" id="rate-input" type="text" inputmode="decimal" value="${rate}" placeholder="e.g. 0.5" style="height:40px;flex:1"/>
+          <span style="font-size:12px;color:var(--text-muted)">kg / week to ${verb}</span>
+        </div>`;
+    }
+    renderRateRow();
 
     // Macro split by % — protein & fat set, carbs fills the rest (never > 100%)
     const msP = document.getElementById('msplit-p');
@@ -393,6 +432,7 @@ export function renderSettings(container) {
           if (result.calorie_goal != null) s.calorie_goal = String(result.calorie_goal);
           const goalEl = document.getElementById('phase-goal');
           if (goalEl) goalEl.innerHTML = goalResult(s);
+          renderRateRow();
           if (result.calorie_goal) {
             const calInput = body.querySelector('[data-key="calorie_goal"]');
             if (calInput) calInput.value = result.calorie_goal;

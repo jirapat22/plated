@@ -7,6 +7,7 @@ import { localDate }                       from '../utils/date.js';
 import { classifyDay, isFlagged, LOG_STRONG } from '../utils/logCheck.js';
 import { assert } from '../utils/bugReport.js';
 import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
+import { movingAvg } from '../utils/stats.js';
 
 const CIRC = 2 * Math.PI * 60;
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -173,23 +174,24 @@ export function renderToday(container) {
     viewDate = localDate();
     const myGen = ++loadGen;
     try {
-      const [mealData, waterData, settings, todayWeight] = await Promise.all([
+      const [mealData, waterData, settings, todayWeight, weightHistory] = await Promise.all([
         api.get(`/api/meals/day/${viewDate}`),
         api.get(`/api/water/day/${viewDate}`),
         api.get('/api/settings'),
         api.get(`/api/weight/day/${viewDate}`).catch(() => null),
+        api.get('/api/weight?limit=10').catch(() => []),
       ]);
       if (myGen !== loadGen) return;            // a newer load() superseded us
       const ironlog = await fetchIronLog(viewDate);   // always today — fetch fresh
       if (myGen !== loadGen) return;            // and again after the IronLog fetch
-      render(mealData, waterData, settings, ironlog, todayWeight);
+      render(mealData, waterData, settings, ironlog, todayWeight, weightHistory);
     } catch (err) {
       if (myGen !== loadGen) return;
       container.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
     }
   }
 
-  function render(mealData, waterData, settings, ironlog, todayWeight) {
+  function render(mealData, waterData, settings, ironlog, todayWeight, weightHistory = []) {
     const today  = localDate();
     const isToday = viewDate === today;
     const ul     = unitLabel();
@@ -284,6 +286,31 @@ export function renderToday(container) {
       : phase;
 
     const showMorningPrompt = false; // removed per user preference
+
+    // Trend weight — 7-day smoothed average as of today (same movingAvg used
+    // on the Trends weight chart), an optional alternate to the raw logged
+    // value. weight_display in Settings ('raw' default, 'trend') picks which
+    // one leads on the collapsed card; the other is still one tap away.
+    // Dedupe to one value per date (same approach as Trends) before averaging,
+    // so a same-day re-log doesn't double-count that day in the window.
+    const weightByDate = {};
+    for (const w of weightHistory) weightByDate[w.date] = w.weight_kg;
+    const weightsAsc  = Object.keys(weightByDate).sort().map(d => weightByDate[d]);
+    const trendSeries = weightsAsc.length >= 2 ? movingAvg(weightsAsc, 7) : null;
+    const trendWeight = trendSeries ? trendSeries[trendSeries.length - 1] : null;
+    const weightDisplay = settings.weight_display === 'trend' && trendWeight != null ? 'trend' : 'raw';
+    const weightBigHtml = weightDisplay === 'trend'
+      ? `${trendWeight.toFixed(1)} <span style="font-size:11px;color:var(--accent);font-weight:400">kg · 7d trend</span>`
+      : todayWeight
+        ? `${todayWeight.weight_kg} <span style="font-size:11px;color:var(--text-muted);font-weight:400">kg · today ✓</span>`
+        : (isToday && ironlog?.bodyweight)
+          ? `${ironlog.bodyweight.weight_kg} <span style="font-size:11px;color:var(--accent);font-weight:400">kg ${icon(ICON_BOLT, 10, -1)} ${ironlog.bodyweight.is_today ? 'today' : ironlog.bodyweight.date}</span>`
+          : '';
+    const weightToggleHtml = trendWeight != null ? `
+      <div style="display:flex;gap:4px;margin-top:10px">
+        <button class="eunit-btn wt-display-btn${weightDisplay !== 'trend' ? ' active' : ''}" data-display="raw" style="height:26px;padding:0 10px;font-size:10px">Raw</button>
+        <button class="eunit-btn wt-display-btn${weightDisplay === 'trend' ? ' active' : ''}" data-display="trend" style="height:26px;padding:0 10px;font-size:10px">Trend (${trendWeight.toFixed(1)} kg)</button>
+      </div>` : '';
 
     container.innerHTML = `
       <!-- Header -->
@@ -394,20 +421,18 @@ export function renderToday(container) {
       </div>
 
       <!-- Bodyweight — collapses to a slim row whenever there's a value to show
-           (manual weigh-in OR IronLog); the logger sits behind the chevron.
-           Full logger only when there's no weight at all. -->
+           (manual weigh-in, IronLog, or a computed trend); the logger and the
+           raw/trend toggle sit behind the chevron. Full logger only when
+           there's nothing to show at all. -->
       <div style="padding:0 16px 14px">
-        ${(todayWeight || (isToday && ironlog?.bodyweight)) ? `
+        ${weightBigHtml ? `
         <details class="card nl-details">
           <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">
             <span class="label">${icon(ICON_SCALE, 13, -3)} Bodyweight</span>
-            <span class="num" style="margin-left:auto;font-size:15px;font-weight:700">
-              ${todayWeight
-                ? `${todayWeight.weight_kg} <span style="font-size:11px;color:var(--text-muted);font-weight:400">kg · today ✓</span>`
-                : `${ironlog.bodyweight.weight_kg} <span style="font-size:11px;color:var(--accent);font-weight:400">kg ${icon(ICON_BOLT, 10, -1)} ${ironlog.bodyweight.is_today ? 'today' : ironlog.bodyweight.date}</span>`}
-            </span>
+            <span class="num" style="margin-left:auto;font-size:15px;font-weight:700">${weightBigHtml}</span>
             <span class="nl-chev" style="font-size:9px;color:var(--text-faint)">▾</span>
           </summary>
+          ${weightToggleHtml}
           <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:12px">
             ${!todayWeight ? `<span style="font-size:11px;color:var(--warning);margin-right:auto;font-weight:600">Not weighed today — log it here</span>` : ''}
             <input id="wt-inline" type="text" inputmode="decimal" placeholder="kg"
@@ -607,6 +632,17 @@ export function renderToday(container) {
     };
     document.getElementById('wt-inline-save').addEventListener('click', saveWeight);
     wtInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveWeight(); });
+
+    // Raw / trend display toggle — a per-profile preference, not a one-off UI
+    // flip, so it stays put across visits and other views could read it too.
+    document.querySelectorAll('.wt-display-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api.patch('/api/settings', { weight_display: btn.dataset.display });
+          load();
+        } catch (err) { showToast(err.message, 'error'); }
+      });
+    });
 
     // New meal / quick log / template
     document.getElementById('new-meal-btn').addEventListener('click', async () => {

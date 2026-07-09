@@ -4,6 +4,8 @@ import { localDate }                  from '../utils/date.js';
 import { showToast }                  from '../app.js';
 import { openFoodEntry }              from './log.js';
 import { classifyDay, isFlagged, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY } from '../utils/logCheck.js';
+import { movingAvg } from '../utils/stats.js';
+import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -28,16 +30,6 @@ const CHART_DEFAULTS = {
 };
 
 function destroyChart(id) { Chart.getChart(id)?.destroy(); }
-
-// Trailing moving average — a smooth trend line over `win` days.
-function movingAvg(arr, win = 7) {
-  return arr.map((_, i) => {
-    const start = Math.max(0, i - win + 1);
-    const slice = arr.slice(start, i + 1).filter(v => v != null);
-    if (!slice.length) return null;
-    return slice.reduce((s, v) => s + v, 0) / slice.length;
-  });
-}
 
 // The Monday (YYYY-MM-DD) of the week containing the given date.
 function mondayOf(dateStr) {
@@ -423,6 +415,15 @@ export function renderTrends(container) {
 
     const haveVerdict = wWinVals.length >= 4 && spanDays >= 10 && validForAvg.length >= 5 && weeklyRate != null;
 
+    // ── "Update your goal?" suggestion — never auto-applies, only offers.
+    // Only fires on a reliable trend (same noise guard as realTDEE itself) and
+    // a gap worth acting on; re-offers a week after being dismissed so it
+    // doesn't nag every visit but doesn't go silent forever either.
+    const dismissedAt = settings.tdee_suggestion_dismissed_at ? new Date(settings.tdee_suggestion_dismissed_at) : null;
+    const dismissedRecently = dismissedAt && (Date.now() - dismissedAt.getTime()) < 7 * 86400000;
+    const suggestGoal = haveVerdict && rateReliable && realTDEE != null && cfgTdee != null
+      && Math.abs(realTDEE - cfgTdee) >= 150 && !dismissedRecently;
+
     let verdictGood = null, verdictSub = '', weeksToTarget = null;
     if (haveVerdict) {
       if (phase === 'maintain') {
@@ -593,6 +594,14 @@ export function renderTrends(container) {
             <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">what you burn</div></div>
             <div class="stat-cell"><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl">${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">${weeksToTarget ? 'at this pace' : '&nbsp;'}</div></div>
           </div>
+          ${suggestGoal ? `
+          <div style="background:var(--accent-dim);border:1px solid rgba(200,184,255,.3);border-radius:var(--radius-sm);padding:11px 13px;margin-top:12px">
+            <div style="font-size:12px;color:var(--text);line-height:1.5">Your real maintenance looks like <b>${fmtE(realTDEE)} ${ul}</b> — ${realTDEE > cfgTdee ? 'above' : 'below'} your set TDEE (${fmtE(cfgTdee)}). Update your goal to match?</div>
+            <div style="display:flex;gap:8px;margin-top:9px">
+              <button class="btn btn-primary" id="tdee-suggest-apply" style="flex:1;height:34px;font-size:12px">Update to ${fmtE(realTDEE)}</button>
+              <button class="btn btn-ghost" id="tdee-suggest-dismiss" style="flex:0 0 auto;height:34px;padding:0 14px;font-size:12px">Not now</button>
+            </div>
+          </div>` : ''}
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>${howWorkedOut}`
             : `<details class="nl-details" style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
                 <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">
@@ -827,6 +836,25 @@ export function renderTrends(container) {
         });
       });
     })();
+
+    // "Update your goal?" suggestion — apply writes the new TDEE + the goal it
+    // implies under the current phase/adjustment; dismiss just snoozes it.
+    document.getElementById('tdee-suggest-apply')?.addEventListener('click', async () => {
+      const ps = parsePhaseSettings(settings);
+      const newGoal = Math.round(phaseCalorieGoal(realTDEE, ps.phase, ps.deficit, ps.surplus));
+      try {
+        await api.patch('/api/settings', { tdee: String(Math.round(realTDEE)), calorie_goal: String(newGoal) });
+        showToast(`TDEE updated to ${fmtE(realTDEE)} — goal now ${fmtE(newGoal)} ${ul}`, 'success');
+        window.dispatchEvent(new CustomEvent('plated:settings-changed'));
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+    document.getElementById('tdee-suggest-dismiss')?.addEventListener('click', async () => {
+      try {
+        await api.patch('/api/settings', { tdee_suggestion_dismissed_at: new Date().toISOString() });
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
 
     // Review-list actions
     document.querySelectorAll('.review-add').forEach(btn => {

@@ -8,6 +8,8 @@ const ALLOWED = new Set([
   'fiber_goal', 'water_goal_ml', 'ironlog_api_url', 'ironlog_api_key', 'protein_multiplier',
   'phase', 'tdee', 'cut_deficit', 'bulk_surplus', 'energy_unit', 'ironlog_last_synced',
   'target_weight_kg',
+  'tdee_suggestion_dismissed_at',  // Trends' "update your goal?" banner — re-shows after 7 days
+  'weight_display',                // Today's bodyweight card: 'raw' (default) or 'trend'
 ]);
 
 function allSettings(db, pid) {
