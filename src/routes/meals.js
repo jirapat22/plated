@@ -212,6 +212,12 @@ router.post('/sessions/:id/copy', (req, res) => {
         .run({ d: date, n: src.name, i: idx, p: pid }).lastInsertRowid;
     }
 
+    // Recompute macros from each food's CURRENT nutrition data (same as the
+    // single-entry POST route below) instead of copying the source entries'
+    // old stored values verbatim — otherwise copying a whole meal could carry
+    // forward macros for a food whose data has since been corrected, while
+    // copying a single food from that same meal would not.
+    const getFood = db.prepare('SELECT * FROM foods WHERE id = $id');
     const ins = db.prepare(`INSERT INTO meal_entries (meal_session_id, food_id, quantity_g, calories, protein, carbs, fat, fiber)
       VALUES ($s, $f, $q, $cal, $p, $c, $ft, $fb)`);
     const bumpStats = db.prepare(`
@@ -221,7 +227,9 @@ router.post('/sessions/:id/copy', (req, res) => {
       DO UPDATE SET use_count = use_count + 1, last_used = datetime('now')
     `);
     for (const e of entries) {
-      ins.run({ s: targetId, f: e.food_id, q: e.quantity_g, cal: e.calories, p: e.protein, c: e.carbs, ft: e.fat, fb: e.fiber });
+      const food = getFood.get({ id: e.food_id });
+      const m = food ? calcMacros(food, e.quantity_g) : e;   // food gone (rare) — fall back to the old snapshot
+      ins.run({ s: targetId, f: e.food_id, q: e.quantity_g, cal: m.calories, p: m.protein, c: m.carbs, ft: m.fat, fb: m.fiber });
       bumpStats.run({ pid, fid: e.food_id });
     }
     res.status(201).json({ session_id: targetId, copied: entries.length });

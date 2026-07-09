@@ -25,9 +25,13 @@ async function dayMeals(viewDate) {
   try { return (await api.get(`/api/meals/day/${viewDate}`)).sessions || []; } catch { return []; }
 }
 
-// Shared sheet body for picking a destination (other meals today / new meal / a date).
-// onPick(target) → target = { sid } for an existing/new meal today, or { date } for a day.
-function destinationSheet(title, subtitle, viewDate, others, handlers) {
+// Shared sheet body for picking a destination: a date (defaults to viewDate)
+// plus the meals that already exist on whichever date is picked, so copying
+// "to another day" can merge into a meal that's already there instead of
+// always creating a duplicate. The target list re-fetches on date change.
+// excludeSessionId is left out of the list (can't copy a meal into itself).
+// onPick(date, sid) — sid is an existing session id, or 'new'.
+function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOthers, onPick) {
   showSheet(content => {
     content.innerHTML = `
       <div class="sheet-header">
@@ -36,43 +40,50 @@ function destinationSheet(title, subtitle, viewDate, others, handlers) {
       </div>
       <div style="padding:0 16px">
         ${subtitle}
-        <label class="form-label">Copy into a meal</label>
-        <div style="display:flex;flex-direction:column;gap:6px;margin:6px 0 16px">
-          ${others.map(s => `<button class="cp-meal btn btn-secondary" data-sid="${s.id}" style="justify-content:flex-start">${esc(s.name || 'Meal')}</button>`).join('')}
-          <button class="cp-meal btn btn-secondary" data-sid="new" style="justify-content:flex-start;color:var(--accent)">+ New meal</button>
-        </div>
-        <label class="form-label">…or another day</label>
-        <div style="display:flex;gap:8px;margin-top:6px">
-          <input class="input" id="cp-date" type="date" max="${addDaysIso(localDate(), 7)}" value="${viewDate}" style="flex:1"/>
-          <button class="btn btn-primary" id="cp-date-go">Copy</button>
-        </div>
+        <label class="form-label">Date</label>
+        <input class="input" id="cp-date" type="date" max="${addDaysIso(localDate(), 7)}" value="${viewDate}" style="margin:6px 0 14px"/>
+        <label class="form-label">Copy into</label>
+        <div id="cp-targets" style="display:flex;flex-direction:column;gap:6px;margin:6px 0 16px"></div>
       </div>`;
     document.getElementById('cp-close').addEventListener('click', hideSheet);
-    content.querySelectorAll('.cp-meal').forEach(btn => btn.addEventListener('click', () => handlers.toMeal(btn.dataset.sid)));
-    document.getElementById('cp-date-go').addEventListener('click', () => {
-      const date = document.getElementById('cp-date').value;
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return showToast('Pick a date', 'error');
-      handlers.toDate(date);
-    });
+
+    const dateInput  = document.getElementById('cp-date');
+    const targetsBox = document.getElementById('cp-targets');
+
+    async function renderTargets() {
+      const date = dateInput.value;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { targetsBox.innerHTML = ''; return; }
+      targetsBox.innerHTML = '<div class="skeleton skel-line" style="height:38px"></div>';
+      const sessions = date === viewDate
+        ? initialOthers
+        : (await dayMeals(date)).filter(s => s.id !== excludeSessionId);
+      if (dateInput.value !== date) return;   // date changed again while this was in flight
+      targetsBox.innerHTML = sessions.map(s =>
+        `<button class="cp-target btn btn-secondary" data-sid="${s.id}" style="justify-content:flex-start">${esc(s.name || 'Meal')}</button>`
+      ).join('') + `<button class="cp-target btn btn-secondary" data-sid="new" style="justify-content:flex-start;color:var(--accent)">+ New meal</button>`;
+      targetsBox.querySelectorAll('.cp-target').forEach(btn =>
+        btn.addEventListener('click', () => onPick(date, btn.dataset.sid)));
+    }
+
+    dateInput.addEventListener('change', renderTargets);
+    renderTargets();
   });
 }
 
-// Copy a single logged food (same quantity) into another meal today or onto any day.
+// Copy a single logged food (same quantity) into another meal, on any day.
 export async function openCopyEntry(entry, viewDate, onDone) {
   const others = (await dayMeals(viewDate)).filter(s => s.id !== entry.meal_session_id);
   const copyTo = sid => api.post(`/api/meals/sessions/${sid}/entries`, { food_id: entry.food_id, quantity_g: entry.quantity_g });
   const newSession = async date => (await api.post('/api/meals/sessions', { date })).id;
   const sub = `<div style="font-size:15px;font-weight:600">${esc(entry.food_name)}</div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${Math.round(entry.quantity_g)}g · ${fmtE(entry.calories)} ${unitLabel()}</div>`;
-  destinationSheet('Copy food', sub, viewDate, others, {
-    toMeal: async sid => {
-      try { await copyTo(sid === 'new' ? await newSession(viewDate) : sid); hideSheet(); showToast('Copied', 'success'); onDone?.(); }
-      catch (err) { showToast(err.message, 'error'); }
-    },
-    toDate: async date => {
-      try { await copyTo(await newSession(date)); hideSheet(); showToast(date === localDate() ? 'Copied to today' : `Copied to ${date}`, 'success'); onDone?.(); }
-      catch (err) { showToast(err.message, 'error'); }
-    },
+  destinationSheet('Copy food', sub, viewDate, entry.meal_session_id, others, async (date, sid) => {
+    try {
+      await copyTo(sid === 'new' ? await newSession(date) : sid);
+      hideSheet();
+      showToast(sid === 'new' ? (date === localDate() ? 'Copied to today' : `Copied to ${date}`) : 'Copied', 'success');
+      onDone?.();
+    } catch (err) { showToast(err.message, 'error'); }
   });
 }
 
@@ -83,15 +94,13 @@ export async function openCopyMeal(session, viewDate, onDone) {
   const n = (session.entries || []).length;
   const sub = `<div style="font-size:15px;font-weight:600">${esc(session.name || 'Meal')}</div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${n} food${n === 1 ? '' : 's'} · copied with the same amounts</div>`;
-  destinationSheet('Copy meal', sub, viewDate, others, {
-    toMeal: async sid => {
-      try { await copy(sid === 'new' ? { date: viewDate } : { target_session_id: sid }); hideSheet(); showToast(sid === 'new' ? 'Meal copied' : 'Merged into meal', 'success'); onDone?.(); }
-      catch (err) { showToast(err.message, 'error'); }
-    },
-    toDate: async date => {
-      try { await copy({ date }); hideSheet(); showToast(date === localDate() ? 'Copied to today' : `Copied to ${date}`, 'success'); onDone?.(); }
-      catch (err) { showToast(err.message, 'error'); }
-    },
+  destinationSheet('Copy meal', sub, viewDate, session.id, others, async (date, sid) => {
+    try {
+      await copy(sid === 'new' ? { date } : { target_session_id: sid });
+      hideSheet();
+      showToast(sid === 'new' ? (date === localDate() ? 'Copied to today' : `Copied to ${date}`) : 'Merged into meal', 'success');
+      onDone?.();
+    } catch (err) { showToast(err.message, 'error'); }
   });
 }
 
