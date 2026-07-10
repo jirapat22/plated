@@ -205,11 +205,14 @@ img { display: block; max-width: 100%; }
   /* stroke-dasharray set via inline style= so CSS cannot override it */
   transition: stroke-dasharray 600ms ease-out;
 }
-/* Overflow arc drawn on top of the base fill — only the exceeded slice.
-   Same burnt-orange across every variant regardless of the ring's base
-   colour, so "over goal" reads as an unmistakable warning rather than a
-   same-hue-but-darker shade (which was too low-contrast to see). */
-.ring-fill.ring-over { stroke: var(--over); }
+/* Overflow arc drawn on top of the base fill — only the exceeded slice, in
+   the SAME colour as the ring it's on, just brighter/more saturated with a
+   glow. A different colour (previously a fixed burnt-orange) fights the
+   ring's own hue and reads as clashing; a louder version of the same hue
+   reads as "alarm" without introducing a competing colour. */
+.ring-fill.ring-over         { stroke: var(--accent);  filter: brightness(1.5) saturate(1.6) drop-shadow(0 0 3px var(--accent)); }
+.ring-fill.target.ring-over  { stroke: var(--success); filter: brightness(1.5) saturate(1.6) drop-shadow(0 0 3px var(--success)); }
+.ring-fill.workout.ring-over { stroke: var(--warning); filter: brightness(1.5) saturate(1.6) drop-shadow(0 0 3px var(--warning)); }
 .ring-center {
   position: absolute;
   top: 50%; left: 50%;
