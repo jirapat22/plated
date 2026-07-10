@@ -50,6 +50,27 @@ export function renderSettings(container) {
         </div>
       </div>
 
+      <!-- Connections -->
+      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
+        <div class="sec-head">🔗 Connections<span class="sec-chevron">▾</span></div>
+        <div style="padding:14px 16px">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
+            Connect with someone to view their Today and History from the History tab. Weight and Trends stay private either way. Share your code with them, or enter theirs below.
+          </div>
+          <label class="form-label">Your code</label>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+            <div id="conn-my-code" class="input" style="flex:1;font-weight:700;letter-spacing:.1em;text-align:center;display:flex;align-items:center;justify-content:center">…</div>
+            <button class="btn btn-secondary" id="conn-regen" title="Get a new code" style="height:40px;padding:0 12px">⟳</button>
+          </div>
+          <label class="form-label">Enter someone's code</label>
+          <div style="display:flex;gap:8px;margin-bottom:16px">
+            <input class="input" id="conn-code-input" placeholder="e.g. K7M3QX9P" maxlength="8" style="flex:1;text-transform:uppercase" />
+            <button class="btn btn-primary" id="conn-connect-btn" style="height:40px;padding:0 16px;white-space:nowrap">Connect</button>
+          </div>
+          <div id="conn-list"><div style="font-size:12px;color:var(--text-faint)">Loading…</div></div>
+        </div>
+      </div>
+
       ${prof.is_admin ? `
       <!-- Admin -->
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
@@ -250,6 +271,68 @@ export function renderSettings(container) {
         showToast(err.message, 'error');
       }
     });
+
+    // ── Connections: view someone's Today/History via a shared code ──
+    async function loadMyCode() {
+      const el = document.getElementById('conn-my-code');
+      if (!el) return;
+      try {
+        const { connect_code } = await api.get('/api/connections/code');
+        el.textContent = connect_code;
+      } catch { el.textContent = '—'; }
+    }
+    loadMyCode();
+
+    document.getElementById('conn-regen').addEventListener('click', async () => {
+      if (!confirm("Get a new code? Anyone with your old code won't be able to connect with it anymore — existing connections are unaffected.")) return;
+      try {
+        const { connect_code } = await api.post('/api/connections/code/regenerate');
+        document.getElementById('conn-my-code').textContent = connect_code;
+        showToast('New code generated', 'success');
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('conn-connect-btn').addEventListener('click', async () => {
+      const input = document.getElementById('conn-code-input');
+      const code = input.value.trim();
+      if (!code) return;
+      try {
+        const connected = await api.post('/api/connections', { code });
+        input.value = '';
+        showToast(`Connected with ${connected.name}`, 'success');
+        loadConnections();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+
+    async function loadConnections() {
+      const box = document.getElementById('conn-list');
+      if (!box) return;
+      try {
+        const conns = await api.get('/api/connections');
+        box.innerHTML = conns.length ? conns.map(p => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+            <span style="display:flex;align-items:center;gap:8px">
+              <span style="width:10px;height:10px;border-radius:50%;background:${p.accent_color}"></span>
+              <span style="font-size:14px">${esc(p.name)}</span>
+            </span>
+            <button class="btn btn-secondary conn-disconnect" data-id="${p.id}" data-name="${esc(p.name)}"
+              style="height:32px;padding:0 12px;font-size:12px">Disconnect</button>
+          </div>
+        `).join('') : `<div style="font-size:12px;color:var(--text-faint)">No connections yet</div>`;
+        box.querySelectorAll('.conn-disconnect').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!confirm(`Disconnect from ${btn.dataset.name}?`)) return;
+            try {
+              await api.delete(`/api/connections/${btn.dataset.id}`);
+              loadConnections();
+            } catch (err) { showToast(err.message, 'error'); }
+          });
+        });
+      } catch (err) {
+        box.innerHTML = `<div style="font-size:12px;color:var(--error)">${err.message}</div>`;
+      }
+    }
+    loadConnections();
 
     // ── Admin: grant/revoke admin per profile ────────────────
     if (prof.is_admin) loadAdminList();

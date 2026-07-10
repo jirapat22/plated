@@ -118,6 +118,18 @@ function initDb() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    -- Mutual profile connections (Today + History sharing). A single row per
+    -- pair, always mutual: entering the other profile's connect_code IS the
+    -- consent (both sides had to act — one to share the code, one to enter
+    -- it) so there's no separate pending/accepted state to track.
+    CREATE TABLE IF NOT EXISTS profile_connections (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_a_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      profile_b_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      created_at   TEXT DEFAULT (datetime('now')),
+      UNIQUE(profile_a_id, profile_b_id)
+    );
+
     CREATE TABLE IF NOT EXISTS profile_settings (
       profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
       key        TEXT NOT NULL,
@@ -217,6 +229,9 @@ function migrateSchema(db) {
   if (!tableHasColumn(db, 'weight_log', 'source')) {
     db.exec("ALTER TABLE weight_log ADD COLUMN source TEXT DEFAULT 'manual'");
   }
+  if (!tableHasColumn(db, 'profiles', 'connect_code')) {
+    db.exec('ALTER TABLE profiles ADD COLUMN connect_code TEXT');
+  }
 
   // Ensure exactly one admin exists — the first profile (e.g. the migrated one).
   const profileCount = db.prepare('SELECT COUNT(*) AS c FROM profiles').get().c;
@@ -240,6 +255,9 @@ function ensureIndexes(db) {
     CREATE INDEX IF NOT EXISTS idx_meal_sessions_pid_date ON meal_sessions(profile_id, date);
     CREATE INDEX IF NOT EXISTS idx_weight_log_pid_date    ON weight_log(profile_id, date);
     CREATE INDEX IF NOT EXISTS idx_foods_name             ON foods(name);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_connect_code ON profiles(connect_code) WHERE connect_code IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_profile_connections_a  ON profile_connections(profile_a_id);
+    CREATE INDEX IF NOT EXISTS idx_profile_connections_b  ON profile_connections(profile_b_id);
   `);
 }
 
@@ -460,4 +478,17 @@ function removeUnwantedSeeds(db) {
   if (removed > 0) console.log(`Removed ${removed} unwanted seed foods (infant/toddler products, etc.)`);
 }
 
-module.exports = { initDb, getDb, seedProfileDefaults, adoptOrphanData, countProfiles };
+// Can `viewerId` see `targetId`'s Today/History data? Always true for self;
+// otherwise requires an accepted profile_connections row between the two
+// (row is symmetric — connecting via code creates exactly one row, direction
+// doesn't matter for viewing).
+function canView(db, viewerId, targetId) {
+  if (viewerId === targetId) return true;
+  const row = db.prepare(`
+    SELECT 1 FROM profile_connections
+    WHERE (profile_a_id = $a AND profile_b_id = $b) OR (profile_a_id = $b AND profile_b_id = $a)
+  `).get({ a: viewerId, b: targetId });
+  return !!row;
+}
+
+module.exports = { initDb, getDb, seedProfileDefaults, adoptOrphanData, countProfiles, canView };

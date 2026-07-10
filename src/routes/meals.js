@@ -1,7 +1,22 @@
 const express = require('express');
-const { getDb } = require('../db');
+const { getDb, canView } = require('../db');
 
 const router = express.Router();
+
+// Resolves the effective profile id for a read: your own, or a connected
+// profile's via ?profile=X (Today/History viewing only — never used by any
+// write route, and never wired into weight/trends, so those stay private).
+// Returns null (and writes the 403) if the caller isn't connected to X.
+function resolveViewedProfile(req, res) {
+  const q = req.query.profile;
+  if (!q) return req.profileId;
+  const targetId = parseInt(q);
+  if (!canView(getDb(), req.profileId, targetId)) {
+    res.status(403).json({ error: 'Not connected to that profile' });
+    return null;
+  }
+  return targetId;
+}
 
 function round1(n) { return Math.round(n * 10) / 10; }
 
@@ -72,9 +87,11 @@ router.get('/day/:date', (req, res) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
     }
+    const pid = resolveViewedProfile(req, res);
+    if (pid == null) return;
     const db = getDb();
-    const sessions = loadDay(db, date, req.profileId);
-    res.json({ date, sessions, totals: sumTotals(sessions), log_status: logStatus(db, date, req.profileId) });
+    const sessions = loadDay(db, date, pid);
+    res.json({ date, sessions, totals: sumTotals(sessions), log_status: logStatus(db, date, pid) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -105,6 +122,8 @@ router.post('/log-status', (req, res) => {
 // GET /api/meals/summary?days=30  — aggregate totals per date
 router.get('/summary', (req, res) => {
   try {
+    const pid = resolveViewedProfile(req, res);
+    if (pid == null) return;
     const days = Math.min(parseInt(req.query.days) || 30, 90);
     const rows = getDb().prepare(`
       SELECT
@@ -123,7 +142,7 @@ router.get('/summary', (req, res) => {
       WHERE ms.date >= date('now', $offset) AND ms.profile_id = $pid
       GROUP BY ms.date
       ORDER BY ms.date ASC
-    `).all({ offset: `-${days} days`, pid: req.profileId });
+    `).all({ offset: `-${days} days`, pid });
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
