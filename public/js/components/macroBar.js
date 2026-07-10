@@ -12,13 +12,11 @@ export function renderMacroBar(container, totals, goals, showRemaining = true) {
     const pct      = goal > 0 ? Math.min((consumed / goal) * 100, 100) : 0;
     const remaining = goal - consumed;
     const over      = goal > 0 && consumed > goal;
-    // Over goal = the SAME macro colour, unchanged, plus a glow — no filter.
-    // brightness()/saturate() pushed every colour toward white, and since
-    // Carbs (#FFA726) and Fat (#FFCA28) start out close in hue, boosted they
-    // both clipped to the same washed-out yellow. A glow doesn't touch the
-    // fill colour at all, so hues stay distinct and the "whole bar" doesn't
-    // turn into one big bright block — just gets an edge that pops.
-    const glow = over ? `box-shadow:0 0 5px 1px ${m.color};` : '';
+    // Bar is always the macro's own colour, un-touched. Once over goal, only
+    // the excess SLICE of the (now fully-filled) bar glows — not the whole
+    // thing — sized to how much of what's on the bar is the over-goal part.
+    // e.g. 220g/191g goal → the last ~13% of the bar (29 of 220g) glows.
+    const overSegPct = over ? ((consumed - goal) / consumed) * 100 : 0;
 
     const rightLabel = (showRemaining && goal > 0)
       ? over
@@ -34,8 +32,9 @@ export function renderMacroBar(container, totals, goals, showRemaining = true) {
             <strong style="color:${m.color}">${consumed}</strong><span style="color:var(--text-faint)">${goal > 0 ? ` / ${goal}g` : 'g'}</span>${rightLabel ? ` · ${rightLabel}` : ''}
           </span>
         </div>
-        <div style="height:9px;background:var(--surface-2);border-radius:999px">
-          <div style="height:100%;width:${pct}%;background:${m.color};border-radius:999px;transition:width 600ms ease-out;${glow}"></div>
+        <div style="height:9px;background:var(--surface-2);border-radius:999px;position:relative">
+          <div style="height:100%;width:${pct}%;background:${m.color};border-radius:999px;transition:width 600ms ease-out"></div>
+          ${over ? `<div style="position:absolute;top:0;right:0;height:100%;width:${overSegPct}%;background:${m.color};box-shadow:0 0 6px 2px ${m.color};border-radius:0 999px 999px 0"></div>` : ''}
         </div>
       </div>
     `;

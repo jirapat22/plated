@@ -206,13 +206,13 @@ img { display: block; max-width: 100%; }
   transition: stroke-dasharray 600ms ease-out;
 }
 /* Overflow arc drawn on top of the base fill — only the exceeded slice, in
-   the SAME colour as the ring it's on, just brighter/more saturated with a
-   glow. A different colour (previously a fixed burnt-orange) fights the
-   ring's own hue and reads as clashing; a louder version of the same hue
-   reads as "alarm" without introducing a competing colour. */
-.ring-fill.ring-over         { stroke: var(--accent);  filter: brightness(1.5) saturate(1.6) drop-shadow(0 0 3px var(--accent)); }
-.ring-fill.target.ring-over  { stroke: var(--success); filter: brightness(1.5) saturate(1.6) drop-shadow(0 0 3px var(--success)); }
-.ring-fill.workout.ring-over { stroke: var(--warning); filter: brightness(1.5) saturate(1.6) drop-shadow(0 0 3px var(--warning)); }
+   the SAME colour as the ring it's on, with a glow — no brightness boost.
+   --accent is already a pale pastel purple; brightness(1.5) pushed it all
+   the way to white, losing the colour entirely instead of "louder purple".
+   A drop-shadow glow adds emphasis without touching the stroke's hue. */
+.ring-fill.ring-over         { stroke: var(--accent);  filter: drop-shadow(0 0 4px var(--accent)); }
+.ring-fill.target.ring-over  { stroke: var(--success); filter: drop-shadow(0 0 4px var(--success)); }
+.ring-fill.workout.ring-over { stroke: var(--warning); filter: drop-shadow(0 0 4px var(--warning)); }
 .ring-center {
   position: absolute;
   top: 50%; left: 50%;
