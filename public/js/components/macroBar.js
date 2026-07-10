@@ -34,7 +34,7 @@ export function renderMacroBar(container, totals, goals, showRemaining = true) {
         </div>
         <div style="height:9px;background:var(--surface-2);border-radius:999px;position:relative">
           <div style="height:100%;width:${pct}%;background:${m.color};border-radius:999px;transition:width 600ms ease-out"></div>
-          ${over ? `<div style="position:absolute;top:0;right:0;height:100%;width:${overSegPct}%;background:${m.color};box-shadow:0 0 6px 2px ${m.color};border-radius:0 999px 999px 0"></div>` : ''}
+          ${over ? `<div style="position:absolute;top:0;right:0;height:100%;width:${overSegPct}%;background:${m.color};filter:brightness(1.3) saturate(1.3);box-shadow:0 0 8px 2px ${m.color};border-left:2px solid rgba(255,255,255,.6);border-radius:0 999px 999px 0"></div>` : ''}
         </div>
       </div>
     `;
