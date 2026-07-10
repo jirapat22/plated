@@ -205,13 +205,11 @@ img { display: block; max-width: 100%; }
   /* stroke-dasharray set via inline style= so CSS cannot override it */
   transition: stroke-dasharray 600ms ease-out;
 }
-/* Overflow arc drawn on top of the base fill — only the exceeded slice, in a
-   darker shade of the SAME ring colour (keeps variant stroke, just darkens). */
-/* Exceeded slice: same hue, clearly darker (mix toward black). Per variant so
-   it darkens the right base colour. */
-.ring-fill.ring-over         { stroke: color-mix(in srgb, var(--accent),  #000 45%); }
-.ring-fill.target.ring-over  { stroke: color-mix(in srgb, var(--success), #000 42%); }
-.ring-fill.workout.ring-over { stroke: color-mix(in srgb, var(--warning), #000 42%); }
+/* Overflow arc drawn on top of the base fill — only the exceeded slice.
+   Same burnt-orange across every variant regardless of the ring's base
+   colour, so "over goal" reads as an unmistakable warning rather than a
+   same-hue-but-darker shade (which was too low-contrast to see). */
+.ring-fill.ring-over { stroke: var(--over); }
 .ring-center {
   position: absolute;
   top: 50%; left: 50%;
