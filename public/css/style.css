@@ -206,13 +206,14 @@ img { display: block; max-width: 100%; }
   transition: stroke-dasharray 600ms ease-out;
 }
 /* Overflow arc drawn on top of the base fill — only the exceeded slice, in
-   the SAME colour as the ring it's on, with a glow — no brightness boost.
-   --accent is already a pale pastel purple; brightness(1.5) pushed it all
-   the way to white, losing the colour entirely instead of "louder purple".
-   A drop-shadow glow adds emphasis without touching the stroke's hue. */
-.ring-fill.ring-over         { stroke: var(--accent);  filter: drop-shadow(0 0 4px var(--accent)); }
-.ring-fill.target.ring-over  { stroke: var(--success); filter: drop-shadow(0 0 4px var(--success)); }
-.ring-fill.workout.ring-over { stroke: var(--warning); filter: drop-shadow(0 0 4px var(--warning)); }
+   the SAME colour as the ring it's on. A glow alone was too subtle: it's
+   the identical colour drawn right over the base arc, so there was nothing
+   to distinguish besides a faint halo. Now it's also physically thicker
+   (bulges past the ring's own edge) plus a modest brightness bump — a real
+   boundary marker, not just a colour that's barely different. */
+.ring-fill.ring-over         { stroke: var(--accent);  stroke-width: 13; filter: brightness(1.25) drop-shadow(0 0 5px var(--accent)); }
+.ring-fill.target.ring-over  { stroke: var(--success); stroke-width: 13; filter: brightness(1.25) drop-shadow(0 0 5px var(--success)); }
+.ring-fill.workout.ring-over { stroke: var(--warning); stroke-width: 13; filter: brightness(1.25) drop-shadow(0 0 5px var(--warning)); }
 .ring-center {
   position: absolute;
   top: 50%; left: 50%;
