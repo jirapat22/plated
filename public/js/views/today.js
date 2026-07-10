@@ -615,6 +615,12 @@ export function renderToday(container) {
     });
 
     // Weight — inline save (Enter or tap). Always logs to today's local date.
+    // If today already has an entry, PATCH it instead of POSTing a new one —
+    // POST always inserts (no unique constraint on date), so re-tapping
+    // "Update" used to create a second row for the same day, which then
+    // showed as a phantom duplicate in Trends' weigh-ins list and made the
+    // trend/verdict math read from whichever duplicate SQLite happened to
+    // return first (undefined for same-date ties).
     const wtInput = document.getElementById('wt-inline');
     const saveWeight = async () => {
       const weight_kg = parseFloat(wtInput.value);
@@ -622,7 +628,8 @@ export function renderToday(container) {
       const btn = document.getElementById('wt-inline-save');
       btn.disabled = true; btn.textContent = '…';
       try {
-        await api.post('/api/weight', { weight_kg, date: viewDate });
+        if (todayWeight) await api.patch(`/api/weight/${todayWeight.id}`, { weight_kg });
+        else             await api.post('/api/weight', { weight_kg, date: viewDate });
         showToast('Weight logged', 'success');
         load();
       } catch (err) {

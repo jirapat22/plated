@@ -164,6 +164,8 @@ function initDb() {
 
   ensureIndexes(db);
 
+  dedupeWeightLog(db);
+
   seedNzFoods(db);
 
   console.log(`DB ready: ${dbPath}`);
@@ -239,6 +241,23 @@ function ensureIndexes(db) {
     CREATE INDEX IF NOT EXISTS idx_weight_log_pid_date    ON weight_log(profile_id, date);
     CREATE INDEX IF NOT EXISTS idx_foods_name             ON foods(name);
   `);
+}
+
+// One-time cleanup for a bug where re-tapping "Update" on Today's weight card
+// inserted a second row for the same day instead of correcting the first
+// (POST /api/weight had no upsert; fixed to PATCH the existing entry when
+// one exists for today). Collapses any (profile_id, date) group down to the
+// most-recently-logged row — same "latest wins" rule GET /weight/day/:date
+// already used for display, so this doesn't change what anyone was seeing.
+// Cheap no-op once the duplicates are gone; safe to run on every boot.
+function dedupeWeightLog(db) {
+  const removed = db.prepare(`
+    DELETE FROM weight_log
+    WHERE id NOT IN (
+      SELECT MAX(id) FROM weight_log GROUP BY profile_id, date
+    )
+  `).run().changes;
+  if (removed > 0) console.log(`Removed ${removed} duplicate weight_log row(s) (same-day re-corrections)`);
 }
 
 // Default per-profile settings, seeded when a profile is created.
