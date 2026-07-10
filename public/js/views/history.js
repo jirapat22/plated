@@ -22,8 +22,14 @@ function fmtWeekday(d) {
   return d.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 3);
 }
 
+// Accent colors come from another profile's record and end up interpolated
+// straight into style attributes — validate the shape (server now rejects
+// non-hex on write, but this is the last line of defense at render time)
+// rather than trusting it's still a plain hex string.
+const safeColor = c => /^#[0-9a-fA-F]{6}$/.test(c) ? c : '#c8b8ff';
+
 function hexToRgba(hex, alpha) {
-  const h = hex.replace('#', '');
+  const h = safeColor(hex).replace('#', '');
   const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
   return `rgba(${r},${g},${b},${alpha})`;
 }
@@ -60,8 +66,8 @@ export function renderHistory(container) {
       <div style="display:flex;gap:8px;overflow-x:auto;padding:0 16px 10px;-webkit-overflow-scrolling:touch">
         <button class="cal-day-name conn-pill${!viewed ? ' active' : ''}" data-id="" style="flex-shrink:0;padding:6px 14px;border-radius:999px;border:1px solid var(--border);background:${!viewed ? 'var(--accent-dim)' : 'transparent'};color:${!viewed ? 'var(--accent)' : 'var(--text-muted)'};font-size:12px;font-weight:700;white-space:nowrap">Me</button>
         ${connections.map(p => `
-          <button class="conn-pill" data-id="${p.id}" data-name="${p.name}" data-color="${p.accent_color}"
-            style="flex-shrink:0;padding:6px 14px;border-radius:999px;border:1px solid ${viewed?.id === p.id ? p.accent_color : 'var(--border)'};background:${viewed?.id === p.id ? hexToRgba(p.accent_color, .18) : 'transparent'};color:${viewed?.id === p.id ? p.accent_color : 'var(--text-muted)'};font-size:12px;font-weight:700;white-space:nowrap">${p.name}</button>
+          <button class="conn-pill" data-id="${p.id}" data-name="${esc(p.name)}" data-color="${safeColor(p.accent_color)}"
+            style="flex-shrink:0;padding:6px 14px;border-radius:999px;border:1px solid ${viewed?.id === p.id ? safeColor(p.accent_color) : 'var(--border)'};background:${viewed?.id === p.id ? hexToRgba(p.accent_color, .18) : 'transparent'};color:${viewed?.id === p.id ? safeColor(p.accent_color) : 'var(--text-muted)'};font-size:12px;font-weight:700;white-space:nowrap">${esc(p.name)}</button>
         `).join('')}
       </div>
     `;
@@ -84,7 +90,7 @@ export function renderHistory(container) {
       container.style.borderRadius = '14px';
       banner.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;margin:0 16px 10px;padding:8px 12px;border-radius:10px;background:${hexToRgba(viewed.accent_color, .15)};border:1px solid ${hexToRgba(viewed.accent_color, .4)}">
-          <span style="font-size:12px;font-weight:700;color:${viewed.accent_color}">Viewing ${viewed.name}'s day</span>
+          <span style="font-size:12px;font-weight:700;color:${safeColor(viewed.accent_color)}">Viewing ${esc(viewed.name)}'s day</span>
           <button id="viewing-back" class="btn btn-secondary" style="height:26px;padding:0 10px;font-size:11px">Back to me</button>
         </div>
       `;
@@ -196,7 +202,7 @@ export function renderHistory(container) {
         <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px">
           <div>
             <div class="num" style="font-size:28px;font-weight:800">${fmtE(t.calories)}</div>
-            <div class="label">of ${fmtE(goals.cal)} ${ul}</div>
+            <div class="label">${viewed ? ul : `of ${fmtE(goals.cal)} ${ul}`}</div>
           </div>
           <div style="text-align:right">
             <div class="num" style="font-size:13px;color:var(--protein)">${t.protein.toFixed(1)}g protein</div>
@@ -205,6 +211,7 @@ export function renderHistory(container) {
           </div>
         </div>
         <div id="hist-macro-bar"></div>
+        ${viewed ? `<div style="font-size:11px;color:var(--text-faint);margin-top:2px">Totals shown, not compared to a goal — goals stay private</div>` : ''}
         ${dayWeight ? `
         <div style="display:flex;align-items:center;gap:6px;border-top:1px solid var(--border);margin-top:12px;padding-top:10px;font-size:12px;color:var(--text-muted)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="9" width="18" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 9a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.7"/><path d="M12 12v3.2M12 12l2.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
@@ -228,7 +235,11 @@ export function renderHistory(container) {
         </div>` : ''}
       </div>
     `;
-    renderMacroBar(el.querySelector('#hist-macro-bar'), t, goals, false);
+    // Only render the goal-relative macro bar for your own day — for a
+    // connected profile's day we only have your goals, not theirs, and
+    // showing their intake "against" your numbers is misleading rather
+    // than just incomplete.
+    if (!viewed) renderMacroBar(el.querySelector('#hist-macro-bar'), t, goals, false);
 
     if (mealData.sessions.length === 0) {
       const future = date > localDate();

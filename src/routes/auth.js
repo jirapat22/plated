@@ -33,6 +33,10 @@ function createSession(db, profileId) {
   return token;
 }
 const isValidCode = c => /^\d{4}$/.test(String(c ?? ''));
+// Accent color is rendered unescaped into inline `style` attributes in several
+// views (own profile, admin list, and — since profile connections — other
+// people's screens too), so it must be a plain hex color, never free text.
+const isValidColor = c => /^#[0-9a-fA-F]{6}$/.test(String(c ?? ''));
 
 // GET /api/auth/status — public: does any profile exist yet?
 router.get('/status', (req, res) => {
@@ -65,6 +69,9 @@ router.post('/profiles', (req, res) => {
     const { name, passcode, accent_color } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
     if (!isValidCode(passcode)) return res.status(400).json({ error: 'Passcode must be 4 digits' });
+    if (accent_color !== undefined && !isValidColor(accent_color)) {
+      return res.status(400).json({ error: 'Invalid accent color' });
+    }
 
     const db = getDb();
     if (findProfileByCode(db, passcode)) {
@@ -112,6 +119,7 @@ router.patch('/me', requireProfile, (req, res) => {
       db.prepare('UPDATE profiles SET name = $n WHERE id = $id').run({ n: name.trim(), id: req.profileId });
     }
     if (accent_color !== undefined) {
+      if (!isValidColor(accent_color)) return res.status(400).json({ error: 'Invalid accent color' });
       db.prepare('UPDATE profiles SET accent_color = $c WHERE id = $id').run({ c: accent_color, id: req.profileId });
     }
     res.json(publicProfile(db.prepare('SELECT * FROM profiles WHERE id = $id').get({ id: req.profileId })));
