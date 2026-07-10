@@ -112,6 +112,19 @@ router.post('/:id/portion', (req, res) => {
 
     const remaining = Math.max(0, round1(b.remaining_g - grams));
     db.prepare('UPDATE batches SET remaining_g = $r WHERE id = $id').run({ r: remaining, id: b.id });
+
+    // Every other entry-creation path bumps use_count/last_used (meals.js) —
+    // batch portions skipped it, so a food you eat from a batch weekly never
+    // showed up under "recent" the way the same food logged manually would.
+    if (b.food_id) {
+      db.prepare(`
+        INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used)
+        VALUES ($pid, $fid, 1, datetime('now'))
+        ON CONFLICT(profile_id, food_id)
+        DO UPDATE SET use_count = use_count + 1, last_used = datetime('now')
+      `).run({ pid: req.profileId, fid: b.food_id });
+    }
+
     res.status(201).json({ logged_g: round1(grams), remaining_g: remaining });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

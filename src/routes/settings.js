@@ -11,6 +11,30 @@ const ALLOWED = new Set([
   'weight_display',   // Today's bodyweight card: 'raw' (default) or 'trend'
 ]);
 
+// ironlog_api_url is fetched server-side (src/routes/ironlog.js) and its raw
+// response is echoed back verbatim via GET /api/ironlog/raw — without this
+// check, any profile could point it at an internal address (cloud metadata,
+// localhost, another service on the private network) and use that route as
+// an SSRF read oracle. Blocks the obvious cases (literal internal
+// hosts/IPs); doesn't defend against DNS rebinding, which is out of scope
+// for this app's threat model (household members, not remote attackers).
+function isSafeExternalUrl(str) {
+  let u;
+  try { u = new URL(str); } catch { return false; }
+  if (!['http:', 'https:'].includes(u.protocol)) return false;
+  const host = u.hostname.toLowerCase();
+  if (host === 'localhost' || host === '::1' || host === '0.0.0.0') return false;
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
+  if (m) {
+    const a = Number(m[1]), b = Number(m[2]);
+    if (a === 127 || a === 10 || a === 0) return false;             // loopback, 10.0.0.0/8, "this" network
+    if (a === 172 && b >= 16 && b <= 31) return false;               // 172.16.0.0/12
+    if (a === 192 && b === 168) return false;                       // 192.168.0.0/16
+    if (a === 169 && b === 254) return false;                       // link-local incl. cloud metadata (169.254.169.254)
+  }
+  return true;
+}
+
 function allSettings(db, pid) {
   const rows = db.prepare(
     'SELECT key, value FROM profile_settings WHERE profile_id = $pid'
@@ -28,6 +52,10 @@ router.get('/', (req, res) => {
 
 router.patch('/', (req, res) => {
   try {
+    if (req.body.ironlog_api_url !== undefined && req.body.ironlog_api_url !== ''
+        && !isSafeExternalUrl(req.body.ironlog_api_url)) {
+      return res.status(400).json({ error: 'IronLog URL must be a public http(s) address' });
+    }
     const db = getDb();
     const stmt = db.prepare(
       'INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)'
