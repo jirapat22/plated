@@ -156,6 +156,7 @@ export function renderFoods(container) {
                 <div class="macro-total"><div class="macro-total-val num" style="color:var(--protein)">${food.protein_per_100g?.toFixed(1) ?? '–'}g</div><div class="macro-total-lbl label">protein</div></div>
                 <div class="macro-total"><div class="macro-total-val num" style="color:var(--carbs)">${food.carbs_per_100g?.toFixed(1) ?? '–'}g</div><div class="macro-total-lbl label">carbs</div></div>
                 <div class="macro-total"><div class="macro-total-val num" style="color:var(--fat)">${food.fat_per_100g?.toFixed(1) ?? '–'}g</div><div class="macro-total-lbl label">fat</div></div>
+                <div class="macro-total"><div class="macro-total-val num" style="color:var(--fiber)">${food.fiber_per_100g?.toFixed(1) ?? '–'}g</div><div class="macro-total-lbl label">fiber</div></div>
               </div>
             </div>
             <div style="display:flex;gap:8px">

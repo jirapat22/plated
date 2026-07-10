@@ -280,12 +280,19 @@ router.post('/', (req, res) => {
     if (!food.name?.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
+    // upsertFood does INSERT ... ON CONFLICT(barcode) DO UPDATE, which never
+    // throws a UNIQUE error — it just silently overwrites the existing food's
+    // name/macros instead (the catch below for that error was unreachable
+    // dead code). That let anyone clobber a food they didn't create just by
+    // reusing its barcode here, bypassing the ownership check PATCH /:id
+    // enforces. Reject the collision up front instead of upserting into it.
+    if (food.barcode) {
+      const existing = getDb().prepare('SELECT id FROM foods WHERE barcode = $b').get({ b: food.barcode });
+      if (existing) return res.status(409).json({ error: 'A food with this barcode already exists' });
+    }
     const saved = upsertFood(getDb(), { ...food, source: food.source || 'custom', created_by_profile: req.profileId });
     res.status(201).json(saved);
   } catch (err) {
-    if (err.message.includes('UNIQUE')) {
-      return res.status(409).json({ error: 'A food with this barcode already exists' });
-    }
     res.status(500).json({ error: err.message });
   }
 });
