@@ -266,8 +266,9 @@ export function renderToday(container) {
     const concerns = [];
     if (showNoCal)               concerns.push({ t: `${noCalNames.length} food${noCalNames.length === 1 ? '' : 's'} no calories`, kind: 'bad' });
     if (eaten > combined)        concerns.push({ t: `+${fmtE(eaten - combined)} ${ul} over`, kind: 'warn' });
-    if (t.carbs > goals.carbs + 0.5) concerns.push({ t: `Carbs +${Math.round(t.carbs - goals.carbs)}g`, kind: 'warn' });
-    if (t.fat   > goals.fat   + 0.5) concerns.push({ t: `Fat +${Math.round(t.fat - goals.fat)}g`,     kind: 'warn' });
+    if (t.protein > goals.protein + 0.5) concerns.push({ t: `Protein +${Math.round(t.protein - goals.protein)}g`, kind: 'warn' });
+    if (t.carbs   > goals.carbs   + 0.5) concerns.push({ t: `Carbs +${Math.round(t.carbs - goals.carbs)}g`, kind: 'warn' });
+    if (t.fat     > goals.fat     + 0.5) concerns.push({ t: `Fat +${Math.round(t.fat - goals.fat)}g`,     kind: 'warn' });
     const showConcernRow = concerns.length > 0 || eaten > 0;
 
     // Water chips (collapse > 3)
