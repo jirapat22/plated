@@ -357,7 +357,14 @@ setupCreate();
       await enterApp(profile);
       return;
     }
-  } catch { clearToken(); }
+  } catch (err) {
+    // Only wipe the stored token on an actual auth rejection (api.js throws
+    // this exact message on a 401). A network failure here just means
+    // "offline right now" — clearing the token on that would force someone
+    // who opens the app with no signal to re-enter their passcode once back
+    // online, even though their session was never actually invalid.
+    if (err.message === 'Session expired') clearToken();
+  }
 
   try {
     const { hasProfiles } = await api.get('/api/auth/status');
