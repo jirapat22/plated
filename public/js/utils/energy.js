@@ -14,7 +14,7 @@ export function toDisplay(kcal) {
 
 // Format for display, with rounding
 export function fmtE(kcal, decimals = 0) {
-  if (kcal == null || kcal === '') return '–';
+  if (kcal == null || kcal === '' || isNaN(parseFloat(kcal))) return '–';
   const v = toDisplay(parseFloat(kcal));
   return decimals > 0 ? v.toFixed(decimals) : String(Math.round(v));
 }
