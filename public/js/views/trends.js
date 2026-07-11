@@ -1,7 +1,7 @@
 import { api }                       from '../api.js';
 import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
 import { localDate }                  from '../utils/date.js';
-import { showToast }                  from '../app.js';
+import { showToast, navigateTo }      from '../app.js';
 import { openFoodEntry }              from './log.js';
 import { classifyDay, isFlagged, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY } from '../utils/logCheck.js';
 import { movingAvg } from '../utils/stats.js';
@@ -29,6 +29,20 @@ const CHART_DEFAULTS = {
 };
 
 function destroyChart(id) { Chart.getChart(id)?.destroy(); }
+
+// "set target" in the verdict card was inert text with no way to act on it —
+// jump to Settings and land right on the field instead of leaving the user
+// to go hunt for it. Settings renders async, so poll briefly for the input.
+function goToTargetWeight() {
+  navigateTo('settings');
+  let tries = 0;
+  const tryFocus = () => {
+    const input = document.querySelector('[data-key="target_weight_kg"]');
+    if (input) { input.scrollIntoView({ behavior: 'smooth', block: 'center' }); input.focus(); }
+    else if (tries++ < 20) setTimeout(tryFocus, 100);
+  };
+  setTimeout(tryFocus, 100);
+}
 
 // The Monday (YYYY-MM-DD) of the week containing the given date.
 function mondayOf(dateStr) {
@@ -582,7 +596,7 @@ export function renderTrends(container) {
           <div class="stat-grid">
             <div class="stat-cell"><div class="stat-num">${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(2)}</div><div class="stat-lbl">kg / week</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">your real pace</div></div>
             <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">what you burn</div></div>
-            <div class="stat-cell"><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl">${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">${weeksToTarget ? 'at this pace' : '&nbsp;'}</div></div>
+            <div class="stat-cell${!targetWeight ? ' set-target-cell' : ''}"${!targetWeight ? ' style="cursor:pointer"' : ''}><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl"${!targetWeight ? ' style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px"' : ''}>${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">${weeksToTarget ? 'at this pace' : '&nbsp;'}</div></div>
           </div>
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>${howWorkedOut}`
             : `<details class="nl-details" style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
@@ -818,6 +832,8 @@ export function renderTrends(container) {
         });
       });
     })();
+
+    document.querySelector('.set-target-cell')?.addEventListener('click', goToTargetWeight);
 
     // Review-list actions
     document.querySelectorAll('.review-add').forEach(btn => {
