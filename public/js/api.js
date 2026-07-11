@@ -39,7 +39,14 @@ async function request(method, path, body) {
   if (!resp.ok) {
     // Server faults (5xx) are real bugs — capture them; 4xx are expected.
     if (resp.status >= 500) reportApiError({ method, path, status: resp.status, message: data?.error || '' });
-    throw new Error(data?.error || `HTTP ${resp.status}`);
+    const err = new Error(data?.error || `HTTP ${resp.status}`);
+    // Most callers only read err.message, but some errors carry structured
+    // recovery data (e.g. "this already exists" responses that include the
+    // existing record) — attach the status and full body so those callers
+    // can react instead of just failing.
+    err.status = resp.status;
+    err.data = data;
+    throw err;
   }
 
   return data;

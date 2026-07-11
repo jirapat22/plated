@@ -325,7 +325,16 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
 
   async function handleSelect(food) {
     if (!food.id) {
-      try { food = await api.post('/api/foods', food); } catch { /* use as-is */ }
+      try {
+        food = await api.post('/api/foods', food);
+      } catch (err) {
+        // 409 = this barcode already exists locally under a possibly-different
+        // name (the remote text search doesn't know about local dedup). Use
+        // the existing food's real id instead of proceeding with one that has
+        // none — otherwise "Add to Meal" fails later with a confusing error
+        // that gives no hint why, or (in batches) silently drops the ingredient.
+        if (err.status === 409 && err.data?.food) food = err.data.food;
+      }
     }
     onSelect(food);
   }

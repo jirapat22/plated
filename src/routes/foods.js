@@ -287,8 +287,13 @@ router.post('/', (req, res) => {
     // reusing its barcode here, bypassing the ownership check PATCH /:id
     // enforces. Reject the collision up front instead of upserting into it.
     if (food.barcode) {
-      const existing = getDb().prepare('SELECT id FROM foods WHERE barcode = $b').get({ b: food.barcode });
-      if (existing) return res.status(409).json({ error: 'A food with this barcode already exists' });
+      const existing = getDb().prepare(`SELECT ${FCOLS} FROM foods f WHERE f.barcode = $b`).get({ b: food.barcode });
+      // Include the existing row: a caller creating a food they typed by hand
+      // should be blocked, but one selecting a search result that happens to
+      // already exist under this barcode (e.g. found via a text search that
+      // returned a different product_name than when it was first scanned)
+      // just needs that food's real id back, not a dead end.
+      if (existing) return res.status(409).json({ error: 'A food with this barcode already exists', food: existing });
     }
     const saved = upsertFood(getDb(), { ...food, source: food.source || 'custom', created_by_profile: req.profileId });
     res.status(201).json(saved);
