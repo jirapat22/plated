@@ -198,8 +198,8 @@ export function renderSettings(container) {
       <!-- Export -->
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
         <div class="sec-head">📦 Data &amp; Export<span class="sec-chevron">▾</span></div>
-        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:8px">
-          <a class="btn btn-secondary btn-full" href="/api/settings/export-csv" download>📊 Export meals as CSV</a>
+        <div style="padding:14px 16px">
+          <a class="btn btn-secondary btn-full" href="/api/settings/export-csv" download style="margin-bottom:8px">📊 Export meals as CSV</a>
           <a class="btn btn-secondary btn-full" href="/api/settings/export" download>📦 Export all data as JSON</a>
         </div>
       </div>
