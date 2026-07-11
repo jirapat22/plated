@@ -25,14 +25,31 @@ async function dayMeals(viewDate) {
   try { return (await api.get(`/api/meals/day/${viewDate}`)).sessions || []; } catch { return []; }
 }
 
-// Shared sheet body for picking a destination: a date (defaults to viewDate)
-// plus the meals that already exist on whichever date is picked, so copying
-// "to another day" can merge into a meal that's already there instead of
-// always creating a duplicate. The target list re-fetches on date change.
-// excludeSessionId is left out of the list (can't copy a meal into itself).
-// onPick(date, sid) — sid is an existing session id, or 'new'.
+// Shared sheet body for picking a destination: a day (quick-pick chips,
+// defaulting to Tomorrow — copying to the source day itself is almost never
+// the intent) plus the meals that already exist on whichever day is picked,
+// so copying "to another day" can merge into a meal that's already there
+// instead of always creating a duplicate. The target list re-fetches on
+// date change. excludeSessionId is left out of the list (can't copy a meal
+// into itself). onPick(date, sid) — sid is an existing session id, or 'new'.
+//
+// Chips instead of a native <input type="date"> — that was the only native
+// OS UI anywhere in this otherwise fully custom-themed app (it pops up the
+// platform's own light-themed date wheel), AND it defaulted to the meal's
+// own day, so every "move this to a different day" attempt required
+// operating that picker. History already has a themed, tap-based day
+// picker one screen over; this reuses that same interaction language. A
+// "Pick another date" fallback keeps the original's open-ended past-date
+// support (e.g. backfilling a corrected day) for anything outside the
+// 7-day quick-pick window.
 function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOthers, onPick) {
   showSheet(content => {
+    const today = localDate();
+    const quickDays = [today, ...Array.from({ length: 7 }, (_, i) => addDaysIso(today, i + 1))];
+    const dayLabel = (iso, i) => i === 0 ? 'Today' : i === 1 ? 'Tomorrow'
+      : new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    let selectedDate = quickDays[1];   // default: tomorrow — the common case
+
     content.innerHTML = `
       <div class="sheet-header">
         <span class="sheet-title">${title}</span>
@@ -41,23 +58,29 @@ function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOt
       <div style="padding:0 16px">
         ${subtitle}
         <label class="form-label">Date</label>
-        <input class="input" id="cp-date" type="date" max="${addDaysIso(localDate(), 7)}" value="${viewDate}" style="margin:6px 0 14px"/>
+        <div id="cp-days" style="display:flex;gap:6px;overflow-x:auto;padding:6px 0 10px;-webkit-overflow-scrolling:touch">
+          ${quickDays.map((d, i) => `<button type="button" class="fs-chip cp-day${d === selectedDate ? ' active' : ''}" data-date="${d}" style="flex-shrink:0">${dayLabel(d, i)}</button>`).join('')}
+        </div>
+        <button type="button" id="cp-custom-toggle" style="font-size:12px;color:var(--accent);font-weight:600;padding:2px 0;margin-bottom:4px">Pick another date…</button>
+        <input class="input" id="cp-date-custom" type="date" max="${addDaysIso(today, 7)}" style="display:none;margin-bottom:14px"/>
         <label class="form-label">Copy into</label>
         <div id="cp-targets" style="display:flex;flex-direction:column;gap:6px;margin:6px 0 16px"></div>
       </div>`;
     document.getElementById('cp-close').addEventListener('click', hideSheet);
 
-    const dateInput  = document.getElementById('cp-date');
-    const targetsBox = document.getElementById('cp-targets');
+    const daysBox      = document.getElementById('cp-days');
+    const customToggle = document.getElementById('cp-custom-toggle');
+    const customInput  = document.getElementById('cp-date-custom');
+    const targetsBox   = document.getElementById('cp-targets');
 
     async function renderTargets() {
-      const date = dateInput.value;
+      const date = selectedDate;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { targetsBox.innerHTML = ''; return; }
       targetsBox.innerHTML = '<div class="skeleton skel-line" style="height:38px"></div>';
       const sessions = date === viewDate
         ? initialOthers
         : (await dayMeals(date)).filter(s => s.id !== excludeSessionId);
-      if (dateInput.value !== date) return;   // date changed again while this was in flight
+      if (selectedDate !== date) return;   // date changed again while this was in flight
       targetsBox.innerHTML = sessions.map(s =>
         `<button class="cp-target btn btn-secondary" data-sid="${s.id}" style="justify-content:flex-start">${esc(s.name || 'Meal')}</button>`
       ).join('') + `<button class="cp-target btn btn-secondary" data-sid="new" style="justify-content:flex-start;color:var(--accent)">+ New meal</button>`;
@@ -65,7 +88,26 @@ function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOt
         btn.addEventListener('click', () => onPick(date, btn.dataset.sid)));
     }
 
-    dateInput.addEventListener('change', renderTargets);
+    function selectDate(date) {
+      selectedDate = date;
+      daysBox.querySelectorAll('.cp-day').forEach(b => b.classList.toggle('active', b.dataset.date === date));
+      renderTargets();
+    }
+
+    daysBox.querySelectorAll('.cp-day').forEach(btn =>
+      btn.addEventListener('click', () => selectDate(btn.dataset.date)));
+
+    customToggle.addEventListener('click', () => {
+      const opening = customInput.style.display === 'none';
+      customInput.style.display = opening ? 'block' : 'none';
+      if (opening) customInput.focus();
+    });
+    customInput.addEventListener('change', () => {
+      if (!customInput.value) return;
+      daysBox.querySelectorAll('.cp-day').forEach(b => b.classList.remove('active'));
+      selectDate(customInput.value);
+    });
+
     renderTargets();
   });
 }
