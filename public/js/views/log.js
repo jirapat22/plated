@@ -254,17 +254,28 @@ export function openCopyPastMeal(targetSessionId, onSuccess) {
       btn.addEventListener('click', async () => {
         const s = sessions[parseInt(btn.dataset.idx)];
         btn.style.opacity = '0.5';
-        try {
-          await Promise.all(s.entries.map(e =>
-            api.post(`/api/meals/sessions/${targetSessionId}/entries`, {
-              food_id: e.food_id, quantity_g: e.quantity_g,
-            })
-          ));
+        // allSettled, not all — these fire concurrently, so if one entry 404s
+        // (e.g. its food was deleted since this list loaded) the others have
+        // already gone through server-side. Promise.all would reject and show
+        // a plain "failed" toast implying nothing happened, and a user who
+        // retried on that assumption would duplicate the ones that succeeded.
+        const results = await Promise.allSettled(s.entries.map(e =>
+          api.post(`/api/meals/sessions/${targetSessionId}/entries`, {
+            food_id: e.food_id, quantity_g: e.quantity_g,
+          })
+        ));
+        const okCount = results.filter(r => r.status === 'fulfilled').length;
+        const failCount = results.length - okCount;
+        if (failCount === 0) {
           hideSheet();
-          showToast(`Copied ${s.entries.length} foods from ${s.name}`, 'success');
+          showToast(`Copied ${okCount} foods from ${s.name}`, 'success');
           onSuccess?.();
-        } catch (err) {
-          showToast(err.message, 'error');
+        } else if (okCount > 0) {
+          hideSheet();
+          showToast(`Copied ${okCount} of ${results.length} — ${failCount} couldn't be copied (may have been removed)`, 'error');
+          onSuccess?.();   // some entries did land — refresh so the view isn't stale
+        } else {
+          showToast('Could not copy any foods from that meal', 'error');
           btn.style.opacity = '1';
         }
       });
