@@ -427,10 +427,11 @@ export function openEditEntry(entry, onSuccess) {
   showSheet(content => {
     const ul  = unitLabel();
     const srv = entry.serving_size_g || 100;
+    const isQuick = entry.food_source === 'quick';
 
     content.innerHTML = `
       <div class="sheet-header">
-        <span class="sheet-title">Edit Quantity</span>
+        <span class="sheet-title">Edit ${isQuick ? 'Quick Log' : 'Quantity'}</span>
         <button class="sheet-close" id="edit-close">✕</button>
       </div>
       <div class="qty-food-name">${esc(entry.food_name)}</div>
@@ -463,7 +464,28 @@ export function openEditEntry(entry, onSuccess) {
         </div>
       </div>
 
-      <div class="qty-macros" id="edit-macros"></div>
+      ${isQuick ? `
+      <div style="padding:14px 16px 0">
+        <div class="label" style="margin-bottom:10px">Calories (for ${srv}g) *</div>
+        <div style="display:flex;gap:6px;margin-bottom:14px">
+          <input class="input" id="edit-cal" type="text" inputmode="decimal" style="flex:1;min-width:0" />
+          <div style="display:flex;gap:4px;flex-shrink:0" id="edit-cal-unit">
+            <button type="button" class="eunit-btn active" data-unit="kcal">kcal</button>
+            <button type="button" class="eunit-btn" data-unit="kj">kJ</button>
+          </div>
+        </div>
+        <div class="label" style="margin-bottom:10px">Macros — optional</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          ${['pro','carb','fat'].map((id, i) => {
+            const [label, color] = [['Protein','var(--protein)'],['Carbs','var(--carbs)'],['Fat','var(--fat)']][i];
+            return `<div style="position:relative">
+              <input class="input" id="edit-${id}" type="text" placeholder="${label}" inputmode="decimal"
+                style="height:42px;padding-right:20px;border-color:${color}44"/>
+              <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:${color}">${label[0]}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : `<div class="qty-macros" id="edit-macros"></div>`}
       <div class="qty-confirm">
         <button class="btn btn-primary btn-full" id="edit-confirm">Update</button>
       </div>
@@ -486,6 +508,7 @@ export function openEditEntry(entry, onSuccess) {
     }
 
     function calcMacros() {
+      if (isQuick) return;   // macro edit inputs replace this preview
       const qty = getTotalG();
       const r   = qty / 100;
       const cal = entry.calories_per_100g != null ? fmtE(entry.calories_per_100g * r) : '–';
@@ -513,12 +536,38 @@ export function openEditEntry(entry, onSuccess) {
 
     document.getElementById('edit-close').addEventListener('click', hideSheet);
 
+    // Quick-log entries also expose the underlying food's own calories/macros
+    // for editing (rough numbers typed in on the go are often wrong) — real
+    // foods stay quantity-only since editing their macros would ripple into
+    // every other entry logged against that shared food.
+    let getCalKcal = null;
+    if (isQuick) {
+      getCalKcal = wireEnergyUnitToggle(
+        document.getElementById('edit-cal-unit'),
+        document.getElementById('edit-cal')
+      );
+      document.getElementById('edit-cal').value  = entry.calories_per_100g != null ? fmtE(entry.calories_per_100g) : '';
+      document.getElementById('edit-pro').value  = entry.protein_per_100g  ?? '';
+      document.getElementById('edit-carb').value = entry.carbs_per_100g    ?? '';
+      document.getElementById('edit-fat').value  = entry.fat_per_100g      ?? '';
+    }
+
     document.getElementById('edit-confirm').addEventListener('click', async () => {
       const qty = getTotalG();
       if (!qty || qty <= 0) { showToast('Enter a valid quantity', 'error'); return; }
       const btn = document.getElementById('edit-confirm');
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
+        if (isQuick) {
+          const calKcal = getCalKcal();
+          if (!calKcal) { showToast('Enter the calories', 'error'); btn.disabled = false; btn.textContent = 'Update'; return; }
+          await api.patch(`/api/foods/${entry.food_id}`, {
+            calories_per_100g: calKcal,
+            protein_per_100g: parseFloat(document.getElementById('edit-pro').value)  || null,
+            carbs_per_100g:   parseFloat(document.getElementById('edit-carb').value) || null,
+            fat_per_100g:     parseFloat(document.getElementById('edit-fat').value)  || null,
+          });
+        }
         await api.patch(`/api/meals/entries/${entry.id}`, { quantity_g: qty });
         hideSheet();
         showToast('Updated', 'success');

@@ -66,7 +66,7 @@ function loadDay(db, date, pid) {
   // list is injection-safe and avoids dynamic placeholder juggling.
   const ids = sessions.map(s => s.id);
   const entries = db.prepare(`
-    SELECT me.*, f.name AS food_name, f.brand AS food_brand,
+    SELECT me.*, f.name AS food_name, f.brand AS food_brand, f.source AS food_source,
            f.calories_per_100g, f.protein_per_100g, f.carbs_per_100g,
            f.fat_per_100g, f.fiber_per_100g, f.serving_size_g
     FROM meal_entries me
