@@ -3,6 +3,15 @@ const { getDb } = require('../db');
 
 const router = express.Router();
 
+// Orbit polls this on its own schedule with no per-request notion of the
+// user's timezone, so "today" has to be pinned to a fixed zone rather than
+// the server's UTC day — new Date().toISOString() alone would show NZ users
+// yesterday's totals as "today" for roughly half of every day. Intl handles
+// NZST/NZDT DST transitions correctly, unlike a fixed UTC+12/+13 offset.
+// Override with ORBIT_TZ if this is ever run for a non-NZ user.
+const ORBIT_TZ = process.env.ORBIT_TZ?.trim() || 'Pacific/Auckland';
+const isoInTz = (date, tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(date);
+
 // Admin feed for the Orbit dashboard. Open by default (single-admin use); set
 // ORBIT_API_KEY in the environment to require `X-API-Key` / Bearer once you want
 // to lock it down — no code change needed.
@@ -54,8 +63,8 @@ function lastActive(db, pid) {
 router.get('/', (req, res) => {
   try {
     const db = getDb();
-    const today     = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 864e5).toISOString().split('T')[0];
+    const today     = isoInTz(new Date(), ORBIT_TZ);
+    const yesterday = isoInTz(new Date(Date.now() - 864e5), ORBIT_TZ);
 
     const profiles = db.prepare(
       'SELECT id, name, accent_color, created_at FROM profiles ORDER BY id ASC'
