@@ -280,7 +280,7 @@ export function renderHistory(container) {
     } else {
       const isPast = date < localDate();
       mealData.sessions.forEach(session => {
-        const card = renderMealCard(session, date, { showMoveToday: isPast }, () => refresh(date));
+        const card = renderMealCard(session, date, { showMoveToday: isPast, showQuickLog: true }, () => refresh(date));
         card.style.margin = '0 0 10px';   // history-day already has 16px side padding
         el.appendChild(card);
       });
