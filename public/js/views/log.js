@@ -352,9 +352,9 @@ export function openQuickLog(sessionId, onSuccess) {
           </div>
         </div>
         <div class="label" style="margin-bottom:10px">Macros — optional</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:16px">
-          ${['pro','carb','fat','fiber'].map((id, i) => {
-            const [label, color] = [['Protein','var(--protein)'],['Carbs','var(--carbs)'],['Fat','var(--fat)'],['Fiber','var(--fiber)']][i];
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+          ${['pro','carb','fat'].map((id, i) => {
+            const [label, color] = [['Protein','var(--protein)'],['Carbs','var(--carbs)'],['Fat','var(--fat)']][i];
             return `<div style="position:relative">
               <input class="input" id="ql-${id}" type="text" placeholder="${label}" inputmode="decimal"
                 style="height:42px;padding-right:20px;border-color:${color}44"/>
@@ -378,16 +378,15 @@ export function openQuickLog(sessionId, onSuccess) {
       const calKcal = getCalKcal();
       if (!name)   { showToast('Enter a meal description', 'error'); return; }
       if (!calKcal) { showToast('Enter the calories', 'error'); return; }
-      const pro   = parseFloat(document.getElementById('ql-pro').value)   || null;
-      const carb  = parseFloat(document.getElementById('ql-carb').value)  || null;
-      const fat   = parseFloat(document.getElementById('ql-fat').value)   || null;
-      const fiber = parseFloat(document.getElementById('ql-fiber').value) || null;
+      const pro  = parseFloat(document.getElementById('ql-pro').value)  || null;
+      const carb = parseFloat(document.getElementById('ql-carb').value) || null;
+      const fat  = parseFloat(document.getElementById('ql-fat').value)  || null;
       const btn = document.getElementById('ql-submit');
       btn.disabled = true; btn.textContent = 'Logging…';
       try {
         const food = await api.post('/api/foods', {
           name, calories_per_100g: calKcal,
-          protein_per_100g: pro, carbs_per_100g: carb, fat_per_100g: fat, fiber_per_100g: fiber,
+          protein_per_100g: pro, carbs_per_100g: carb, fat_per_100g: fat,
           serving_size_g: 100, source: 'quick',
         });
         await api.post(`/api/meals/sessions/${sessionId}/entries`, { food_id: food.id, quantity_g: 100 });
@@ -476,9 +475,9 @@ export function openEditEntry(entry, onSuccess) {
           </div>
         </div>
         <div class="label" style="margin-bottom:10px">Macros — optional</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
-          ${['pro','carb','fat','fiber'].map((id, i) => {
-            const [label, color] = [['Protein','var(--protein)'],['Carbs','var(--carbs)'],['Fat','var(--fat)'],['Fiber','var(--fiber)']][i];
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          ${['pro','carb','fat'].map((id, i) => {
+            const [label, color] = [['Protein','var(--protein)'],['Carbs','var(--carbs)'],['Fat','var(--fat)']][i];
             return `<div style="position:relative">
               <input class="input" id="edit-${id}" type="text" placeholder="${label}" inputmode="decimal"
                 style="height:42px;padding-right:20px;border-color:${color}44"/>
@@ -547,11 +546,10 @@ export function openEditEntry(entry, onSuccess) {
         document.getElementById('edit-cal-unit'),
         document.getElementById('edit-cal')
       );
-      document.getElementById('edit-cal').value   = entry.calories_per_100g != null ? fmtE(entry.calories_per_100g) : '';
-      document.getElementById('edit-pro').value   = entry.protein_per_100g  ?? '';
-      document.getElementById('edit-carb').value  = entry.carbs_per_100g    ?? '';
-      document.getElementById('edit-fat').value   = entry.fat_per_100g      ?? '';
-      document.getElementById('edit-fiber').value = entry.fiber_per_100g    ?? '';
+      document.getElementById('edit-cal').value  = entry.calories_per_100g != null ? fmtE(entry.calories_per_100g) : '';
+      document.getElementById('edit-pro').value  = entry.protein_per_100g  ?? '';
+      document.getElementById('edit-carb').value = entry.carbs_per_100g    ?? '';
+      document.getElementById('edit-fat').value  = entry.fat_per_100g      ?? '';
     }
 
     document.getElementById('edit-confirm').addEventListener('click', async () => {
@@ -565,10 +563,9 @@ export function openEditEntry(entry, onSuccess) {
           if (!calKcal) { showToast('Enter the calories', 'error'); btn.disabled = false; btn.textContent = 'Update'; return; }
           await api.patch(`/api/foods/${entry.food_id}`, {
             calories_per_100g: calKcal,
-            protein_per_100g: parseFloat(document.getElementById('edit-pro').value)   || null,
-            carbs_per_100g:   parseFloat(document.getElementById('edit-carb').value)  || null,
-            fat_per_100g:     parseFloat(document.getElementById('edit-fat').value)   || null,
-            fiber_per_100g:   parseFloat(document.getElementById('edit-fiber').value) || null,
+            protein_per_100g: parseFloat(document.getElementById('edit-pro').value)  || null,
+            carbs_per_100g:   parseFloat(document.getElementById('edit-carb').value) || null,
+            fat_per_100g:     parseFloat(document.getElementById('edit-fat').value)  || null,
           });
         }
         await api.patch(`/api/meals/entries/${entry.id}`, { quantity_g: qty });
