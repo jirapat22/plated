@@ -167,12 +167,12 @@ export function renderHistory(container) {
     }
   }
 
-  // Re-pull the 30-day summary (powers the calendar dots + 7-day avg) before
-  // reloading the day — otherwise an edit shows in the totals above but the
-  // 7-day-avg panel and strip dots stay stale until you leave and come back.
+  // Re-pull the 30-day summary (powers the calendar dots + 7-day avg) alongside
+  // the day reload — run concurrently, not sequentially: a slow/failed summary
+  // fetch must never block the day reload, or a just-added meal silently fails
+  // to appear until the next full app reload.
   async function refresh(date) {
-    await loadSummary();
-    loadDay(date);
+    await Promise.allSettled([loadSummary(), loadDay(date)]);
   }
 
   function renderDay(el, mealData, settings, date, dayWeight) {
