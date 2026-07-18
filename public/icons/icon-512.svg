@@ -1,11 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <rect width="512" height="512" rx="110" fill="#0d0d0f"/>
-  <!-- Outer plate ring -->
-  <circle cx="256" cy="256" r="190" stroke="#c8b8ff" stroke-width="12" fill="none"/>
-  <!-- Middle dashed ring -->
-  <circle cx="256" cy="256" r="138" stroke="#c8b8ff" stroke-width="6" fill="none" stroke-dasharray="32 20"/>
-  <!-- Inner filled circle -->
-  <circle cx="256" cy="256" r="42" fill="#c8b8ff"/>
-  <!-- Subtle gleam -->
-  <circle cx="236" cy="236" r="14" fill="white" opacity="0.25"/>
+  <!-- Ring + Bite -->
+  <circle cx="256" cy="256" r="178" stroke="#c8b8ff" stroke-width="52" fill="none"/>
+  <!-- Bite: two overlapping dark circles so the notch reads as torn, not drilled -->
+  <circle cx="410.2" cy="345" r="62" fill="#0d0d0f"/>
+  <circle cx="377.9" cy="365.7" r="24" fill="#0d0d0f"/>
 </svg>
