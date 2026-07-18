@@ -143,7 +143,7 @@ export function renderSettings(container) {
           </div>
         </div>
         ${goalRow('calorie_goal',      'Calories',      s.calorie_goal,      'kcal')}
-        ${macroSplitBox(s)}
+        <div id="msplit-box"></div>
         ${goalRow('protein_goal',      'Protein',       s.protein_goal,      'g')}
         ${goalRow('carb_goal',         'Carbs',         s.carb_goal,         'g')}
         ${goalRow('fat_goal',          'Fat',           s.fat_goal,          'g')}
@@ -396,6 +396,7 @@ export function renderSettings(container) {
       }
       if (goalEl) goalEl.innerHTML = goalResult(s);
       renderRateRow();
+      renderMacroSplit();
     }
 
     // Rate-of-change goal input — an alternate way to fill in ③ Adjustment:
@@ -435,10 +436,20 @@ export function renderSettings(container) {
     }
     renderRateRow();
 
-    // Macro split by % — protein & fat set, carbs fills the rest (never > 100%)
-    const msP = document.getElementById('msplit-p');
-    const msF = document.getElementById('msplit-f');
-    if (msP && msF) {
+    // Macro split by % — protein & fat set, carbs fills the rest (never > 100%).
+    // Re-render (not just re-wire) on every call — calorie_goal changes via
+    // TDEE apply / phase / rate-of-change / a direct edit all update `s` in
+    // place without a full reload, so this must re-read s.calorie_goal fresh
+    // each time rather than trusting a `cal` captured once at initial render.
+    function renderMacroSplit() {
+      const box = document.getElementById('msplit-box');
+      if (!box) return;
+      box.innerHTML = macroSplitBox(s);
+
+      const msP = document.getElementById('msplit-p');
+      const msF = document.getElementById('msplit-f');
+      if (!msP || !msF) return;
+
       const cal = parseFloat(s.calorie_goal) || 0;
       const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
       const draw = (p, f) => {
@@ -488,6 +499,7 @@ export function renderSettings(container) {
         }
       });
     }
+    renderMacroSplit();
 
     // Goal inputs — save on blur
     body.querySelectorAll('.settings-row-input').forEach(input => {
@@ -497,6 +509,7 @@ export function renderSettings(container) {
           if (input.dataset.key) s[input.dataset.key] = input.value;
           showToast('Saved', 'success');
           if (input.dataset.key === 'cut_deficit' || input.dataset.key === 'bulk_surplus') refreshGoal();
+          else if (input.dataset.key === 'calorie_goal') renderMacroSplit();
         } catch (err) {
           showToast(err.message, 'error');
         }
@@ -516,6 +529,7 @@ export function renderSettings(container) {
           const goalEl = document.getElementById('phase-goal');
           if (goalEl) goalEl.innerHTML = goalResult(s);
           renderRateRow();
+          renderMacroSplit();
           if (result.calorie_goal) {
             const calInput = body.querySelector('[data-key="calorie_goal"]');
             if (calInput) calInput.value = result.calorie_goal;
@@ -543,6 +557,7 @@ export function renderSettings(container) {
         if (calInput) calInput.value = calGoal;
         const goalEl = document.getElementById('phase-goal');
         if (goalEl) goalEl.innerHTML = goalResult(s);
+        renderMacroSplit();
         showToast(`TDEE saved · goal → ${calGoal} kcal`, 'success');
         window.dispatchEvent(new CustomEvent('plated:settings-changed'));
       } catch (err) {

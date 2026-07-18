@@ -1,5 +1,6 @@
 const express = require('express');
 const { getDb, canView } = require('../db');
+const { todayLocal } = require('../utils/tz');
 
 const router = express.Router();
 
@@ -186,7 +187,7 @@ router.post('/sessions', (req, res) => {
   try {
     const db = getDb();
     const pid = req.profileId;
-    const date = req.body.date || new Date().toISOString().split('T')[0];
+    const date = req.body.date || todayLocal();
 
     const { max_idx } = db.prepare(`
       SELECT COALESCE(MAX(meal_index), 0) AS max_idx
@@ -225,7 +226,7 @@ router.post('/sessions/:id/copy', (req, res) => {
       const own = db.prepare('SELECT 1 FROM meal_sessions WHERE id = $s AND profile_id = $p').get({ s: targetId, p: pid });
       if (!own) return res.status(404).json({ error: 'Target meal not found' });
     } else {
-      const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body.date || '') ? req.body.date : new Date().toISOString().split('T')[0];
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body.date || '') ? req.body.date : todayLocal();
       const idx = db.prepare('SELECT COALESCE(MAX(meal_index), 0) + 1 AS i FROM meal_sessions WHERE date = $d AND profile_id = $p').get({ d: date, p: pid }).i;
       targetId = db.prepare('INSERT INTO meal_sessions (date, name, meal_index, profile_id) VALUES ($d, $n, $i, $p)')
         .run({ d: date, n: src.name, i: idx, p: pid }).lastInsertRowid;

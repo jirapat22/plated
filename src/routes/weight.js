@@ -1,5 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
+const { todayLocal } = require('../utils/tz');
 
 const router = express.Router();
 
@@ -55,7 +56,7 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'weight_kg must be > 0' });
     }
     const db = getDb();
-    const logDate = date || new Date().toISOString().split('T')[0];
+    const logDate = date || todayLocal();
     const result = db.prepare(
       "INSERT INTO weight_log (date, weight_kg, note, profile_id, source) VALUES ($date, $weight_kg, $note, $pid, 'manual')"
     ).run({ date: logDate, weight_kg, note: note || null, pid: req.profileId });

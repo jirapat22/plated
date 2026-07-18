@@ -1,5 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
+const { todayLocal } = require('../utils/tz');
 
 const router = express.Router();
 
@@ -17,15 +18,6 @@ function dayData(db, date, pid) {
   const goal_ml = parseInt(override?.value || setting?.value || 2500);
   return { date, entries, total_ml, goal_ml };
 }
-
-router.get('/today', (req, res) => {
-  try {
-    const date = new Date().toISOString().split('T')[0];
-    res.json(dayData(getDb(), date, req.profileId));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 router.get('/day/:date', (req, res) => {
   try {
@@ -45,7 +37,7 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'amount_ml must be > 0' });
     }
     const db = getDb();
-    const logDate = date || new Date().toISOString().split('T')[0];
+    const logDate = date || todayLocal();
     const result = db.prepare(
       'INSERT INTO water_log (date, amount_ml, profile_id) VALUES ($date, $amount_ml, $pid)'
     ).run({ date: logDate, amount_ml, pid: req.profileId });

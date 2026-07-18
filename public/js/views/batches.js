@@ -2,6 +2,7 @@ import { api }                        from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
 import { renderFoodSearch }           from '../components/foodSearch.js';
 import { fmtE, unitLabel }            from '../utils/energy.js';
+import { localDate }                  from '../utils/date.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -167,7 +168,7 @@ export function renderBatches(container) {
         const btn = document.getElementById('p-save');
         btn.disabled = true; btn.textContent = 'Logging…';
         try {
-          const r = await api.post(`/api/batches/${batch.id}/portion`, { grams });
+          const r = await api.post(`/api/batches/${batch.id}/portion`, { grams, date: localDate() });
           hideSheet();
           showToast(`Logged ${Math.round(r.logged_g)} g · ${Math.round(r.remaining_g)} g left`, 'success');
           onDone?.();

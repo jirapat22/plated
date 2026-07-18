@@ -1,5 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
+const { todayLocal } = require('../utils/tz');
 
 // Extract all goals from IronLog profile data
 function extractProfile(profileData) {
@@ -98,7 +99,7 @@ router.get('/today', async (req, res) => {
     // be the user's yesterday and pull the wrong day's workout.
     const today = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '')
       ? req.query.date
-      : new Date().toISOString().split('T')[0];
+      : todayLocal();
     const tzOff = Number.isFinite(parseInt(req.query.tz)) ? parseInt(req.query.tz) : 0;
 
     // Pull the calories endpoint AND recent workouts. The endpoint can miss the
@@ -189,7 +190,7 @@ router.get('/bodyweight', async (req, res) => {
 router.get('/raw', async (req, res) => {
   try {
     const pid = req.profileId;
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayLocal();
     const [profileRes, calsRes, bwRes, recentRes] = await Promise.allSettled([
       getProfile(pid),
       getWorkoutCalories(pid, today),

@@ -169,7 +169,7 @@ router.get('/favourites', (req, res) => {
       FROM foods f
       JOIN profile_food_stats pfs
         ON pfs.food_id = f.id AND pfs.profile_id = $pid AND pfs.is_favourite = 1
-      WHERE f.hidden = 0 AND f.source != 'batch'
+      WHERE f.hidden = 0 AND f.source NOT IN ('batch', 'quick')
       ORDER BY pfs.use_count DESC, f.name ASC
     `).all({ pid: req.profileId });
     res.json(rows);
