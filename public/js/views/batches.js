@@ -137,6 +137,16 @@ export function renderBatches(container) {
   function openPortion(batch, onDone) {
     if (!batch) return;
     showSheet(content => {
+      const today = localDate();
+      const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return localDate(d); };
+      // Backfilling an already-eaten portion is the common reason to pick a
+      // day at all, so the quick chips look backward (today, then the last
+      // few days) rather than forward like the meal-copy day picker does.
+      const quickDays = [today, addDays(today, -1), addDays(today, -2), addDays(today, -3)];
+      const dayLabel = (iso, i) => i === 0 ? 'Today' : i === 1 ? 'Yesterday'
+        : new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      let selectedDate = today;
+
       content.innerHTML = `
         <div class="sheet-header">
           <span class="sheet-title">Portion · ${esc(batch.name)}</span>
@@ -144,6 +154,12 @@ export function renderBatches(container) {
         </div>
         <div style="padding:0 16px">
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">${Math.round(batch.remaining_g)} g left · ${batch.kcal_per_100g} ${unitLabel()}/100g</div>
+          <label class="form-label">Day</label>
+          <div id="p-days" style="display:flex;gap:6px;overflow-x:auto;padding:6px 0 4px;-webkit-overflow-scrolling:touch">
+            ${quickDays.map((d, i) => `<button type="button" class="fs-chip p-day${i === 0 ? ' active' : ''}" data-date="${d}" style="flex-shrink:0">${dayLabel(d, i)}</button>`).join('')}
+          </div>
+          <button type="button" id="p-custom-toggle" style="font-size:12px;color:var(--accent);font-weight:600;padding:2px 0;margin-bottom:12px">Pick another date…</button>
+          <input class="input" id="p-date-custom" type="date" max="${today}" style="display:none;margin-bottom:14px"/>
           <label class="form-label">How much are you eating?</label>
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
             <input class="input" id="p-g" type="text" inputmode="decimal" value="220" style="flex:1"/>
@@ -161,6 +177,28 @@ export function renderBatches(container) {
           : '';
       };
       gi.addEventListener('input', upd); upd();
+
+      const daysBox     = document.getElementById('p-days');
+      const customToggle= document.getElementById('p-custom-toggle');
+      const customInput = document.getElementById('p-date-custom');
+      daysBox.querySelectorAll('.p-day').forEach(btn => {
+        btn.addEventListener('click', () => {
+          selectedDate = btn.dataset.date;
+          daysBox.querySelectorAll('.p-day').forEach(b => b.classList.toggle('active', b === btn));
+          customInput.style.display = 'none';
+        });
+      });
+      customToggle.addEventListener('click', () => {
+        const opening = customInput.style.display === 'none';
+        customInput.style.display = opening ? 'block' : 'none';
+        if (opening) customInput.focus();
+      });
+      customInput.addEventListener('change', () => {
+        if (!customInput.value) return;
+        selectedDate = customInput.value;
+        daysBox.querySelectorAll('.p-day').forEach(b => b.classList.remove('active'));
+      });
+
       document.getElementById('p-close').addEventListener('click', hideSheet);
       document.getElementById('p-save').addEventListener('click', async () => {
         const grams = parseFloat(gi.value);
@@ -168,7 +206,7 @@ export function renderBatches(container) {
         const btn = document.getElementById('p-save');
         btn.disabled = true; btn.textContent = 'Logging…';
         try {
-          const r = await api.post(`/api/batches/${batch.id}/portion`, { grams, date: localDate() });
+          const r = await api.post(`/api/batches/${batch.id}/portion`, { grams, date: selectedDate });
           hideSheet();
           showToast(`Logged ${Math.round(r.logged_g)} g · ${Math.round(r.remaining_g)} g left`, 'success');
           onDone?.();

@@ -153,7 +153,7 @@ router.get('/recent', (req, res) => {
       LEFT JOIN profile_food_stats pfs ON pfs.food_id = f.id AND pfs.profile_id = $pid
       WHERE f.source NOT IN ('quick', 'batch') AND f.hidden = 0
       ORDER BY use_count DESC, latest.last_used DESC
-      LIMIT 10
+      LIMIT 40
     `).all({ pid: req.profileId });
     res.json(rows);
   } catch (err) {
