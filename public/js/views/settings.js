@@ -1,8 +1,9 @@
 import { api }                        from '../api.js';
-import { showToast, reloadEnergyUnit, getProfile, applyProfile, logoutToLock, ACCENTS } from '../app.js';
+import { showToast, showSheet, hideSheet, reloadEnergyUnit, getProfile, applyProfile, logoutToLock, ACCENTS } from '../app.js';
 import { setEnergyUnit }             from '../utils/energy.js';
 import { submitReport }              from '../utils/bugReport.js';
 import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
+import { localDate }                 from '../utils/date.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -199,8 +200,9 @@ export function renderSettings(container) {
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
         <div class="sec-head">📦 Data &amp; Export<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
-          <a class="btn btn-secondary btn-full" href="/api/settings/export-csv" download style="margin-bottom:8px">📊 Export meals as CSV</a>
-          <a class="btn btn-secondary btn-full" href="/api/settings/export" download>📦 Export all data as JSON</a>
+          <button class="btn btn-secondary btn-full" id="open-report" style="margin-bottom:8px">📋 Detailed nutrition report</button>
+          <button class="btn btn-secondary btn-full" id="export-csv" style="margin-bottom:8px">📊 Export meals as CSV</button>
+          <button class="btn btn-secondary btn-full" id="export-json">📦 Export all data as JSON</button>
         </div>
       </div>
 
@@ -711,9 +713,143 @@ export function renderSettings(container) {
       }
     });
 
+    document.getElementById('open-report').addEventListener('click', openReportSheet);
+
+    document.getElementById('export-csv').addEventListener('click', async () => {
+      try {
+        const text = await api.get('/api/settings/export-csv');
+        downloadBlob(text, `plated-meals-${localDate()}.csv`, 'text/csv');
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+    document.getElementById('export-json').addEventListener('click', async () => {
+      try {
+        const data = await api.get('/api/settings/export');
+        downloadBlob(JSON.stringify(data, null, 2), `plated-export-${localDate()}.json`, 'application/json');
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+
   }
 
   load();
+}
+
+// Downloads use api.get() (carries the Authorization bearer token) rather
+// than a plain <a href> — a bare link to an /api/settings/export* route sends
+// no auth header at all, so the server 401s and the "download" is just a
+// `{"error":"Not logged in"}` blob.
+function downloadBlob(text, filename, mime) {
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ── Detailed nutrition report ──────────────────────────────────
+function openReportSheet() {
+  showSheet(content => {
+    const today = localDate();
+    const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return localDate(d); };
+    let range = '7';
+    let fmt = 'html';
+
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">Nutrition report</span>
+        <button class="sheet-close" id="rp-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">A readable day-by-day breakdown of what you ate — meals, macros, and daily averages. Good for sharing with a doctor or coach.</div>
+        <label class="form-label">Date range</label>
+        <div id="rp-ranges" style="display:flex;gap:6px;overflow-x:auto;padding:6px 0 4px;-webkit-overflow-scrolling:touch">
+          <button type="button" class="fs-chip rp-range active" data-range="7">Last 7 days</button>
+          <button type="button" class="fs-chip rp-range" data-range="30">Last 30 days</button>
+          <button type="button" class="fs-chip rp-range" data-range="month">This month</button>
+          <button type="button" class="fs-chip rp-range" data-range="all">All time</button>
+        </div>
+        <button type="button" id="rp-custom-toggle" style="font-size:12px;color:var(--accent);font-weight:600;padding:2px 0;margin-bottom:12px">Pick a custom range…</button>
+        <div id="rp-custom" style="display:none;gap:8px;margin-bottom:14px">
+          <input class="input" id="rp-from" type="date" max="${today}" style="flex:1"/>
+          <input class="input" id="rp-to" type="date" max="${today}" style="flex:1"/>
+        </div>
+        <label class="form-label">Format</label>
+        <div style="display:flex;gap:6px;margin-bottom:18px">
+          <button type="button" class="fs-chip rp-fmt active" data-fmt="html" style="flex:1">🖨️ View / print</button>
+          <button type="button" class="fs-chip rp-fmt" data-fmt="md" style="flex:1">📝 Markdown</button>
+          <button type="button" class="fs-chip rp-fmt" data-fmt="csv" style="flex:1">📊 CSV</button>
+        </div>
+        <button class="btn btn-primary btn-full" id="rp-go">Generate report</button>
+      </div>`;
+
+    const rangesBox  = document.getElementById('rp-ranges');
+    const customBox  = document.getElementById('rp-custom');
+    const customToggle = document.getElementById('rp-custom-toggle');
+    const fromInput  = document.getElementById('rp-from');
+    const toInput    = document.getElementById('rp-to');
+
+    rangesBox.querySelectorAll('.rp-range').forEach(btn => {
+      btn.addEventListener('click', () => {
+        range = btn.dataset.range;
+        rangesBox.querySelectorAll('.rp-range').forEach(b => b.classList.toggle('active', b === btn));
+        customBox.style.display = 'none';
+      });
+    });
+    customToggle.addEventListener('click', () => {
+      const opening = customBox.style.display === 'none';
+      customBox.style.display = opening ? 'flex' : 'none';
+      if (opening) {
+        range = 'custom';
+        rangesBox.querySelectorAll('.rp-range').forEach(b => b.classList.remove('active'));
+        if (!fromInput.value) fromInput.value = addDays(today, -6);
+        if (!toInput.value) toInput.value = today;
+      }
+    });
+
+    document.querySelectorAll('.rp-fmt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        fmt = btn.dataset.fmt;
+        document.querySelectorAll('.rp-fmt').forEach(b => b.classList.toggle('active', b === btn));
+      });
+    });
+
+    document.getElementById('rp-close').addEventListener('click', hideSheet);
+    document.getElementById('rp-go').addEventListener('click', async () => {
+      let from, to = today;
+      if (range === '7') from = addDays(today, -6);
+      else if (range === '30') from = addDays(today, -29);
+      else if (range === 'month') from = today.slice(0, 8) + '01';
+      else if (range === 'all') from = null;
+      else {
+        if (!fromInput.value || !toInput.value) return showToast('Pick both dates', 'error');
+        from = fromInput.value; to = toInput.value;
+      }
+
+      const params = new URLSearchParams({ format: fmt, to });
+      if (from) params.set('from', from);
+      const path = `/api/settings/export-report?${params}`;
+
+      // Open the tab synchronously (inside the click handler) so it isn't
+      // treated as a popup — window.open() after an await gets blocked.
+      const win = fmt === 'html' ? window.open('', '_blank') : null;
+      const btn = document.getElementById('rp-go');
+      btn.disabled = true; btn.textContent = 'Generating…';
+      try {
+        const text = await api.get(path);
+        if (fmt === 'html') {
+          win.document.write(text); win.document.close();
+        } else {
+          const mime = fmt === 'csv' ? 'text/csv' : 'text/markdown';
+          downloadBlob(text, `plated-report-${from || 'all'}_to_${to}.${fmt === 'csv' ? 'csv' : 'md'}`, mime);
+        }
+        hideSheet();
+      } catch (err) {
+        win?.close();
+        showToast(err.message, 'error');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Generate report';
+      }
+    });
+  });
 }
 
 function goalRow(key, label, value, unit, compact = false) {
