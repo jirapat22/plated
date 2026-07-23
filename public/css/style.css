@@ -296,12 +296,10 @@ img { display: block; max-width: 100%; }
 }
 .macro-item .num { font-size: 13px; }
 
-/* ─── Water Tracker ──────────────────────────────────────── */
-.water-track {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+/* ─── Progress bar / pill-button primitives ─────────────────
+   Named after the water tracker that originally introduced them; that
+   feature is gone but batches (remaining-portion bar) and the quick-log
+   gram picker (pill buttons) still use these classes. */
 .water-bar-outer {
   flex: 1;
   height: 8px;
@@ -316,8 +314,6 @@ img { display: block; max-width: 100%; }
   transition: width 400ms ease-out;
   max-width: 100%;
 }
-.water-amount { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.water-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .water-btn {
   height: 36px;
   background: var(--surface-2);

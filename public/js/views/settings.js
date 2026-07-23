@@ -149,7 +149,6 @@ export function renderSettings(container) {
         ${goalRow('carb_goal',         'Carbs',         s.carb_goal,         'g')}
         ${goalRow('fat_goal',          'Fat',           s.fat_goal,          'g')}
         ${goalRow('fiber_goal',        'Fiber',         s.fiber_goal,        'g')}
-        ${goalRow('water_goal_ml',     'Water',         s.water_goal_ml,     'ml')}
         ${goalRow('protein_multiplier','Protein × BW',  s.protein_multiplier,'×')}
         <div style="padding:10px 16px 14px;font-size:11px;color:var(--text-faint)">These update automatically when you sync from IronLog.</div>
       </div>
@@ -213,7 +212,7 @@ export function renderSettings(container) {
         <div class="sec-head danger">⚠️ Danger Zone<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
-            Permanently deletes all logged meals, water, weight entries, templates, and meal-prep batches. Your food database and goal settings are kept.
+            Permanently deletes all logged meals, weight entries, templates, and meal-prep batches. Your food database and goal settings are kept.
           </div>
           <button class="btn btn-danger btn-full" id="reset-data-btn">🗑 Clear all logged data</button>
         </div>
@@ -264,7 +263,7 @@ export function renderSettings(container) {
     });
 
     document.getElementById('pf-delete').addEventListener('click', async () => {
-      if (!confirm('Delete this profile and ALL its meals, water, weight, goals and templates?\n\nThis cannot be undone.')) return;
+      if (!confirm('Delete this profile and ALL its meals, weight, goals and templates?\n\nThis cannot be undone.')) return;
       const typed = prompt('Type DELETE to confirm:');
       if (typed !== 'DELETE') { showToast('Cancelled', 'info'); return; }
       try {
@@ -675,7 +674,7 @@ export function renderSettings(container) {
 
     // Reset all data
     document.getElementById('reset-data-btn').addEventListener('click', async () => {
-      if (!confirm('This will permanently delete all logged meals, water, weight, and templates.\n\nThis cannot be undone. Continue?')) return;
+      if (!confirm('This will permanently delete all logged meals, weight, and templates.\n\nThis cannot be undone. Continue?')) return;
       const typed = prompt('Type DELETE to confirm:');
       if (typed !== 'DELETE') { showToast('Cancelled', 'info'); return; }
       try {
@@ -746,8 +745,8 @@ export function renderSettings(container) {
       const exportedDate = new Date(data.exported_at).toLocaleDateString();
       const summary = `Backup from ${exportedDate}:\n`
         + `${data.meal_sessions.length} meals, ${(data.meal_entries || []).length} food entries, `
-        + `${(data.weight_log || []).length} weigh-ins, ${(data.water_log || []).length} water logs.\n\n`
-        + `This REPLACES your current meal history, water log, and weight log. `
+        + `${(data.weight_log || []).length} weigh-ins.\n\n`
+        + `This REPLACES your current meal history and weight log. `
         + `Your food database and other profiles aren't touched.\n\nContinue?`;
       if (!confirm(summary)) return;
       if (prompt('Type RESTORE to confirm:') !== 'RESTORE') return showToast('Cancelled', 'info');

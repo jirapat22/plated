@@ -166,7 +166,6 @@ router.delete('/me', requireProfile, (req, res) => {
   db.exec('BEGIN');
   try {
     db.prepare('DELETE FROM meal_sessions  WHERE profile_id = $id').run({ id }); // cascades entries
-    db.prepare('DELETE FROM water_log      WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM weight_log     WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM meal_templates WHERE profile_id = $id').run({ id }); // cascades items
     // Batches aren't cascade-deleted with the profile — hide their backing

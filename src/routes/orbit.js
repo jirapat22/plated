@@ -51,8 +51,6 @@ function lastActive(db, pid) {
       SELECT MAX(me.logged_at) FROM meal_entries me
         JOIN meal_sessions ms ON ms.id = me.meal_session_id WHERE ms.profile_id = $pid
       UNION ALL
-      SELECT MAX(logged_at) FROM water_log  WHERE profile_id = $pid
-      UNION ALL
       SELECT MAX(logged_at) FROM weight_log WHERE profile_id = $pid
     )
   `).get({ pid });

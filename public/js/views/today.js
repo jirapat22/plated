@@ -20,7 +20,6 @@ function icon(path, size = 16, valign = null) {
   const style = valign != null ? `vertical-align:${valign}px;flex-shrink:0` : 'flex-shrink:0';
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" style="${style}">${path}</svg>`;
 }
-const ICON_WATER      = '<path d="M12 3c-4.2 5-7 8.6-7 12a7 7 0 0 0 14 0c0-3.4-2.8-7-7-12Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>';
 const ICON_SCALE       = '<rect x="3" y="9" width="18" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 9a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.7"/><path d="M12 12v3.2M12 12l2.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
 const ICON_BOLT        = '<path d="M13 2 5 14h6l-1 8 9-12h-6l1-8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>';
 const ICON_CLIPBOARD   = '<rect x="5" y="4" width="14" height="17" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" stroke="currentColor" stroke-width="1.7"/><path d="M8.5 10.5h7M8.5 14h7M8.5 17.5h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
@@ -174,9 +173,8 @@ export function renderToday(container) {
     viewDate = localDate();
     const myGen = ++loadGen;
     try {
-      const [mealData, waterData, settings, todayWeight, weightHistory] = await Promise.all([
+      const [mealData, settings, todayWeight, weightHistory] = await Promise.all([
         api.get(`/api/meals/day/${viewDate}`),
-        api.get(`/api/water/day/${viewDate}`),
         api.get('/api/settings'),
         api.get(`/api/weight/day/${viewDate}`).catch(() => null),
         api.get('/api/weight?limit=10').catch(() => []),
@@ -184,14 +182,14 @@ export function renderToday(container) {
       if (myGen !== loadGen) return;            // a newer load() superseded us
       const ironlog = await fetchIronLog(viewDate);   // always today — fetch fresh
       if (myGen !== loadGen) return;            // and again after the IronLog fetch
-      render(mealData, waterData, settings, ironlog, todayWeight, weightHistory);
+      render(mealData, settings, ironlog, todayWeight, weightHistory);
     } catch (err) {
       if (myGen !== loadGen) return;
       container.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
     }
   }
 
-  function render(mealData, waterData, settings, ironlog, todayWeight, weightHistory = []) {
+  function render(mealData, settings, ironlog, todayWeight, weightHistory = []) {
     const today  = localDate();
     const isToday = viewDate === today;
     const ul     = unitLabel();
@@ -201,11 +199,8 @@ export function renderToday(container) {
       carbs:  parseFloat(settings.carb_goal)      || 250,
       fat:    parseFloat(settings.fat_goal)        || 65,
       fiber:  parseFloat(settings.fiber_goal)      || 30,
-      water:  parseFloat(settings.water_goal_ml)  || 2500,
     };
     const t         = mealData.totals;
-    const waterGoal = waterData.goal_ml || goals.water;
-    const waterPct  = Math.min((waterData.total_ml / waterGoal) * 100, 100);
 
     // ── "Did you fully log this day?" check (past days only) ──
     const mealCount = (mealData.sessions || []).filter(s => (s.entries?.length || 0) > 0).length;
@@ -270,12 +265,6 @@ export function renderToday(container) {
     if (t.carbs   > goals.carbs   + 0.5) concerns.push({ t: `Carbs +${Math.round(t.carbs - goals.carbs)}g`, kind: 'warn' });
     if (t.fat     > goals.fat     + 0.5) concerns.push({ t: `Fat +${Math.round(t.fat - goals.fat)}g`,     kind: 'warn' });
     const showConcernRow = concerns.length > 0 || eaten > 0;
-
-    // Water chips (collapse > 3)
-    const entries = waterData.entries;
-    const showChips = entries.length > 0;
-    const visibleChips = entries.slice(-3);
-    const hiddenCount = Math.max(0, entries.length - 3);
 
     // IronLog/phase summary for collapsed row
     const { tdee, phase, deficit, surplus } = parsePhaseSettings(settings);
@@ -388,36 +377,6 @@ export function renderToday(container) {
             </div>
           </div>
           <div id="macro-bar-root" style="margin-top:12px"></div>
-        </div>
-      </div>
-
-      <!-- Water -->
-      <div style="padding:0 16px 14px">
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <span class="label">${icon(ICON_WATER, 13, -3)} Water</span>
-            <div style="display:flex;align-items:center;gap:8px">
-              <span class="num" style="font-size:13px">${waterData.total_ml}
-                <span style="font-size:11px;color:var(--text-muted)">/ ${waterGoal} ml</span>
-              </span>
-              <button id="water-goal-edit" style="font-size:11px;color:var(--text-faint);padding:2px 8px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px">⚙️</button>
-            </div>
-          </div>
-          <div class="water-bar-outer" style="margin-bottom:10px">
-            <div class="water-bar-fill" style="width:${waterPct}%"></div>
-          </div>
-          <div class="water-btns" id="water-btns">
-            <button class="water-btn" data-ml="150">+150</button>
-            <button class="water-btn" data-ml="250">+250</button>
-            <button class="water-btn" data-ml="330">+330</button>
-            <button class="water-btn" data-ml="500">+500</button>
-            <button class="water-btn" data-ml="custom">Custom</button>
-          </div>
-          ${showChips ? `
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px" id="water-chips">
-            ${visibleChips.map(e => waterChip(e)).join('')}
-            ${hiddenCount > 0 ? `<button id="water-show-all" style="background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--text-muted)">+${hiddenCount} more</button>` : ''}
-          </div>` : ''}
         </div>
       </div>
 
@@ -559,59 +518,11 @@ export function renderToday(container) {
       if (chev) chev.textContent = ironlogExpanded ? '▲' : '▼';
     });
 
-    // Water
-    document.getElementById('water-btns').addEventListener('click', async e => {
-      const btn = e.target.closest('[data-ml]');
-      if (!btn) return;
-      const ml = btn.dataset.ml;
-      if (ml === 'custom') {
-        const a = prompt('Enter amount in ml:');
-        if (!a || isNaN(a) || a <= 0) return;
-        await logWater(parseInt(a));
-      } else {
-        await logWater(parseInt(ml));
-      }
-      load();
-    });
-
-    // Water chip removes
-    document.querySelectorAll('[data-water-id]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        try { await api.delete(`/api/water/${btn.dataset.waterId}`); load(); }
-        catch (err) { showToast(err.message, 'error'); }
-      });
-    });
-
-    // Water "show all"
-    document.getElementById('water-show-all')?.addEventListener('click', () => {
-      const chips = document.getElementById('water-chips');
-      chips.innerHTML = entries.map(e => waterChip(e)).join('');
-      chips.querySelectorAll('[data-water-id]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          try { await api.delete(`/api/water/${btn.dataset.waterId}`); load(); }
-          catch (err) { showToast(err.message, 'error'); }
-        });
-      });
-    });
-
     // Morning prompt
     document.getElementById('morning-breakfast-btn')?.addEventListener('click', async () => {
       try {
         const session = await api.post('/api/meals/sessions', { date: viewDate, name: 'Breakfast' });
         openFoodEntry(session.id, () => load());
-      } catch (err) { showToast(err.message, 'error'); }
-    });
-
-    // Water goal override
-    document.getElementById('water-goal-edit').addEventListener('click', async () => {
-      const input = prompt(`Water goal for ${viewDate === localDate() ? 'today' : viewDate} (ml):\nCurrent: ${waterGoal} ml`);
-      if (!input) return;
-      const newGoal = parseInt(input);
-      if (isNaN(newGoal) || newGoal < 100) { showToast('Enter a valid goal (e.g. 3000)', 'error'); return; }
-      try {
-        await api.patch(`/api/water/goal/${viewDate}`, { goal_ml: newGoal });
-        showToast(`Water goal → ${newGoal} ml`, 'success');
-        load();
       } catch (err) { showToast(err.message, 'error'); }
     });
 
@@ -666,18 +577,6 @@ export function renderToday(container) {
     document.getElementById('from-template-btn').addEventListener('click', () => {
       openFromTemplate(viewDate, () => load());
     });
-  }
-
-  function waterChip(e) {
-    return `<span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;font-variant-numeric:tabular-nums">
-      ${e.amount_ml}ml
-      <button data-water-id="${e.id}" style="color:var(--text-faint);font-size:14px;line-height:1;margin-left:2px">×</button>
-    </span>`;
-  }
-
-  async function logWater(ml) {
-    try { await api.post('/api/water', { amount_ml: ml, date: viewDate }); }
-    catch (err) { showToast(err.message, 'error'); }
   }
 
   const onSettingsChanged = () => load();

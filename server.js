@@ -23,7 +23,6 @@ const { requireProfile } = require('./src/middleware/auth');
 const authRoutes = require('./src/routes/auth');
 const foodsRoutes = require('./src/routes/foods');
 const mealsRoutes = require('./src/routes/meals');
-const waterRoutes = require('./src/routes/water');
 const weightRoutes = require('./src/routes/weight');
 const settingsRoutes   = require('./src/routes/settings');
 const ironlogRoutes    = require('./src/routes/ironlog');
@@ -82,7 +81,6 @@ app.use('/api/bug-report', bugReportsRoutes);
 // Protected — every route below is scoped to the logged-in profile
 app.use('/api/foods', requireProfile, foodsRoutes);
 app.use('/api/meals', requireProfile, mealsRoutes);
-app.use('/api/water', requireProfile, waterRoutes);
 app.use('/api/weight', requireProfile, weightRoutes);
 app.use('/api/settings', requireProfile, settingsRoutes);
 app.use('/api/ironlog',    requireProfile, ironlogRoutes);

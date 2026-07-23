@@ -6,7 +6,7 @@ const router = express.Router();
 
 const ALLOWED = new Set([
   'calorie_goal', 'protein_goal', 'carb_goal', 'fat_goal',
-  'fiber_goal', 'water_goal_ml', 'ironlog_api_url', 'ironlog_api_key', 'protein_multiplier',
+  'fiber_goal', 'ironlog_api_url', 'ironlog_api_key', 'protein_multiplier',
   'phase', 'tdee', 'cut_deficit', 'bulk_surplus', 'energy_unit', 'ironlog_last_synced',
   'target_weight_kg',
   'weight_display',   // Today's bodyweight card: 'raw' (default) or 'trend'
@@ -70,7 +70,7 @@ router.patch('/', (req, res) => {
   }
 });
 
-// Delete this profile's logged data (meals, water, weight, templates) — keeps foods + settings
+// Delete this profile's logged data (meals, weight, templates) — keeps foods + settings
 router.delete('/data', (req, res) => {
   try {
     const db = getDb();
@@ -78,7 +78,6 @@ router.delete('/data', (req, res) => {
     db.exec('BEGIN');
     try {
       db.prepare('DELETE FROM meal_sessions  WHERE profile_id = $pid').run({ pid });
-      db.prepare('DELETE FROM water_log      WHERE profile_id = $pid').run({ pid });
       db.prepare('DELETE FROM weight_log     WHERE profile_id = $pid').run({ pid });
       db.prepare('DELETE FROM meal_templates WHERE profile_id = $pid').run({ pid });
       // Batches are logged data too — clear them the same way the single-batch
@@ -160,7 +159,6 @@ router.get('/export', (req, res) => {
         JOIN meal_sessions ms ON ms.id = me.meal_session_id
         WHERE ms.profile_id = $pid
       `).all({ pid }),
-      water_log:     db.prepare('SELECT * FROM water_log WHERE profile_id = $pid').all({ pid }),
       weight_log:    db.prepare('SELECT * FROM weight_log WHERE profile_id = $pid').all({ pid }),
       settings:      allSettings(db, pid),
     };
@@ -173,15 +171,15 @@ router.get('/export', (req, res) => {
   }
 });
 
-// Restore this profile's own meal/water/weight history + settings from a
-// previous /export. Foods are a table SHARED across every profile (and
-// re-seeded from scratch on a fresh DB, so ids drift between exports) — they
-// are matched by name+brand and only inserted when genuinely new, never
-// deleted. Everything scoped to this profile (meals, water, weight,
-// settings) is fully replaced, matching what /export actually captures —
-// batches/templates/overrides aren't in the export, so import leaves them
-// alone. Body can be large (a food-heavy history), so this route gets its
-// own higher JSON size limit rather than raising it app-wide.
+// Restore this profile's own meal/weight history + settings from a previous
+// /export. Foods are a table SHARED across every profile (and re-seeded from
+// scratch on a fresh DB, so ids drift between exports) — they are matched by
+// name+brand and only inserted when genuinely new, never deleted. Everything
+// scoped to this profile (meals, weight, settings) is fully replaced,
+// matching what /export actually captures — batches/templates/overrides
+// aren't in the export, so import leaves them alone. Body can be large (a
+// food-heavy history), so this route gets its own higher JSON size limit
+// rather than raising it app-wide.
 router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
   try {
     const db = getDb();
@@ -190,7 +188,6 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
     const foods         = Array.isArray(body.foods) ? body.foods : [];
     const meal_sessions = Array.isArray(body.meal_sessions) ? body.meal_sessions : [];
     const meal_entries  = Array.isArray(body.meal_entries) ? body.meal_entries : [];
-    const water_log     = Array.isArray(body.water_log) ? body.water_log : [];
     const weight_log    = Array.isArray(body.weight_log) ? body.weight_log : [];
     const settings      = (body.settings && typeof body.settings === 'object') ? body.settings : {};
 
@@ -226,7 +223,6 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
       // Wipe this profile's own history — meal_entries cascades off
       // meal_sessions (foreign_keys=ON) so deleting sessions is enough.
       db.prepare('DELETE FROM meal_sessions WHERE profile_id = $pid').run({ pid });
-      db.prepare('DELETE FROM water_log     WHERE profile_id = $pid').run({ pid });
       db.prepare('DELETE FROM weight_log    WHERE profile_id = $pid').run({ pid });
 
       const insSession = db.prepare('INSERT INTO meal_sessions (date, name, meal_index, logged_at, profile_id) VALUES ($date, $name, $idx, $logged_at, $pid)');
@@ -248,9 +244,6 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
         entriesImported++;
       }
 
-      const insWater = db.prepare('INSERT INTO water_log (date, amount_ml, logged_at, profile_id) VALUES ($date, $ml, $logged_at, $pid)');
-      for (const w of water_log) insWater.run({ date: w.date, ml: w.amount_ml, logged_at: w.logged_at || null, pid });
-
       const insWeight = db.prepare('INSERT INTO weight_log (date, weight_kg, note, source, logged_at, profile_id) VALUES ($date, $kg, $note, $src, $logged_at, $pid)');
       for (const w of weight_log) insWeight.run({ date: w.date, kg: w.weight_kg, note: w.note ?? null, src: w.source || 'manual', logged_at: w.logged_at || null, pid });
 
@@ -267,7 +260,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
 
     res.json({
       success: true,
-      imported: { meals: meal_sessions.length, entries: entriesImported, water: water_log.length, weight: weight_log.length, foods_added: foodsAdded },
+      imported: { meals: meal_sessions.length, entries: entriesImported, weight: weight_log.length, foods_added: foodsAdded },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

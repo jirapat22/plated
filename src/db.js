@@ -65,13 +65,6 @@ function initDb() {
       logged_at       TEXT    DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS water_log (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      date       TEXT    NOT NULL,
-      amount_ml  INTEGER NOT NULL,
-      logged_at  TEXT    DEFAULT (datetime('now'))
-    );
-
     CREATE TABLE IF NOT EXISTS weight_log (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       date       TEXT    NOT NULL,
@@ -190,9 +183,13 @@ function tableHasColumn(db, table, col) {
 }
 
 function migrateSchema(db) {
+  // Water tracking was removed entirely — drops any logged history along
+  // with the feature rather than leaving a dead, unreferenced table behind.
+  db.exec('DROP TABLE IF EXISTS water_log');
+
   // Add nullable profile_id to data tables that predate multi-profile.
   // NULL marks "orphan" rows adopted by the first profile created.
-  for (const t of ['meal_sessions', 'water_log', 'weight_log', 'meal_templates']) {
+  for (const t of ['meal_sessions', 'weight_log', 'meal_templates']) {
     if (!tableHasColumn(db, t, 'profile_id')) {
       db.exec(`ALTER TABLE ${t} ADD COLUMN profile_id INTEGER`);
     }
@@ -281,7 +278,7 @@ function dedupeWeightLog(db) {
 // Default per-profile settings, seeded when a profile is created.
 const PROFILE_DEFAULTS = [
   ['calorie_goal', '2000'], ['protein_goal', '150'], ['carb_goal', '250'],
-  ['fat_goal', '65'], ['fiber_goal', '30'], ['water_goal_ml', '2500'],
+  ['fat_goal', '65'], ['fiber_goal', '30'],
   ['ironlog_api_url', ''], ['ironlog_api_key', ''], ['ironlog_last_synced', ''],
   ['protein_multiplier', '2.2'], ['energy_unit', 'kcal'], ['phase', 'maintain'],
   ['tdee', ''], ['cut_deficit', '500'], ['bulk_surplus', '300'],
@@ -295,10 +292,10 @@ function seedProfileDefaults(db, profileId) {
 }
 
 // The first profile created adopts all pre-existing single-user data:
-// orphan meals/water/weight/templates/overrides, the old global settings
+// orphan meals/weight/templates/overrides, the old global settings
 // values, and any favourites / use-counts recorded on the shared foods table.
 function adoptOrphanData(db, profileId) {
-  for (const t of ['meal_sessions', 'water_log', 'weight_log', 'meal_templates']) {
+  for (const t of ['meal_sessions', 'weight_log', 'meal_templates']) {
     db.prepare(`UPDATE ${t} SET profile_id = $p WHERE profile_id IS NULL`).run({ p: profileId });
   }
   db.prepare('UPDATE daily_overrides SET profile_id = $p WHERE profile_id = 0').run({ p: profileId });
