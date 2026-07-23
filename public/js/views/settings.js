@@ -202,7 +202,9 @@ export function renderSettings(container) {
         <div style="padding:14px 16px">
           <button class="btn btn-secondary btn-full" id="open-report" style="margin-bottom:8px">📋 Detailed nutrition report</button>
           <button class="btn btn-secondary btn-full" id="export-csv" style="margin-bottom:8px">📊 Export meals as CSV</button>
-          <button class="btn btn-secondary btn-full" id="export-json">📦 Export all data as JSON</button>
+          <button class="btn btn-secondary btn-full" id="export-json" style="margin-bottom:8px">📦 Export all data as JSON</button>
+          <button class="btn btn-secondary btn-full" id="import-backup">📥 Restore from backup</button>
+          <input type="file" id="import-file" accept="application/json" style="display:none">
         </div>
       </div>
 
@@ -726,6 +728,41 @@ export function renderSettings(container) {
         const data = await api.get('/api/settings/export');
         downloadBlob(JSON.stringify(data, null, 2), `plated-export-${localDate()}.json`, 'application/json');
       } catch (err) { showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('import-backup').addEventListener('click', () => document.getElementById('import-file').click());
+    document.getElementById('import-file').addEventListener('change', async e => {
+      const file = e.target.files[0];
+      e.target.value = ''; // allow re-selecting the same file later
+      if (!file) return;
+
+      let data;
+      try { data = JSON.parse(await file.text()); }
+      catch { return showToast("That file isn't valid JSON", 'error'); }
+      if (!data.exported_at || !Array.isArray(data.meal_sessions)) {
+        return showToast("That doesn't look like a Plated export file", 'error');
+      }
+
+      const exportedDate = new Date(data.exported_at).toLocaleDateString();
+      const summary = `Backup from ${exportedDate}:\n`
+        + `${data.meal_sessions.length} meals, ${(data.meal_entries || []).length} food entries, `
+        + `${(data.weight_log || []).length} weigh-ins, ${(data.water_log || []).length} water logs.\n\n`
+        + `This REPLACES your current meal history, water log, and weight log. `
+        + `Your food database and other profiles aren't touched.\n\nContinue?`;
+      if (!confirm(summary)) return;
+      if (prompt('Type RESTORE to confirm:') !== 'RESTORE') return showToast('Cancelled', 'info');
+
+      const btn = document.getElementById('import-backup');
+      btn.disabled = true; btn.textContent = 'Restoring…';
+      try {
+        const result = await api.post('/api/settings/import', data);
+        showToast(`Restored ${result.imported.entries} food entries, ${result.imported.weight} weigh-ins`, 'success');
+        window.dispatchEvent(new CustomEvent('plated:settings-changed'));
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        btn.disabled = false; btn.textContent = '📥 Restore from backup';
+      }
     });
 
   }

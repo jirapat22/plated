@@ -145,7 +145,15 @@ router.get('/export', (req, res) => {
     const pid = req.profileId;
     const payload = {
       exported_at: new Date().toISOString(),
-      foods:         db.prepare('SELECT * FROM foods').all(),
+      // Only foods this profile actually logged — not the whole shared
+      // ~4,800-row seed table, which every profile can already re-derive
+      // (it's re-seeded on a fresh DB) and would bloat every export.
+      foods: db.prepare(`
+        SELECT DISTINCT f.* FROM foods f
+        JOIN meal_entries me ON me.food_id = f.id
+        JOIN meal_sessions ms ON ms.id = me.meal_session_id
+        WHERE ms.profile_id = $pid
+      `).all({ pid }),
       meal_sessions: db.prepare('SELECT * FROM meal_sessions WHERE profile_id = $pid').all({ pid }),
       meal_entries:  db.prepare(`
         SELECT me.* FROM meal_entries me
@@ -160,6 +168,107 @@ router.get('/export', (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', 'application/json');
     res.json(payload);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Restore this profile's own meal/water/weight history + settings from a
+// previous /export. Foods are a table SHARED across every profile (and
+// re-seeded from scratch on a fresh DB, so ids drift between exports) — they
+// are matched by name+brand and only inserted when genuinely new, never
+// deleted. Everything scoped to this profile (meals, water, weight,
+// settings) is fully replaced, matching what /export actually captures —
+// batches/templates/overrides aren't in the export, so import leaves them
+// alone. Body can be large (a food-heavy history), so this route gets its
+// own higher JSON size limit rather than raising it app-wide.
+router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
+  try {
+    const db = getDb();
+    const pid = req.profileId;
+    const body = req.body || {};
+    const foods         = Array.isArray(body.foods) ? body.foods : [];
+    const meal_sessions = Array.isArray(body.meal_sessions) ? body.meal_sessions : [];
+    const meal_entries  = Array.isArray(body.meal_entries) ? body.meal_entries : [];
+    const water_log     = Array.isArray(body.water_log) ? body.water_log : [];
+    const weight_log    = Array.isArray(body.weight_log) ? body.weight_log : [];
+    const settings      = (body.settings && typeof body.settings === 'object') ? body.settings : {};
+
+    if (!body.exported_at || !Array.isArray(body.meal_sessions)) {
+      return res.status(400).json({ error: 'Not a valid Plated export file' });
+    }
+
+    let foodsAdded = 0;
+    let entriesImported = 0;
+    db.exec('BEGIN');
+    try {
+      const findFood = db.prepare('SELECT id FROM foods WHERE name = $name AND brand IS $brand');
+      const insertFood = db.prepare(`
+        INSERT INTO foods (name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, serving_size_g, source, created_by_profile)
+        VALUES ($name, $brand, $cal, $pro, $carb, $fat, $fiber, $serv, $source, $pid)
+      `);
+      const foodIdMap = new Map();
+      for (const f of foods) {
+        const brand = f.brand ?? null;
+        const existing = findFood.get({ name: f.name, brand });
+        if (existing) { foodIdMap.set(f.id, existing.id); continue; }
+        const newId = insertFood.run({
+          name: f.name, brand,
+          cal: f.calories_per_100g ?? null, pro: f.protein_per_100g ?? null,
+          carb: f.carbs_per_100g ?? null, fat: f.fat_per_100g ?? null,
+          fiber: f.fiber_per_100g ?? null, serv: f.serving_size_g ?? 100,
+          source: f.source || 'custom', pid,
+        }).lastInsertRowid;
+        foodIdMap.set(f.id, newId);
+        foodsAdded++;
+      }
+
+      // Wipe this profile's own history — meal_entries cascades off
+      // meal_sessions (foreign_keys=ON) so deleting sessions is enough.
+      db.prepare('DELETE FROM meal_sessions WHERE profile_id = $pid').run({ pid });
+      db.prepare('DELETE FROM water_log     WHERE profile_id = $pid').run({ pid });
+      db.prepare('DELETE FROM weight_log    WHERE profile_id = $pid').run({ pid });
+
+      const insSession = db.prepare('INSERT INTO meal_sessions (date, name, meal_index, logged_at, profile_id) VALUES ($date, $name, $idx, $logged_at, $pid)');
+      const sessionIdMap = new Map();
+      for (const s of meal_sessions) {
+        const newId = insSession.run({ date: s.date, name: s.name ?? null, idx: s.meal_index || 1, logged_at: s.logged_at || null, pid }).lastInsertRowid;
+        sessionIdMap.set(s.id, newId);
+      }
+
+      const insEntry = db.prepare(`
+        INSERT INTO meal_entries (meal_session_id, food_id, quantity_g, calories, protein, carbs, fat, fiber, logged_at)
+        VALUES ($sid, $fid, $qty, $cal, $pro, $carb, $fat, $fiber, $logged_at)
+      `);
+      for (const e of meal_entries) {
+        const sid = sessionIdMap.get(e.meal_session_id);
+        const fid = foodIdMap.get(e.food_id);
+        if (sid == null || fid == null) continue; // orphaned reference — food/session missing from this export
+        insEntry.run({ sid, fid, qty: e.quantity_g, cal: e.calories ?? null, pro: e.protein ?? null, carb: e.carbs ?? null, fat: e.fat ?? null, fiber: e.fiber ?? null, logged_at: e.logged_at || null });
+        entriesImported++;
+      }
+
+      const insWater = db.prepare('INSERT INTO water_log (date, amount_ml, logged_at, profile_id) VALUES ($date, $ml, $logged_at, $pid)');
+      for (const w of water_log) insWater.run({ date: w.date, ml: w.amount_ml, logged_at: w.logged_at || null, pid });
+
+      const insWeight = db.prepare('INSERT INTO weight_log (date, weight_kg, note, source, logged_at, profile_id) VALUES ($date, $kg, $note, $src, $logged_at, $pid)');
+      for (const w of weight_log) insWeight.run({ date: w.date, kg: w.weight_kg, note: w.note ?? null, src: w.source || 'manual', logged_at: w.logged_at || null, pid });
+
+      const setSetting = db.prepare('INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)');
+      for (const [key, value] of Object.entries(settings)) {
+        if (ALLOWED.has(key) && value != null) setSetting.run({ pid, key, value: String(value) });
+      }
+
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+
+    res.json({
+      success: true,
+      imported: { meals: meal_sessions.length, entries: entriesImported, water: water_log.length, weight: weight_log.length, foods_added: foodsAdded },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
