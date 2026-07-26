@@ -23,7 +23,9 @@ function computeTotals(db, items) {
     t.carbs    += (f.carbs_per_100g    || 0) * r;
     t.fat      += (f.fat_per_100g      || 0) * r;
     t.fiber    += (f.fiber_per_100g    || 0) * r;
-    ing.push({ name: f.name, grams: g });
+    // food_id is kept so the batch can be re-opened for editing later; older
+    // rows stored name+grams only and get resolved by name on read.
+    ing.push({ food_id: it.food_id, name: f.name, grams: g });
   }
   return { t, ing };
 }
@@ -31,13 +33,23 @@ function computeTotals(db, items) {
 // Shape a batch row for the client. Nutrition is stored as whole-batch totals,
 // so both the per-100g density (what you need to pick a portion size) and the
 // what's-left figures are derived here rather than re-done in the frontend.
-function shapeBatch(b) {
+function shapeBatch(b, db = null) {
   const per100 = k => round1((b[k] || 0) / b.cooked_g * 100);
   const left   = k => round1((b[k] || 0) * b.remaining_g / b.cooked_g);
+
+  // Batches created before ingredients carried food_id can still be edited —
+  // resolve those by name, since that's where the name came from.
+  let ingredients = safeParse(b.ingredients);
+  if (db && ingredients.some(i => i.food_id == null)) {
+    const find = db.prepare('SELECT id FROM foods WHERE name = $n ORDER BY id ASC LIMIT 1');
+    ingredients = ingredients.map(i =>
+      i.food_id != null ? i : { ...i, food_id: find.get({ n: i.name })?.id ?? null });
+  }
+
   return {
     id: b.id, name: b.name, cooked_g: b.cooked_g, remaining_g: round1(b.remaining_g),
     calories: b.calories, protein: b.protein, carbs: b.carbs, fat: b.fat, fiber: b.fiber,
-    ingredients: safeParse(b.ingredients),
+    ingredients,
     kcal_left:     Math.round(b.calories * b.remaining_g / b.cooked_g),
     kcal_per_100g: Math.round(b.calories / b.cooked_g * 100),
     per_100g: { protein: per100('protein'), carbs: per100('carbs'), fat: per100('fat'), fiber: per100('fiber') },
@@ -48,10 +60,11 @@ function shapeBatch(b) {
 // GET / — active batches (something still left) for this profile
 router.get('/', (req, res) => {
   try {
-    const rows = getDb().prepare(
+    const db = getDb();
+    const rows = db.prepare(
       'SELECT * FROM batches WHERE profile_id = $p AND remaining_g > 1 ORDER BY created_at DESC'
     ).all({ p: req.profileId });
-    res.json(rows.map(shapeBatch));
+    res.json(rows.map(b => shapeBatch(b, db)));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -141,10 +154,17 @@ router.post('/:id/portion', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// PATCH /:id { remaining_g } — correct how much is actually left. Needed
-// because the tracked amount can drift from reality: a portion logged at the
-// wrong weight, some given away, or a chunk eaten without logging it. Clamped
-// to 0..cooked_g.
+// PATCH /:id { name?, cooked_g?, items?, remaining_g? } — edit a batch. Every
+// field is optional, so the same route serves both a full re-edit and the
+// lightweight "⚖️ Fix" that only corrects how much is left (the tracked amount
+// drifts from reality when a portion goes in at the wrong weight, some is given
+// away, or a chunk gets eaten unlogged).
+//
+// Changing the ingredients or cooked weight re-derives the batch's nutrition
+// and re-syncs the backing food's per-100g values. Portions already logged keep
+// the macros they were stored with, so history stays as it was actually
+// recorded — only future portions use the new numbers. Callers decide what
+// happens to remaining_g on a weight change by sending it explicitly.
 router.patch('/:id', (req, res) => {
   try {
     const db = getDb();
@@ -152,12 +172,58 @@ router.patch('/:id', (req, res) => {
       .get({ id: req.params.id, p: req.profileId });
     if (!b) return res.status(404).json({ error: 'Batch not found' });
 
-    const g = parseFloat(req.body.remaining_g);
-    if (!Number.isFinite(g) || g < 0) return res.status(400).json({ error: 'remaining_g must be 0 or more' });
+    let name = b.name;
+    if (req.body.name !== undefined) {
+      name = String(req.body.name).trim();
+      if (!name) return res.status(400).json({ error: 'name is required' });
+    }
 
-    const remaining = round1(Math.min(g, b.cooked_g));
-    db.prepare('UPDATE batches SET remaining_g = $r WHERE id = $id').run({ r: remaining, id: b.id });
-    res.json(shapeBatch({ ...b, remaining_g: remaining }));
+    const cooked = req.body.cooked_g !== undefined ? parseFloat(req.body.cooked_g) : b.cooked_g;
+    if (!(cooked > 0)) return res.status(400).json({ error: 'cooked weight must be greater than 0' });
+
+    let totals = { calories: b.calories, protein: b.protein, carbs: b.carbs, fat: b.fat, fiber: b.fiber };
+    let ingredients = b.ingredients;
+    if (req.body.items !== undefined) {
+      if (!Array.isArray(req.body.items) || !req.body.items.length) {
+        return res.status(400).json({ error: 'add at least one ingredient' });
+      }
+      const { t, ing } = computeTotals(db, req.body.items);
+      if (t.calories <= 0) return res.status(400).json({ error: 'those ingredients have no calorie data' });
+      totals = { calories: round1(t.calories), protein: round1(t.protein), carbs: round1(t.carbs), fat: round1(t.fat), fiber: round1(t.fiber) };
+      ingredients = JSON.stringify(ing);
+    }
+
+    const rawRemaining = req.body.remaining_g !== undefined ? parseFloat(req.body.remaining_g) : b.remaining_g;
+    if (!Number.isFinite(rawRemaining) || rawRemaining < 0) {
+      return res.status(400).json({ error: 'remaining_g must be 0 or more' });
+    }
+    const remaining = round1(Math.min(rawRemaining, cooked));
+
+    db.exec('BEGIN');
+    try {
+      db.prepare(`UPDATE batches SET name = $n, cooked_g = $cg, remaining_g = $rg,
+        calories = $cal, protein = $pr, carbs = $cb, fat = $ft, fiber = $fb, ingredients = $ing
+        WHERE id = $id`).run({
+        n: name, cg: cooked, rg: remaining,
+        cal: totals.calories, pr: totals.protein, cb: totals.carbs, ft: totals.fat, fb: totals.fiber,
+        ing: ingredients, id: b.id,
+      });
+      if (b.food_id) {
+        const per = k => round1((totals[k] || 0) / cooked * 100);
+        db.prepare(`UPDATE foods SET name = $n, calories_per_100g = $cal, protein_per_100g = $p,
+          carbs_per_100g = $c, fat_per_100g = $f, fiber_per_100g = $fb WHERE id = $fid`).run({
+          n: name, cal: per('calories'), p: per('protein'), c: per('carbs'), f: per('fat'), fb: per('fiber'),
+          fid: b.food_id,
+        });
+      }
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+
+    const updated = db.prepare('SELECT * FROM batches WHERE id = $id').get({ id: b.id });
+    res.json(shapeBatch(updated, db));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

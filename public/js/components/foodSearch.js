@@ -37,10 +37,13 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
         </button>
       </div>
 
-      <!-- Quick filter chips -->
+      <!-- Quick filter chips. Batches only appear when the caller can handle
+           one (a meal context) — they're not plain foods and are deliberately
+           excluded from the food tables the other filters read. -->
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="fs-chip active" data-filter="recent">🕐 Recent</button>
         <button class="fs-chip" data-filter="favourites">⭐ Favourites</button>
+        ${opts.onSelectBatch ? '<button class="fs-chip" data-filter="batches">🍱 Batches</button>' : ''}
       </div>
     </div>
 
@@ -73,6 +76,20 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
     try {
       let rows = [];
       const q = query.trim();
+
+      // Batches aren't foods — different endpoint, different row, and picking
+      // one draws the batch down rather than logging a fixed food.
+      if (filter === 'batches' && !q) {
+        const batches = await api.get('/api/batches');
+        results.innerHTML = '';
+        if (!batches.length) {
+          results.innerHTML = `<div class="empty-state"><div class="empty-icon" style="font-size:28px">🍱</div>
+            <div class="empty-text">No batches with anything left<br/><span style="font-size:12px;color:var(--text-faint)">Cook one in Foods → Batches</span></div></div>`;
+          return;
+        }
+        batches.forEach(b => results.appendChild(buildBatchRow(b)));
+        return;
+      }
 
       if (q) {
         rows = await api.get(`/api/foods/search?q=${encodeURIComponent(q)}&limit=20`);
@@ -191,6 +208,29 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
     }
 
     el.addEventListener('click', () => handleSelect(food));
+    return el;
+  }
+
+  function buildBatchRow(b) {
+    const el = document.createElement('div');
+    el.className = 'food-list-item';
+    const ul = unitLabel();
+    const P = b.per_100g || {};
+    el.innerHTML = `
+      <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--surface-2);
+        display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">🍱</div>
+      <div class="food-list-info" style="flex:1;min-width:0">
+        <div class="food-list-name">${esc(b.name)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px;font-variant-numeric:tabular-nums">
+          ${Math.round(b.remaining_g)} g left
+          <span style="color:var(--text-faint)"> · ${b.kcal_per_100g} ${ul}/100g${
+            P.protein != null ? ` · ${P.protein.toFixed(1)}P · ${(P.carbs ?? 0).toFixed(1)}C · ${(P.fat ?? 0).toFixed(1)}F` : ''}</span>
+        </div>
+      </div>
+      <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style="color:var(--text-faint);flex-shrink:0">
+        <path d="M1 1l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+    el.addEventListener('click', () => opts.onSelectBatch(b));
     return el;
   }
 

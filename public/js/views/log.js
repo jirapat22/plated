@@ -4,6 +4,7 @@ import { renderFoodSearch }               from '../components/foodSearch.js';
 import { fmtE, unitLabel, wireEnergyUnitToggle } from '../utils/energy.js';
 import { localDate }                      from '../utils/date.js';
 import { getFoodIcon }                    from '../utils/foodIcon.js';
+import { openPortion }                    from './batches.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const fmt = (n, dec = 0) => n == null ? '–' : Number(n).toFixed(dec);
@@ -417,6 +418,12 @@ export function openFoodEntry(sessionId, onSuccess, opts = {}) {
         pendingBarcode: opts.pendingBarcode,
         // Re-open this sheet fresh (used after a barcode scan replaces it)
         reopen: (o = {}) => openFoodEntry(sessionId, onSuccess, o),
+        // Meal-prep batches are reachable here too, so eating from one doesn't
+        // mean leaving for the Batches tab. Logs into this meal and draws the
+        // batch down, rather than going through the plain quantity sheet.
+        onSelectBatch: batch => openPortion(batch, onSuccess, {
+          sessionId, sessionName: opts.sessionName,
+        }),
       }
     );
   });
@@ -820,7 +827,7 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
   const addBtn = document.createElement('button');
   addBtn.className = 'meal-session-add'; addBtn.style.flex = '1';
   addBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> Add Food`;
-  addBtn.addEventListener('click', () => openFoodEntry(session.id, onDone));
+  addBtn.addEventListener('click', () => openFoodEntry(session.id, onDone, { sessionName: session.name }));
   footer.appendChild(addBtn);
   if (showQuickLog) {
     const qlBtn = document.createElement('button');

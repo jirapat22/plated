@@ -296,6 +296,14 @@ img { display: block; max-width: 100%; }
 }
 .macro-item .num { font-size: 13px; }
 
+/* Confirms a row just got added when the list may be off-screen (batch
+   builder on a phone) — the highlight fades out on its own. */
+@keyframes flash-in {
+  from { background: var(--accent-dim); }
+  to   { background: transparent; }
+}
+.flash-in { animation: flash-in 1.4s ease-out; border-radius: var(--radius-sm); }
+
 /* ─── Progress bar / pill-button primitives ─────────────────
    Named after the water tracker that originally introduced them; that
    feature is gone but batches (remaining-portion bar) and the quick-log
