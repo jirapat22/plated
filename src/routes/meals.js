@@ -48,6 +48,21 @@ function sumTotals(sessions) {
   );
 }
 
+// A batch portion is stored as an ordinary meal_entry pointing at the batch's
+// backing food, so editing or deleting that entry has to put the grams back
+// into (or take them out of) the batch. Without this, fixing a mis-logged
+// portion left the batch's "how much is left" permanently wrong — the entry
+// was corrected but the stock never was, and nothing in the UI could reconcile
+// them. deltaG is grams to give back (negative to take more out).
+function adjustBatchStock(db, pid, foodId, deltaG) {
+  if (!foodId || !deltaG) return;
+  const b = db.prepare('SELECT id, cooked_g, remaining_g FROM batches WHERE food_id = $f AND profile_id = $p')
+    .get({ f: foodId, p: pid });
+  if (!b) return;                                   // not a batch food (or batch since deleted)
+  const next = Math.max(0, Math.min(b.cooked_g, b.remaining_g + deltaG));
+  db.prepare('UPDATE batches SET remaining_g = $r WHERE id = $id').run({ r: round1(next), id: b.id });
+}
+
 // Read the per-day logging-completeness override ('confirmed' = user said they
 // genuinely ate light, so the day should count as fully logged).
 function logStatus(db, date, pid) {
@@ -336,6 +351,9 @@ router.patch('/entries/:id', (req, res) => {
       WHERE id = $id
     `).run({ id, qty: quantity_g, ...macros });
 
+    // Resizing a batch portion moves stock: shrinking gives grams back.
+    adjustBatchStock(db, req.profileId, entry.food_id, entry.quantity_g - quantity_g);
+
     const updated = db.prepare(`
       SELECT me.*, f.name AS food_name, f.brand AS food_brand, f.serving_size_g
       FROM meal_entries me
@@ -352,14 +370,18 @@ router.patch('/entries/:id', (req, res) => {
 // DELETE /api/meals/entries/:id
 router.delete('/entries/:id', (req, res) => {
   try {
-    const result = getDb()
-      .prepare(`
-        DELETE FROM meal_entries WHERE id = $id AND meal_session_id IN (
-          SELECT id FROM meal_sessions WHERE profile_id = $pid
-        )
-      `)
-      .run({ id: req.params.id, pid: req.profileId });
-    if (result.changes === 0) return res.status(404).json({ error: 'Entry not found' });
+    const db = getDb();
+    // Read the row first (rather than deleting blind) so a batch portion can
+    // hand its grams back to the batch it came from.
+    const entry = db.prepare(`
+      SELECT me.* FROM meal_entries me
+      JOIN meal_sessions ms ON ms.id = me.meal_session_id
+      WHERE me.id = $id AND ms.profile_id = $pid
+    `).get({ id: req.params.id, pid: req.profileId });
+    if (!entry) return res.status(404).json({ error: 'Entry not found' });
+
+    db.prepare('DELETE FROM meal_entries WHERE id = $id').run({ id: req.params.id });
+    adjustBatchStock(db, req.profileId, entry.food_id, entry.quantity_g);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -369,10 +391,20 @@ router.delete('/entries/:id', (req, res) => {
 // DELETE /api/meals/sessions/:id (cascades to entries)
 router.delete('/sessions/:id', (req, res) => {
   try {
-    const result = getDb()
-      .prepare('DELETE FROM meal_sessions WHERE id = $id AND profile_id = $pid')
+    const db = getDb();
+    const owned = db.prepare('SELECT 1 FROM meal_sessions WHERE id = $id AND profile_id = $pid')
+      .get({ id: req.params.id, pid: req.profileId });
+    if (!owned) return res.status(404).json({ error: 'Session not found' });
+
+    // Each portion logged from a batch goes back to that batch. This is the
+    // main undo path for a mis-logged portion, since "Log a portion" puts each
+    // one in its own meal — deleting that meal is how you take it back.
+    const entries = db.prepare('SELECT food_id, quantity_g FROM meal_entries WHERE meal_session_id = $s')
+      .all({ s: req.params.id });
+
+    db.prepare('DELETE FROM meal_sessions WHERE id = $id AND profile_id = $pid')
       .run({ id: req.params.id, pid: req.profileId });
-    if (result.changes === 0) return res.status(404).json({ error: 'Session not found' });
+    for (const e of entries) adjustBatchStock(db, req.profileId, e.food_id, e.quantity_g);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

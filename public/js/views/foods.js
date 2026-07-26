@@ -51,9 +51,9 @@ export function renderFoods(container) {
         <button class="search-tab active" data-tab="all">All</button>
         <button class="search-tab" data-tab="favourites">★ Favourites</button>
         <button class="search-tab" data-tab="batches">🍱 Batches</button>
-        <button class="search-tab" data-tab="templates">📋 Templates</button>
         <button class="search-tab" data-tab="custom">Custom</button>
         <button class="search-tab" data-tab="scanned">Scanned</button>
+        <button class="search-tab" data-tab="templates">📋 Templates</button>
       </div>
       <button class="btn btn-secondary" id="add-custom-btn" style="height:36px;font-size:12px;flex-shrink:0">+ Add</button>
     </div>

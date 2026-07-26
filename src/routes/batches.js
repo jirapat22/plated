@@ -28,19 +28,30 @@ function computeTotals(db, items) {
   return { t, ing };
 }
 
+// Shape a batch row for the client. Nutrition is stored as whole-batch totals,
+// so both the per-100g density (what you need to pick a portion size) and the
+// what's-left figures are derived here rather than re-done in the frontend.
+function shapeBatch(b) {
+  const per100 = k => round1((b[k] || 0) / b.cooked_g * 100);
+  const left   = k => round1((b[k] || 0) * b.remaining_g / b.cooked_g);
+  return {
+    id: b.id, name: b.name, cooked_g: b.cooked_g, remaining_g: round1(b.remaining_g),
+    calories: b.calories, protein: b.protein, carbs: b.carbs, fat: b.fat, fiber: b.fiber,
+    ingredients: safeParse(b.ingredients),
+    kcal_left:     Math.round(b.calories * b.remaining_g / b.cooked_g),
+    kcal_per_100g: Math.round(b.calories / b.cooked_g * 100),
+    per_100g: { protein: per100('protein'), carbs: per100('carbs'), fat: per100('fat'), fiber: per100('fiber') },
+    left:     { protein: left('protein'),   carbs: left('carbs'),   fat: left('fat'),   fiber: left('fiber') },
+  };
+}
+
 // GET / — active batches (something still left) for this profile
 router.get('/', (req, res) => {
   try {
     const rows = getDb().prepare(
       'SELECT * FROM batches WHERE profile_id = $p AND remaining_g > 1 ORDER BY created_at DESC'
     ).all({ p: req.profileId });
-    res.json(rows.map(b => ({
-      id: b.id, name: b.name, cooked_g: b.cooked_g, remaining_g: round1(b.remaining_g),
-      calories: b.calories, protein: b.protein, carbs: b.carbs, fat: b.fat, fiber: b.fiber,
-      ingredients: safeParse(b.ingredients),
-      kcal_left:     Math.round(b.calories * b.remaining_g / b.cooked_g),
-      kcal_per_100g: Math.round(b.calories / b.cooked_g * 100),
-    })));
+    res.json(rows.map(shapeBatch));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -127,6 +138,26 @@ router.post('/:id/portion', (req, res) => {
     }
 
     res.status(201).json({ logged_g: round1(grams), remaining_g: remaining });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /:id { remaining_g } — correct how much is actually left. Needed
+// because the tracked amount can drift from reality: a portion logged at the
+// wrong weight, some given away, or a chunk eaten without logging it. Clamped
+// to 0..cooked_g.
+router.patch('/:id', (req, res) => {
+  try {
+    const db = getDb();
+    const b = db.prepare('SELECT * FROM batches WHERE id = $id AND profile_id = $p')
+      .get({ id: req.params.id, p: req.profileId });
+    if (!b) return res.status(404).json({ error: 'Batch not found' });
+
+    const g = parseFloat(req.body.remaining_g);
+    if (!Number.isFinite(g) || g < 0) return res.status(400).json({ error: 'remaining_g must be 0 or more' });
+
+    const remaining = round1(Math.min(g, b.cooked_g));
+    db.prepare('UPDATE batches SET remaining_g = $r WHERE id = $id').run({ r: remaining, id: b.id });
+    res.json(shapeBatch({ ...b, remaining_g: remaining }));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
