@@ -98,44 +98,9 @@ router.delete('/data', (req, res) => {
   }
 });
 
-// Export meals as CSV
-router.get('/export-csv', (req, res) => {
-  try {
-    const db = getDb();
-    const rows = db.prepare(`
-      SELECT ms.date, ms.name AS meal_name,
-             f.name AS food_name, me.quantity_g,
-             me.calories, me.protein, me.carbs, me.fat, me.fiber
-      FROM meal_entries me
-      JOIN meal_sessions ms ON ms.id = me.meal_session_id
-      JOIN foods f ON f.id = me.food_id
-      WHERE ms.profile_id = $pid
-      ORDER BY ms.date ASC, ms.meal_index ASC, me.logged_at ASC
-    `).all({ pid: req.profileId });
-
-    const esc = v => {
-      if (v == null) return '';
-      const s = String(v);
-      return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-
-    const lines = [
-      'Date,Meal,Food,Quantity (g),Calories (kcal),Protein (g),Carbs (g),Fat (g),Fiber (g)',
-      ...rows.map(r => [
-        r.date, esc(r.meal_name), esc(r.food_name),
-        r.quantity_g ?? '', r.calories ?? '', r.protein ?? '',
-        r.carbs ?? '', r.fat ?? '', r.fiber ?? '',
-      ].join(',')),
-    ];
-
-    const filename = `plated-meals-${new Date().toISOString().split('T')[0]}.csv`;
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Type', 'text/csv');
-    res.send(lines.join('\n'));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// (Removed: GET /export-csv. The report's CSV format is a strict superset —
+// same columns, plus day totals, brands, a summary and a date range — so the
+// two buttons produced near-identical files.)
 
 // Export all data as JSON
 router.get('/export', (req, res) => {
@@ -274,15 +239,36 @@ const escCsv  = v => {
   return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 const round1 = n => Math.round(n * 10) / 10;
+// A food with no data for a macro is unknown, not zero — render it as a dash
+// so a reader doesn't mistake "not recorded" for "contains none".
+const num = v => (v == null ? '–' : v);
 const zeroMacros = () => ({ calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 });
-const sumMacros = entries => entries.reduce((a, e) => ({
-  calories: a.calories + (e.calories || 0),
-  protein:  a.protein  + (e.protein  || 0),
-  carbs:    a.carbs    + (e.carbs    || 0),
-  fat:      a.fat      + (e.fat      || 0),
-  fiber:    a.fiber    + (e.fiber    || 0),
-}), zeroMacros());
+// Rounded on the way out: summing floats produces things like
+// 2303.2000000000003, which then printed verbatim into every day total.
+const sumMacros = entries => {
+  const t = entries.reduce((a, e) => ({
+    calories: a.calories + (e.calories || 0),
+    protein:  a.protein  + (e.protein  || 0),
+    carbs:    a.carbs    + (e.carbs    || 0),
+    fat:      a.fat      + (e.fat      || 0),
+    fiber:    a.fiber    + (e.fiber    || 0),
+  }), zeroMacros());
+  for (const k in t) t[k] = round1(t[k]);
+  return t;
+};
 const fmtDay = date => new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+// Display formatting (HTML/Markdown only — never CSV, where a thousands
+// separator would break the column). Calories read as whole numbers; grams
+// keep one decimal but drop a trailing .0.
+const kcal = v => (v == null ? '–' : Math.round(v).toLocaleString('en-US'));
+const g = v => {
+  if (v == null) return '–';
+  const r = round1(v);
+  return Number.isInteger(r) ? String(r) : r.toFixed(1);
+};
+const macroLine = t => `${g(t.protein)}P · ${g(t.carbs)}C · ${g(t.fat)}F${t.fiber ? ` · ${g(t.fiber)} fib` : ''}`;
+const foodName = e => (e.food_brand ? `${e.food_name} (${e.food_brand})` : e.food_name);
 
 // Groups flat meal-entry rows into day -> meal -> entries, with subtotals at
 // every level and a period-average computed over days actually logged (not
@@ -316,7 +302,7 @@ function toCsv(report) {
   for (const day of report.days) {
     for (const meal of day.meals) {
       for (const e of meal.entries) {
-        lines.push([day.date, escCsv(meal.name), escCsv(e.food_brand ? `${e.food_name} (${e.food_brand})` : e.food_name),
+        lines.push([day.date, escCsv(meal.name), escCsv(foodName(e)),
           e.quantity_g ?? '', e.calories ?? '', e.protein ?? '', e.carbs ?? '', e.fat ?? '', e.fiber ?? ''].join(','));
       }
     }
@@ -330,73 +316,139 @@ function toCsv(report) {
   return lines.join('\n');
 }
 
+// One table per day rather than one per meal — a reader scans down a single
+// aligned column of numbers instead of re-orienting at every meal heading.
 function toMarkdown(report) {
   const { summary } = report;
+  const a = summary.avg;
   const lines = [
-    `# Nutrition report — ${report.from} to ${report.to}`,
+    `# Nutrition report`,
     '',
-    `**Days logged:** ${summary.daysLogged} of ${summary.daysInRange}`,
-    `**Average per logged day:** ${summary.avg.calories} kcal · ${summary.avg.protein}g protein · ${summary.avg.carbs}g carbs · ${summary.avg.fat}g fat · ${summary.avg.fiber}g fiber`,
+    `**${report.from} to ${report.to}**`,
     '',
-    '---',
+    `| | |`,
+    `|---|---|`,
+    `| Days logged | ${summary.daysLogged} of ${summary.daysInRange} |`,
+    `| Avg calories | **${kcal(a.calories)} kcal/day** |`,
+    `| Avg protein | ${g(a.protein)} g |`,
+    `| Avg carbs | ${g(a.carbs)} g |`,
+    `| Avg fat | ${g(a.fat)} g |`,
+    `| Avg fiber | ${g(a.fiber)} g |`,
   ];
+
+  if (!report.days.length) {
+    lines.push('', '_No meals logged in this date range._');
+    return lines.join('\n');
+  }
+
   for (const day of report.days) {
-    lines.push('', `## ${fmtDay(day.date)}`);
+    const t = day.total;
+    lines.push('', '---', '', `## ${fmtDay(day.date)}`, '',
+      `**${kcal(t.calories)} kcal** · ${macroLine(t)}`, '',
+      '| Meal | Food | Qty | Cal | P | C | F | Fib |',
+      '|---|---|--:|--:|--:|--:|--:|--:|');
     for (const meal of day.meals) {
-      lines.push('', `**${meal.name}**`);
-      for (const e of meal.entries) {
-        const name = e.food_brand ? `${e.food_name} (${e.food_brand})` : e.food_name;
-        lines.push(`- ${name} — ${e.quantity_g}g — ${e.calories} kcal (${e.protein}P / ${e.carbs}C / ${e.fat}F${e.fiber ? ` / ${e.fiber} fiber` : ''})`);
-      }
+      meal.entries.forEach((e, i) => {
+        lines.push(`| ${i === 0 ? meal.name : ''} | ${foodName(e)} | ${g(e.quantity_g)} g | ${kcal(e.calories)} | ${g(e.protein)} | ${g(e.carbs)} | ${g(e.fat)} | ${g(e.fiber)} |`);
+      });
     }
-    lines.push('', `**Day total: ${day.total.calories} kcal · ${day.total.protein}g protein · ${day.total.carbs}g carbs · ${day.total.fat}g fat · ${day.total.fiber}g fiber**`);
   }
   return lines.join('\n');
 }
 
 function toHtml(report) {
   const { summary } = report;
-  const dayBlocks = report.days.map(day => `
+  const a = summary.avg;
+
+  // One table per day, with the meal name as a spanning label row. Reads as a
+  // single aligned column of numbers instead of restarting at every meal.
+  const dayBlocks = report.days.map(day => {
+    const t = day.total;
+    const rows = day.meals.map(meal => `
+      <tr class="meal-row"><td colspan="7">${escHtml(meal.name)}</td></tr>
+      ${meal.entries.map(e => `
+        <tr>
+          <td class="food">${escHtml(foodName(e))}</td>
+          <td>${g(e.quantity_g)} g</td>
+          <td class="cal">${kcal(e.calories)}</td>
+          <td>${g(e.protein)}</td><td>${g(e.carbs)}</td><td>${g(e.fat)}</td><td>${g(e.fiber)}</td>
+        </tr>`).join('')}`).join('');
+    return `
     <section class="day">
-      <h2>${escHtml(fmtDay(day.date))}</h2>
-      ${day.meals.map(meal => `
-        <h3>${escHtml(meal.name)}</h3>
-        <table>
-          <thead><tr><th>Food</th><th>Qty</th><th>Cal</th><th>P</th><th>C</th><th>F</th><th>Fiber</th></tr></thead>
-          <tbody>
-            ${meal.entries.map(e => `
-              <tr>
-                <td>${escHtml(e.food_brand ? `${e.food_name} (${e.food_brand})` : e.food_name)}</td>
-                <td>${e.quantity_g}g</td><td>${e.calories}</td><td>${e.protein}</td><td>${e.carbs}</td><td>${e.fat}</td><td>${e.fiber || 0}</td>
-              </tr>`).join('')}
-          </tbody>
-        </table>`).join('')}
-      <div class="day-total">Day total: ${day.total.calories} kcal · ${day.total.protein}g protein · ${day.total.carbs}g carbs · ${day.total.fat}g fat · ${day.total.fiber}g fiber</div>
-    </section>`).join('') || '<p>No meals logged in this date range.</p>';
+      <div class="day-head">
+        <h2>${escHtml(fmtDay(day.date))}</h2>
+        <div class="day-total"><strong>${kcal(t.calories)} kcal</strong><span>${escHtml(macroLine(t))}</span></div>
+      </div>
+      <table>
+        <thead><tr>
+          <th>Food</th><th>Qty</th><th>Cal</th><th>P</th><th>C</th><th>F</th><th>Fib</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </section>`;
+  }).join('') || '<p class="empty">No meals logged in this date range.</p>';
 
   return `<!doctype html>
-<html><head><meta charset="utf-8"><title>Nutrition report ${escHtml(report.from)} to ${escHtml(report.to)}</title>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nutrition report ${escHtml(report.from)} to ${escHtml(report.to)}</title>
 <style>
-  body { font-family: -apple-system, system-ui, sans-serif; max-width: 720px; margin: 32px auto; padding: 0 16px; color: #1a1a1a; line-height: 1.5; }
-  h1 { font-size: 22px; margin-bottom: 4px; }
-  h2 { font-size: 17px; margin-top: 28px; border-bottom: 2px solid #e5e5e5; padding-bottom: 4px; }
-  h3 { font-size: 13px; color: #666; margin: 14px 0 4px; text-transform: uppercase; letter-spacing: .03em; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 4px; }
-  th, td { text-align: left; padding: 3px 6px; }
-  th { color: #888; font-weight: 600; font-size: 11px; }
-  td:not(:first-child), th:not(:first-child) { text-align: right; }
-  tbody tr:nth-child(odd) { background: #f7f7f8; }
-  .day-total { font-weight: 600; font-size: 13px; text-align: right; margin: 6px 0 4px; }
-  .summary { background: #f7f7f8; border-radius: 10px; padding: 14px 16px; margin: 12px 0 20px; font-size: 14px; }
-  .summary b { display: block; margin-bottom: 4px; }
-  @media print { body { margin: 0; } .summary { border: 1px solid #ddd; } }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    max-width: 760px; margin: 40px auto; padding: 0 20px; color: #16181d; line-height: 1.5;
+    -webkit-font-smoothing: antialiased; }
+  h1 { font-size: 24px; margin: 0 0 2px; letter-spacing: -.01em; }
+  .range { color: #6b7280; font-size: 13px; margin-bottom: 22px; }
+
+  /* Summary: the part most people read and stop. */
+  .summary { border: 1px solid #e5e7eb; border-radius: 12px; padding: 18px 20px; margin-bottom: 34px; }
+  .summary .lead { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #6b7280; margin-bottom: 12px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 26px; }
+  .stat .v { font-size: 21px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .stat .k { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .05em; margin-top: 1px; }
+  .stat.primary .v { color: #4c1d95; }
+
+  .day { margin-bottom: 30px; break-inside: avoid; }
+  .day-head { display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; flex-wrap: wrap; border-bottom: 2px solid #16181d; padding-bottom: 5px; margin-bottom: 2px; }
+  h2 { font-size: 15px; margin: 0; letter-spacing: -.01em; }
+  .day-total { font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+  .day-total strong { font-size: 14px; }
+  .day-total span { color: #6b7280; margin-left: 8px; }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 5px 8px; }
+  th { font-size: 10px; font-weight: 600; color: #6b7280; text-transform: uppercase;
+    letter-spacing: .05em; border-bottom: 1px solid #e5e7eb; }
+  td { border-bottom: 1px solid #f1f2f4; font-variant-numeric: tabular-nums; }
+  th:first-child, td.food { text-align: left; }
+  th:not(:first-child), td:not(.food) { text-align: right; white-space: nowrap; }
+  td.food { width: 45%; }
+  td.cal { font-weight: 600; }
+  /* Meal label: a quiet divider, not a competing heading. */
+  .meal-row td { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    color: #6b7280; background: #fafafb; padding-top: 8px; padding-bottom: 4px; border-bottom: none; }
+  .empty { color: #6b7280; }
+
+  @media print {
+    body { margin: 0; max-width: none; font-size: 12px; }
+    .summary { break-inside: avoid; }
+    thead { display: table-header-group; }
+  }
 </style></head>
 <body>
   <h1>Nutrition report</h1>
-  <div style="color:#666;font-size:13px;margin-bottom:12px">${escHtml(report.from)} to ${escHtml(report.to)}</div>
+  <div class="range">${escHtml(report.from)} to ${escHtml(report.to)}</div>
   <div class="summary">
-    <b>Days logged: ${summary.daysLogged} of ${summary.daysInRange}</b>
-    Average per logged day: ${summary.avg.calories} kcal · ${summary.avg.protein}g protein · ${summary.avg.carbs}g carbs · ${summary.avg.fat}g fat · ${summary.avg.fiber}g fiber
+    <div class="lead">Average per logged day</div>
+    <div class="stats">
+      <div class="stat primary"><div class="v">${kcal(a.calories)}</div><div class="k">kcal</div></div>
+      <div class="stat"><div class="v">${g(a.protein)}</div><div class="k">protein g</div></div>
+      <div class="stat"><div class="v">${g(a.carbs)}</div><div class="k">carbs g</div></div>
+      <div class="stat"><div class="v">${g(a.fat)}</div><div class="k">fat g</div></div>
+      <div class="stat"><div class="v">${g(a.fiber)}</div><div class="k">fiber g</div></div>
+      <div class="stat"><div class="v">${summary.daysLogged}<span style="color:#9ca3af;font-weight:400">/${summary.daysInRange}</span></div><div class="k">days logged</div></div>
+    </div>
   </div>
   ${dayBlocks}
 </body></html>`;
@@ -405,7 +457,7 @@ function toHtml(report) {
 // GET /api/settings/export-report?from=YYYY-MM-DD&to=YYYY-MM-DD&format=html|md|csv
 // A readable day-by-day nutrition breakdown (meals unpacked to individual
 // foods, day totals, period average) — meant for sharing with a doctor or
-// coach, unlike the raw dumps from /export and /export-csv.
+// coach, unlike the raw JSON dump from /export.
 router.get('/export-report', (req, res) => {
   try {
     const db = getDb();

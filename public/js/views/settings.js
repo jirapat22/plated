@@ -200,7 +200,6 @@ export function renderSettings(container) {
         <div class="sec-head">📦 Data &amp; Export<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <button class="btn btn-secondary btn-full" id="open-report" style="margin-bottom:8px">📋 Detailed nutrition report</button>
-          <button class="btn btn-secondary btn-full" id="export-csv" style="margin-bottom:8px">📊 Export meals as CSV</button>
           <button class="btn btn-secondary btn-full" id="export-json" style="margin-bottom:8px">📦 Export all data as JSON</button>
           <button class="btn btn-secondary btn-full" id="import-backup">📥 Restore from backup</button>
           <input type="file" id="import-file" accept="application/json" style="display:none">
@@ -716,12 +715,6 @@ export function renderSettings(container) {
 
     document.getElementById('open-report').addEventListener('click', openReportSheet);
 
-    document.getElementById('export-csv').addEventListener('click', async () => {
-      try {
-        const text = await api.get('/api/settings/export-csv');
-        downloadBlob(text, `plated-meals-${localDate()}.csv`, 'text/csv');
-      } catch (err) { showToast(err.message, 'error'); }
-    });
     document.getElementById('export-json').addEventListener('click', async () => {
       try {
         const data = await api.get('/api/settings/export');
