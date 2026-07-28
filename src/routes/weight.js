@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDb } = require('../db');
 const { todayLocal } = require('../utils/tz');
+const { recalcMacroGoals } = require('../utils/macros');
 
 const router = express.Router();
 
@@ -64,7 +65,8 @@ router.post('/', (req, res) => {
       .get({ id: result.lastInsertRowid });
 
     pushBodyweight(db, req.profileId, logDate, weight_kg);  // sync up to IronLog (best-effort)
-    res.status(201).json(entry);
+    const macros = recalcMacroGoals(db, req.profileId);     // g/kg goals follow the trend
+    res.status(201).json(macros ? { ...entry, macros } : entry);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -72,10 +74,12 @@ router.post('/', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   try {
-    const result = getDb()
+    const db = getDb();
+    const result = db
       .prepare('DELETE FROM weight_log WHERE id = $id AND profile_id = $pid')
       .run({ id: req.params.id, pid: req.profileId });
     if (result.changes === 0) return res.status(404).json({ error: 'Entry not found' });
+    recalcMacroGoals(db, req.profileId);   // removing a weigh-in moves the trend too
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -96,7 +100,8 @@ router.patch('/:id', (req, res) => {
     if (result.changes === 0) return res.status(404).json({ error: 'Entry not found' });
     const entry = db.prepare('SELECT * FROM weight_log WHERE id = $id').get({ id: req.params.id });
     pushBodyweight(db, req.profileId, entry.date, weight_kg);  // keep IronLog in sync (best-effort)
-    res.json(entry);
+    const macros = recalcMacroGoals(db, req.profileId);
+    res.json(macros ? { ...entry, macros } : entry);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

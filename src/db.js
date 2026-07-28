@@ -280,7 +280,8 @@ const PROFILE_DEFAULTS = [
   ['calorie_goal', '2000'], ['protein_goal', '150'], ['carb_goal', '250'],
   ['fat_goal', '65'], ['fiber_goal', '30'],
   ['ironlog_api_url', ''], ['ironlog_api_key', ''], ['ironlog_last_synced', ''],
-  ['protein_multiplier', '2.2'], ['energy_unit', 'kcal'], ['phase', 'maintain'],
+  ['macro_mode', 'pct'], ['protein_multiplier', '2.2'], ['fat_multiplier', '0.8'],
+  ['energy_unit', 'kcal'], ['phase', 'maintain'],
   ['tdee', ''], ['cut_deficit', '500'], ['bulk_surplus', '300'],
 ];
 

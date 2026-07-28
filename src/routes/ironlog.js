@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDb } = require('../db');
 const { todayLocal } = require('../utils/tz');
+const { recalcMacroGoals } = require('../utils/macros');
 
 // Extract all goals from IronLog profile data
 function extractProfile(profileData) {
@@ -265,6 +266,12 @@ router.post('/sync', async (req, res) => {
     } catch { /* bodyweight import is best-effort */ }
     if (weightsImported) updates.bodyweight_entries_imported = weightsImported;
 
+    // Runs last, so it sees both the imported weigh-ins and any calorie goal
+    // IronLog just pushed. In g/kg mode this overrides the macro goals IronLog
+    // sent — the local multipliers are the source of truth for that profile.
+    const macros = recalcMacroGoals(db, pid);
+    if (macros) Object.assign(updates, { protein_goal: macros.protein, carb_goal: macros.carbs, fat_goal: macros.fat });
+
     res.json({ synced: true, updates, profile_raw: profileData });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -298,8 +305,11 @@ router.post('/phase', (req, res) => {
       calorie_goal = phaseCalories(tdee, phase, deficit, surplus);
       setSetting('calorie_goal', calorie_goal);
     }
+    // Carbs are the remainder of the calorie goal in g/kg mode, so a phase
+    // change has to re-derive them.
+    const macros = recalcMacroGoals(db, pid);
 
-    res.json({ phase, tdee, calorie_goal });
+    res.json({ phase, tdee, calorie_goal, ...(macros ? { macros } : {}) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

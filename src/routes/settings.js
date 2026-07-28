@@ -1,16 +1,25 @@
 const express = require('express');
 const { getDb } = require('../db');
 const { todayLocal } = require('../utils/tz');
+const { recalcMacroGoals, trendWeight } = require('../utils/macros');
 
 const router = express.Router();
 
 const ALLOWED = new Set([
   'calorie_goal', 'protein_goal', 'carb_goal', 'fat_goal',
-  'fiber_goal', 'ironlog_api_url', 'ironlog_api_key', 'protein_multiplier',
+  'fiber_goal', 'ironlog_api_url', 'ironlog_api_key',
   'phase', 'tdee', 'cut_deficit', 'bulk_surplus', 'energy_unit', 'ironlog_last_synced',
   'target_weight_kg',
   'weight_display',   // Today's bodyweight card: 'raw' (default) or 'trend'
+  // Macro targets: 'pct' (a % split of the calorie goal, applied once) or
+  // 'gkg' (multiples of trend bodyweight, re-derived whenever weight moves).
+  'macro_mode', 'protein_multiplier', 'fat_multiplier',
 ]);
+
+// Settings that feed the g/kg macro formula — changing any of them has to
+// re-derive the gram goals, or the goals silently disagree with the inputs
+// shown right above them.
+const MACRO_INPUTS = ['macro_mode', 'protein_multiplier', 'fat_multiplier', 'calorie_goal'];
 
 // ironlog_api_url is fetched server-side (src/routes/ironlog.js) and its raw
 // response is echoed back verbatim via GET /api/ironlog/raw — without this
@@ -45,7 +54,15 @@ function allSettings(db, pid) {
 
 router.get('/', (req, res) => {
   try {
-    res.json(allSettings(getDb(), req.profileId));
+    const db = getDb();
+    const bw = trendWeight(db, req.profileId);
+    // trend_weight_kg is derived, not stored — the macro settings UI needs the
+    // same number the formula uses. Deliberately added here and not inside
+    // allSettings(), so it stays out of the export/import payload.
+    res.json({
+      ...allSettings(db, req.profileId),
+      trend_weight_kg: bw != null ? Math.round(bw * 10) / 10 : null,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -63,6 +80,13 @@ router.patch('/', (req, res) => {
     );
     for (const [key, value] of Object.entries(req.body)) {
       if (ALLOWED.has(key)) stmt.run({ pid: req.profileId, key, value: String(value) });
+    }
+    // Re-derive the gram goals if an input to the g/kg formula just changed.
+    // Skipped when the request itself set protein/carb/fat directly (the %
+    // split's Apply), so an explicit write is never overwritten.
+    const setsGramsDirectly = ['protein_goal', 'carb_goal', 'fat_goal'].some(k => k in req.body);
+    if (!setsGramsDirectly && MACRO_INPUTS.some(k => k in req.body)) {
+      recalcMacroGoals(db, req.profileId);
     }
     res.json(allSettings(db, req.profileId));
   } catch (err) {

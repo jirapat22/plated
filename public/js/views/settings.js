@@ -149,7 +149,6 @@ export function renderSettings(container) {
         ${goalRow('carb_goal',         'Carbs',         s.carb_goal,         'g')}
         ${goalRow('fat_goal',          'Fat',           s.fat_goal,          'g')}
         ${goalRow('fiber_goal',        'Fiber',         s.fiber_goal,        'g')}
-        ${goalRow('protein_multiplier','Protein × BW',  s.protein_multiplier,'×')}
         <div style="padding:10px 16px 14px;font-size:11px;color:var(--text-faint)">These update automatically when you sync from IronLog.</div>
       </div>
 
@@ -448,54 +447,93 @@ export function renderSettings(container) {
       if (!box) return;
       box.innerHTML = macroSplitBox(s);
 
+      // Mode toggle is present even when the rest of the card can't render
+      // (no calorie goal, no bodyweight), so wire it before bailing out.
+      box.querySelectorAll('.mm-tab').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (btn.dataset.mode === (s.macro_mode || 'pct')) return;
+          s.macro_mode = btn.dataset.mode;
+          renderMacroSplit();
+          try { await api.patch('/api/settings', { macro_mode: s.macro_mode }); }
+          catch (err) { showToast(err.message, 'error'); }
+        });
+      });
+
       const msP = document.getElementById('msplit-p');
       const msF = document.getElementById('msplit-f');
       if (!msP || !msF) return;
 
       const cal = parseFloat(s.calorie_goal) || 0;
+      const gkg = s.macro_mode === 'gkg';
+      const bw  = parseFloat(s.trend_weight_kg) || 0;
       const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-      const draw = (p, f) => {
-        const c = 100 - p - f;
-        document.getElementById('msplit-c').textContent  = c;
-        document.getElementById('msplit-pg').textContent = Math.round(cal * p / 100 / 4) + ' g';
-        document.getElementById('msplit-fg').textContent = Math.round(cal * f / 100 / 9) + ' g';
-        document.getElementById('msplit-cg').textContent = Math.round(cal * c / 100 / 4) + ' g';
-        document.getElementById('msplit-total').textContent = '= 100%';
-      };
-      // Single clamp pass, reused by both inputs and the Apply handler: protein
-      // 0-100, fat capped to whatever protein leaves — so the pair can never
-      // total over 100 regardless of which field the user is typing in.
+      const setG = (id, v) => { document.getElementById(id).textContent = v + ' g'; };
+
+      // Both modes: read the two inputs, return the resulting gram goals.
+      // Carbs are always the calorie remainder, so a split that doesn't fit
+      // shows up as 0g carbs rather than a negative number.
       const read = () => {
+        if (gkg) {
+          const p = clamp(parseFloat(msP.value) || 0, 0, 10);
+          const f = clamp(parseFloat(msF.value) || 0, 0, 10);
+          const pG = Math.round(bw * p), fG = Math.round(bw * f);
+          return { p, f, pG, fG, cG: Math.max(0, Math.round((cal - pG * 4 - fG * 9) / 4)) };
+        }
         const p = clamp(parseInt(msP.value) || 0, 0, 100);
         const f = clamp(parseInt(msF.value) || 0, 0, 100 - p);
-        return { p, f };
+        const c = 100 - p - f;
+        return { p, f, c, pG: Math.round(cal * p / 100 / 4), fG: Math.round(cal * f / 100 / 9), cG: Math.round(cal * c / 100 / 4) };
       };
+
+      const draw = () => {
+        const r = read();
+        setG('msplit-pg', r.pG); setG('msplit-fg', r.fG); setG('msplit-cg', r.cG);
+        const total = document.getElementById('msplit-total');
+        if (gkg) {
+          // Warn when protein+fat alone already spend the calorie budget —
+          // silently zeroing carbs would look like a bug.
+          const used = r.pG * 4 + r.fG * 9;
+          total.textContent = used > cal
+            ? `Over by ${Math.round(used - cal)} kcal — no room for carbs`
+            : `Updates itself on every weigh-in`;
+          total.style.color = used > cal ? 'var(--warning)' : 'var(--text-faint)';
+        } else {
+          document.getElementById('msplit-c').textContent = r.c;
+          total.textContent = '= 100%';
+        }
+      };
+
       msP.addEventListener('input', () => {
-        const { p, f } = read();
-        if (parseInt(msP.value) > p) msP.value = p;   // reject an over-100 keystroke
-        if (parseInt(msF.value) !== f) msF.value = f;  // squeeze fat when protein grows
-        draw(p, f);
+        const r = read();
+        if (!gkg) {
+          if (parseInt(msP.value) > r.p) msP.value = r.p;   // reject an over-100 keystroke
+          if (parseInt(msF.value) !== r.f) msF.value = r.f;  // squeeze fat when protein grows
+        }
+        draw();
       });
       msF.addEventListener('input', () => {
-        const { p, f } = read();
-        if (parseInt(msF.value) !== f) msF.value = f;  // can't exceed the remainder
-        draw(p, f);
+        const r = read();
+        if (!gkg && parseInt(msF.value) !== r.f) msF.value = r.f;  // can't exceed the remainder
+        draw();
       });
+
       document.getElementById('msplit-apply').addEventListener('click', async () => {
-        const { p, f } = read();
-        const c  = 100 - p - f;
-        const pG = Math.round(cal * p / 100 / 4);
-        const fG = Math.round(cal * f / 100 / 9);
-        const cG = Math.round(cal * c / 100 / 4);
+        const r = read();
+        // g/kg stores the multipliers and lets the server derive the grams, so
+        // later weigh-ins keep them in step. % writes the grams directly.
+        const body_ = gkg
+          ? { macro_mode: 'gkg', protein_multiplier: String(r.p), fat_multiplier: String(r.f) }
+          : { protein_goal: String(r.pG), carb_goal: String(r.cG), fat_goal: String(r.fG) };
         try {
-          await api.patch('/api/settings', { protein_goal: String(pG), carb_goal: String(cG), fat_goal: String(fG) });
-          s.protein_goal = String(pG); s.carb_goal = String(cG); s.fat_goal = String(fG);
+          const updated = await api.patch('/api/settings', body_);
+          Object.assign(s, updated);
           ['protein_goal', 'carb_goal', 'fat_goal'].forEach(k => {
             const el = body.querySelector(`[data-key="${k}"]`);
-            if (el) el.value = { protein_goal: pG, carb_goal: cG, fat_goal: fG }[k];
+            if (el && s[k] != null) el.value = s[k];
           });
-          showToast(`Macros set — ${pG}g P · ${cG}g C · ${fG}g F`, 'success');
+          showToast(`Macros set — ${s.protein_goal}g P · ${s.carb_goal}g C · ${s.fat_goal}g F`, 'success');
           window.dispatchEvent(new CustomEvent('plated:settings-changed'));
+          renderMacroSplit();
         } catch (err) {
           showToast(err.message, 'error');
         }
@@ -904,42 +942,83 @@ function goalRow(key, label, value, unit, compact = false) {
   `;
 }
 
-// Enter macro goals as a % of the calorie goal. Protein & fat are set; carbs
-// fills the rest, so the split can never exceed 100%. Converts to grams
-// (protein/carbs 4 kcal/g, fat 9 kcal/g) and writes the gram goals on Apply.
+// Macro goals, entered either as a % of the calorie goal or as grams per kg of
+// bodyweight. Both modes set protein & fat and let carbs fill the remaining
+// calories, and both write the same three gram goals — one card so the two can
+// never disagree. In g/kg mode the server re-derives the grams from trend
+// weight on every weigh-in, so the numbers here are a preview of that formula.
 function macroSplitBox(s) {
   const cal = parseFloat(s.calorie_goal) || 0;
+  const gkg = s.macro_mode === 'gkg';
   if (!cal) {
-    return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-faint)">Set a calorie goal above to enter macros by %.</div>`;
+    return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-faint)">Set a calorie goal above to enter macro targets.</div>`;
   }
-  let pPct = Math.round((parseFloat(s.protein_goal) || 0) * 4 / cal * 100);
-  let fPct = Math.round((parseFloat(s.fat_goal) || 0) * 9 / cal * 100);
-  pPct = Math.max(0, Math.min(100, pPct));
-  fPct = Math.max(0, Math.min(100 - pPct, fPct));
-  const cPct = 100 - pPct - fPct;
-  const g = (pct, kpg) => Math.round(cal * pct / 100 / kpg);
+
+  const bw = parseFloat(s.trend_weight_kg) || 0;
+  const tabs = `
+    <div style="display:flex;gap:4px">
+      <button type="button" class="eunit-btn mm-tab${gkg ? '' : ' active'}" data-mode="pct" style="height:26px;padding:0 10px;font-size:10px">% of cals</button>
+      <button type="button" class="eunit-btn mm-tab${gkg ? ' active' : ''}" data-mode="gkg" style="height:26px;padding:0 10px;font-size:10px">g per kg</button>
+    </div>`;
+
+  if (gkg && !bw) {
+    return `
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div class="form-label" style="margin:0">Macro targets</div>${tabs}
+        </div>
+        <div style="font-size:11px;color:var(--warning)">Log a bodyweight first — g/kg targets need a weight to multiply.</div>
+      </div>`;
+  }
+
+  let head, rows, foot;
+  if (gkg) {
+    const pMul = parseFloat(s.protein_multiplier) || 0;
+    const fMul = parseFloat(s.fat_multiplier) || 0;
+    const pg = Math.round(bw * pMul);
+    const fg = Math.round(bw * fMul);
+    const cg = Math.max(0, Math.round((cal - pg * 4 - fg * 9) / 4));
+    head = `Multiples of your <strong style="color:var(--text)">${bw} kg</strong> 7-day trend weight. Carbs fill the rest of your ${Math.round(cal)} kcal.`;
+    rows = splitRow('p', 'Protein', 'var(--protein)', pMul, pg, true, '×')
+         + splitRow('f', 'Fat',     'var(--fat)',     fMul, fg, true, '×')
+         + splitRow('c', 'Carbs',   'var(--carbs)',   '—',  cg, false, '');
+    foot = `Updates itself on every weigh-in`;
+  } else {
+    let pPct = Math.round((parseFloat(s.protein_goal) || 0) * 4 / cal * 100);
+    let fPct = Math.round((parseFloat(s.fat_goal) || 0) * 9 / cal * 100);
+    pPct = Math.max(0, Math.min(100, pPct));
+    fPct = Math.max(0, Math.min(100 - pPct, fPct));
+    const cPct = 100 - pPct - fPct;
+    const g = (pct, kpg) => Math.round(cal * pct / 100 / kpg);
+    head = `Of your ${Math.round(cal)} kcal goal. Set protein &amp; fat — carbs fill the rest.`;
+    rows = splitRow('p', 'Protein', 'var(--protein)', pPct, g(pPct, 4), true, '%')
+         + splitRow('f', 'Fat',     'var(--fat)',     fPct, g(fPct, 9), true, '%')
+         + splitRow('c', 'Carbs',   'var(--carbs)',   cPct, g(cPct, 4), false, '%');
+    foot = `= 100%`;
+  }
+
   return `
     <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
-      <div class="form-label" style="margin-bottom:2px">Macro split · % of calories</div>
-      <div style="font-size:11px;color:var(--text-faint);margin-bottom:12px">Of your ${Math.round(cal)} kcal goal. Set protein &amp; fat — carbs fill the rest.</div>
-      ${splitRow('p', 'Protein', 'var(--protein)', pPct, g(pPct, 4), true)}
-      ${splitRow('f', 'Fat',     'var(--fat)',     fPct, g(fPct, 9), true)}
-      ${splitRow('c', 'Carbs',   'var(--carbs)',   cPct, g(cPct, 4), false)}
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
-        <span id="msplit-total" style="font-size:11px;color:var(--text-faint);font-variant-numeric:tabular-nums">= 100%</span>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+        <div class="form-label" style="margin:0">Macro targets</div>${tabs}
+      </div>
+      <div style="font-size:11px;color:var(--text-faint);margin-bottom:12px">${head}</div>
+      ${rows}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;gap:8px">
+        <span id="msplit-total" style="font-size:11px;color:var(--text-faint);font-variant-numeric:tabular-nums">${foot}</span>
         <button id="msplit-apply" class="btn btn-primary" style="height:34px;padding:0 16px;font-size:13px">Apply to goals</button>
       </div>
     </div>`;
 }
 
-function splitRow(id, label, color, pct, grams, editable) {
+function splitRow(id, label, color, val, grams, editable, unit) {
   return `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
       <span style="width:54px;font-size:13px;color:${color};font-weight:600">${label}</span>
       ${editable
-        ? `<input id="msplit-${id}" type="text" inputmode="numeric" maxlength="3" value="${pct}" style="width:52px;height:36px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);outline:none"/>`
-        : `<span id="msplit-${id}" style="width:52px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text-muted)">${pct}</span>`}
-      <span style="font-size:13px;color:var(--text-muted)">%</span>
+        ? `<input id="msplit-${id}" type="text" inputmode="decimal" maxlength="4" value="${val}" style="width:52px;height:36px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);outline:none"/>`
+        : `<span id="msplit-${id}" style="width:52px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text-muted)">${val}</span>`}
+      <span style="font-size:13px;color:var(--text-muted);width:10px">${unit}</span>
       ${editable ? '' : '<span style="font-size:10px;color:var(--text-faint)">auto</span>'}
       <span id="msplit-${id}g" style="margin-left:auto;font-size:12px;color:var(--text-muted);font-variant-numeric:tabular-nums">${grams} g</span>
     </div>`;
