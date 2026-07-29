@@ -171,6 +171,9 @@ export function installErrorCapture() {
   });
   window.addEventListener('unhandledrejection', e => {
     const r = e.reason;
+    // Having no connection isn't a bug (see offlineError in api.js) — it was
+    // filing itself as a 5xx in Orbit from any write attempted offline.
+    if (r?.offline) return;
     const message = r?.message || (typeof r === 'string' ? r : 'Unhandled promise rejection');
     autoReport(message, r?.stack || null);
   });

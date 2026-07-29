@@ -8,6 +8,16 @@ export function setToken(t) { _token = t; }
 export function getToken() { return _token; }
 export function onUnauthorized(fn) { _onUnauthorized = fn; }
 
+// One shape for "this device has no connection", however we found out. Carries
+// .offline so callers can tell it apart from a real failure without string
+// matching, and a message that's safe to put straight into a toast.
+function offlineError(method) {
+  const msg = method === 'GET'
+    ? "You're offline — can't load this right now."
+    : "You're offline — that didn't save. Try again once you're back on.";
+  return Object.assign(new Error(msg), { status: 503, offline: true });
+}
+
 async function request(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (_token) headers['Authorization'] = `Bearer ${_token}`;
@@ -19,8 +29,11 @@ async function request(method, path, body) {
   try {
     resp = await fetch(path, opts);
   } catch (netErr) {
-    // Network unreachable (offline, DNS, etc.) — report unless it's GET (noisy
-    // and usually just offline). Report writes so lost submissions are visible.
+    // Network unreachable. When the browser already knows it's offline this is
+    // the expected outcome, not a fault — say so plainly and don't page Orbit.
+    // (With the service worker installed this branch rarely runs: it answers
+    // failed /api/ fetches itself, handled below.)
+    if (!navigator.onLine) throw offlineError(method);
     if (method !== 'GET') reportApiError({ method, path, status: 0, message: netErr.message });
     throw netErr;
   }
@@ -37,6 +50,11 @@ async function request(method, path, body) {
   data = ct.includes('application/json') ? await resp.json() : await resp.text();
 
   if (!resp.ok) {
+    // The service worker answers any /api/ request it couldn't put on the wire
+    // with a synthetic 503 {offline:true}. That's this device having no signal,
+    // not a server fault: it was filing itself as a 5xx bug in Orbit, and
+    // surfacing to the user as a toast reading just "offline".
+    if (data?.offline) throw offlineError(method);
     // Server faults (5xx) are real bugs — capture them; 4xx are expected.
     if (resp.status >= 500) reportApiError({ method, path, status: resp.status, message: data?.error || '' });
     const err = new Error(data?.error || `HTTP ${resp.status}`);
