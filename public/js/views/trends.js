@@ -210,17 +210,20 @@ function calcStreak(summary, goal, todayISO) {
 
 export function renderTrends(container) {
   container.classList.add('trends-view');
-  let days = 30;
+  let days = 30;                  // Infinity = all time
   let weighInsOpen = false;       // weigh-ins disclosure survives re-renders
   let weighInsExpanded = false;   // "show older" state, ditto
+  const rangeLabel = () => (days === Infinity ? 'all time' : `${days} days`);
 
   container.innerHTML = `
-    <div class="today-header">
+    <div class="today-header" style="flex-wrap:wrap;gap:8px">
       <div class="today-date">Trends</div>
-      <div style="display:flex;gap:6px">
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
         <button class="range-btn" data-days="7">7d</button>
         <button class="range-btn active" data-days="30">30d</button>
         <button class="range-btn" data-days="90">90d</button>
+        <button class="range-btn" data-days="365">1y</button>
+        <button class="range-btn" data-days="all">All</button>
       </div>
     </div>
     <div id="trends-body" style="padding:0 16px">
@@ -231,7 +234,7 @@ export function renderTrends(container) {
   // Range buttons
   container.querySelectorAll('.range-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      days = parseInt(btn.dataset.days);
+      days = btn.dataset.days === 'all' ? Infinity : parseInt(btn.dataset.days);
       container.querySelectorAll('.range-btn').forEach(b => b.classList.toggle('active', b === btn));
       load();
     });
@@ -251,11 +254,11 @@ export function renderTrends(container) {
       '<div class="skeleton skel-line" style="height:180px;border-radius:14px"></div>';
     try {
       const [summary, weights, settings] = await Promise.all([
-        // Fetch the server max (90d) regardless of chart range so the consistency
-        // streak isn't capped short — the streak walks the full summary, while the
-        // charts slice it down to `days`. (Server clamps days to 90.)
-        api.get(`/api/meals/summary?days=${Math.max(days, 90)}`),
-        api.get('/api/weight?limit=90'),
+        // Always fetch at least 90d regardless of chart range so the consistency
+        // streak isn't capped short — the streak walks the full summary, while
+        // the charts slice it down to `days`.
+        api.get(`/api/meals/summary?days=${days === Infinity ? 'all' : Math.max(days, 90)}`),
+        api.get(`/api/weight?limit=${days === Infinity ? 5000 : Math.max(days, 90)}`),
         api.get('/api/settings'),
       ]);
 
@@ -621,7 +624,7 @@ export function renderTrends(container) {
       <!-- Bodyweight + target + expected (the verdict's weight evidence) -->
       <div class="card" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
-          <div class="label">Bodyweight <span class="range-chip">· ${days} days</span></div>
+          <div class="label">Bodyweight <span class="range-chip">· ${rangeLabel()}</span></div>
           <div style="display:flex;gap:10px;font-size:10px;color:var(--text-faint);flex-wrap:wrap">
             ${expectedAligned ? `<span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:0;border-top:2px dashed #c8b8ff;display:inline-block"></span>expected from calories</span>` : ''}
             ${targetWeight ? `<span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>target ${targetWeight} kg</span>` : ''}
@@ -653,7 +656,7 @@ export function renderTrends(container) {
       <!-- Calories chart (the verdict's intake evidence) -->
       <div class="card" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div class="label">Calories <span class="range-chip">· ${days} days</span></div>
+          <div class="label">Calories <span class="range-chip">· ${rangeLabel()}</span></div>
           <div style="display:flex;gap:10px;font-size:10px;color:var(--text-faint)">
             <span style="display:flex;align-items:center;gap:4px">
               <span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>goal
@@ -693,7 +696,7 @@ export function renderTrends(container) {
       <!-- Weekly averages (Mon–Sun), per macro — "am I eating more than usual?" -->
       ${weekData.length >= 2 ? `
       <div class="card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Weekly average <span class="range-chip">· ${days} days · Mon–Sun</span></div>
+        <div class="label" style="margin-bottom:10px">Weekly average <span class="range-chip">· ${rangeLabel()} · Mon–Sun</span></div>
         <div class="search-tabs" id="wk-metric" style="padding:0;margin-bottom:10px">
           <button class="search-tab active" data-m="cal">Calories</button>
           <button class="search-tab" data-m="protein">Protein</button>
@@ -707,7 +710,7 @@ export function renderTrends(container) {
       <div class="card" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
           <div class="label">Consistency</div>
-          <span class="range-chip">${days} days</span>
+          <span class="range-chip">${rangeLabel()}</span>
         </div>
         <!-- Current streak — an ongoing run, not tied to the range above -->
         <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--surface-2);border-radius:var(--radius-sm);margin-bottom:10px">
@@ -753,7 +756,7 @@ export function renderTrends(container) {
 
       <!-- Protein chart -->
       <div class="card" style="margin-bottom:12px">
-        <div class="label" style="margin-bottom:10px">Protein <span class="range-chip">· ${days} days</span></div>
+        <div class="label" style="margin-bottom:10px">Protein <span class="range-chip">· ${rangeLabel()}</span></div>
         <div style="height:160px;position:relative"><canvas id="chart-pro"></canvas></div>
       </div>
 
@@ -761,11 +764,11 @@ export function renderTrends(container) {
       <details id="more-macros" style="margin-bottom:12px">
         <summary style="cursor:pointer;list-style:none;font-size:13px;font-weight:700;color:var(--text-muted);padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md)">More macros · carbs & fat</summary>
         <div class="card" style="margin-top:10px">
-          <div class="label" style="margin-bottom:10px">Carbs <span class="range-chip">· ${days} days</span></div>
+          <div class="label" style="margin-bottom:10px">Carbs <span class="range-chip">· ${rangeLabel()}</span></div>
           <div style="height:150px;position:relative"><canvas id="chart-carb"></canvas></div>
         </div>
         <div class="card" style="margin-top:12px">
-          <div class="label" style="margin-bottom:10px">Fat <span class="range-chip">· ${days} days</span></div>
+          <div class="label" style="margin-bottom:10px">Fat <span class="range-chip">· ${rangeLabel()}</span></div>
           <div style="height:150px;position:relative"><canvas id="chart-fat"></canvas></div>
         </div>
       </details>

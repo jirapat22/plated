@@ -25,7 +25,9 @@ async function pushBodyweight(db, pid, date, weight_kg) {
 
 router.get('/', (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit) || 30, 365);
+    // Ceiling raised from 365 so Trends' "All" range can plot a weight history
+    // longer than a year alongside the now-unbounded meal summary.
+    const limit = Math.min(parseInt(req.query.limit) || 30, 5000);
     const rows = getDb().prepare(
       'SELECT * FROM weight_log WHERE profile_id = $pid ORDER BY date DESC LIMIT $limit'
     ).all({ limit, pid: req.profileId });

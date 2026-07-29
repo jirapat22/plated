@@ -140,7 +140,13 @@ router.get('/summary', (req, res) => {
   try {
     const pid = resolveViewedProfile(req, res);
     if (pid == null) return;
-    const days = Math.min(parseInt(req.query.days) || 30, 90);
+    // days=all lifts the window entirely (Trends' "All" range); anything else
+    // clamps to ~5 years so a junk query can't ask for an unbounded scan. The
+    // old 90-day ceiling meant week 13 and older were unreachable from Trends
+    // no matter what the client asked for. One row per logged day, so even a
+    // multi-year account is a few hundred rows.
+    const all  = req.query.days === 'all';
+    const days = Math.min(Math.max(parseInt(req.query.days) || 30, 1), 1825);
     const rows = getDb().prepare(`
       SELECT
         ms.date,
@@ -155,10 +161,10 @@ router.get('/summary', (req, res) => {
       LEFT JOIN meal_entries me ON me.meal_session_id = ms.id
       LEFT JOIN daily_overrides ovr
         ON ovr.profile_id = ms.profile_id AND ovr.date = ms.date AND ovr.key = 'log_status'
-      WHERE ms.date >= date('now', $offset) AND ms.profile_id = $pid
+      WHERE ms.profile_id = $pid ${all ? '' : "AND ms.date >= date('now', $offset)"}
       GROUP BY ms.date
       ORDER BY ms.date ASC
-    `).all({ offset: `-${days} days`, pid });
+    `).all(all ? { pid } : { offset: `-${days} days`, pid });
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
