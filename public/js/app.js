@@ -83,6 +83,46 @@ export function hideSheet() {
   }, 300);
 }
 
+// ─── Text prompt sheet ──────────────────────────────────────
+// A themed stand-in for window.prompt(), which in an installed PWA renders as
+// a bare system dialog dropped into an otherwise fully custom UI (and on iOS
+// can be suppressed entirely). onSave(value) may return a promise — throwing
+// shows the message and keeps the sheet open so the input isn't lost.
+export function showPrompt({ title, label, value = '', placeholder = '', cta = 'Save', inputMode, maxLength }, onSave) {
+  showSheet(content => {
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title"></span>
+        <button class="sheet-close" id="pr-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        <label class="form-label" id="pr-label"></label>
+        <input class="input" id="pr-input" style="margin:6px 0 16px"/>
+        <button class="btn btn-primary btn-full" id="pr-save"></button>
+      </div>`;
+    // textContent throughout — these strings can carry user-entered names.
+    content.querySelector('.sheet-title').textContent = title;
+    content.querySelector('#pr-label').textContent = label;
+    const input = content.querySelector('#pr-input');
+    input.value = value;
+    input.placeholder = placeholder;
+    if (inputMode) input.inputMode = inputMode;
+    if (maxLength) input.maxLength = maxLength;
+    const btn = content.querySelector('#pr-save');
+    btn.textContent = cta;
+    content.querySelector('#pr-close').addEventListener('click', hideSheet);
+
+    const submit = async () => {
+      btn.disabled = true;
+      try { await onSave(input.value.trim()); hideSheet(); }
+      catch (err) { showToast(err.message, 'error'); btn.disabled = false; }
+    };
+    btn.addEventListener('click', submit);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    setTimeout(() => { input.focus(); input.select(); }, 150);
+  });
+}
+
 // ─── Navigation ─────────────────────────────────────────────
 const views = { today: renderToday, history: renderHistory, trends: renderTrends, foods: renderFoods, settings: renderSettings };
 

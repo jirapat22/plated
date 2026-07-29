@@ -1,5 +1,5 @@
 import { api }           from '../api.js';
-import { showToast, showSheet, hideSheet, getProfile } from '../app.js';
+import { showToast, showSheet, hideSheet, showPrompt, getProfile } from '../app.js';
 import { getFoodIcon }  from '../utils/foodIcon.js';
 import { wireEnergyUnitToggle, wireDualNutrition } from '../utils/energy.js';
 import { renderBatches } from './batches.js';
@@ -357,15 +357,16 @@ export function renderFoods(container) {
         }
       });
 
-      el.querySelector('.tpl-rename').addEventListener('click', async () => {
-        const name = prompt('Rename template', t.name);
-        if (name == null || !name.trim() || name.trim() === t.name) return;
-        try {
-          await api.patch(`/api/templates/${t.id}`, { name: name.trim() });
-          t.name = name.trim();
-          el.querySelector('.tpl-name').textContent = t.name;
-          showToast('Template renamed', 'success');
-        } catch (err) { showToast(err.message, 'error'); }
+      el.querySelector('.tpl-rename').addEventListener('click', () => {
+        showPrompt({ title: 'Rename template', label: 'Template name', value: t.name, cta: 'Rename' },
+          async name => {
+            if (!name) throw new Error('Enter a name');
+            if (name === t.name) return;
+            await api.patch(`/api/templates/${t.id}`, { name });
+            t.name = name;
+            el.querySelector('.tpl-name').textContent = name;
+            showToast('Template renamed', 'success');
+          });
       });
 
       el.querySelector('.tpl-del').addEventListener('click', async () => {

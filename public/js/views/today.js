@@ -1,12 +1,11 @@
 import { api }                            from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
-import { openFoodEntry, openQuickLog, renderMealCard } from './log.js';
+import { openFoodEntry, openQuickLog, renderMealCard, lazySession } from './log.js';
 import { renderMacroBar }                  from '../components/macroBar.js';
 import { fmtE, unitLabel } from '../utils/energy.js';
 import { localDate }                       from '../utils/date.js';
 import { classifyDay, isFlagged, LOG_STRONG } from '../utils/logCheck.js';
 import { assert } from '../utils/bugReport.js';
-import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
 import { movingAvg } from '../utils/stats.js';
 
 const CIRC = 2 * Math.PI * 60;
@@ -258,24 +257,32 @@ export function renderToday(container) {
     const hintColor = remaining < -50 ? 'var(--over)' : remaining < 50 ? 'var(--success)' : 'var(--text-faint)';
 
     // ── Concerns: one glanceable row of "what needs attention" ──
+    // Protein is a floor you're trying to reach, not a ceiling to stay under —
+    // flagging "Protein +12g" as a warning meant the row lit up on the days you
+    // ate best, which trains you to ignore it. So: short on protein late in the
+    // day is worth saying; over is not. Carbs/fat over the split is already
+    // covered by the calorie chip — three more chips restating it is noise.
+    const lateInDay = new Date().getHours() >= 19;
+    const proteinShort = Math.round(goals.protein - t.protein);
     const concerns = [];
-    if (showNoCal)               concerns.push({ t: `${noCalNames.length} food${noCalNames.length === 1 ? '' : 's'} no calories`, kind: 'bad' });
-    if (eaten > combined)        concerns.push({ t: `+${fmtE(eaten - combined)} ${ul} over`, kind: 'warn' });
-    if (t.protein > goals.protein + 0.5) concerns.push({ t: `Protein +${Math.round(t.protein - goals.protein)}g`, kind: 'warn' });
-    if (t.carbs   > goals.carbs   + 0.5) concerns.push({ t: `Carbs +${Math.round(t.carbs - goals.carbs)}g`, kind: 'warn' });
-    if (t.fat     > goals.fat     + 0.5) concerns.push({ t: `Fat +${Math.round(t.fat - goals.fat)}g`,     kind: 'warn' });
+    if (showNoCal)        concerns.push({ t: `${noCalNames.length} food${noCalNames.length === 1 ? '' : 's'} no calories`, kind: 'bad' });
+    if (eaten > combined) concerns.push({ t: `+${fmtE(eaten - combined)} ${ul} over`, kind: 'warn' });
+    if (lateInDay && eaten > 0 && proteinShort >= 10) {
+      concerns.push({ t: `Protein ${proteinShort}g short`, kind: 'warn' });
+    }
     const showConcernRow = concerns.length > 0 || eaten > 0;
 
-    // IronLog/phase summary for collapsed row
-    const { tdee, phase, deficit, surplus } = parsePhaseSettings(settings);
-    const target  = phaseCalorieGoal(tdee, phase, deficit, surplus);
-    const diff    = target != null ? net - target : null;
-    const onTrack = target != null && Math.abs(diff) <= 150;
-    const phaseLabel = target != null
-      ? (onTrack ? 'On track ✓' : diff > 150 ? `+${fmtE(diff)} ${ul} over` : `${fmtE(-diff)} ${ul} under`)
-      : phase;
-
-    const showMorningPrompt = false; // removed per user preference
+    // IronLog summary for the collapsed row.
+    // This used to recompute its own target as tdee − deficit, which put a
+    // second, different calorie number on the same screen as the ring whenever
+    // an IronLog sync had written calorie_goal directly (it doesn't go through
+    // the phase math). One target now: calorie_goal, same as the ring and
+    // everything downstream. Settings flags a divergence and offers the fix.
+    const diff       = net - baseGoal;
+    const onTrack    = Math.abs(diff) <= 150;
+    const phaseLabel = eaten === 0
+      ? (settings.phase || 'maintain').toUpperCase()
+      : onTrack ? 'On track ✓' : diff > 0 ? `+${fmtE(diff)} ${ul} over` : `${fmtE(-diff)} ${ul} under`;
 
     // Trend weight — 7-day smoothed average as of today (same movingAvg used
     // on the Trends weight chart), an optional alternate to the raw logged
@@ -413,8 +420,8 @@ export function renderToday(container) {
         </div>`}
       </div>
 
-      <!-- IronLog + Phase (collapsible) -->
-      ${(ironlog || tdee) ? `
+      <!-- IronLog (collapsible) -->
+      ${ironlog ? `
       <div style="padding:0 16px 14px">
         <button id="ironlog-toggle" class="card" style="width:100%;display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:12px">
           <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
@@ -426,8 +433,6 @@ export function renderToday(container) {
           <span class="il-chevron" style="color:var(--text-faint);font-size:13px;flex-shrink:0">${ironlogExpanded ? '▲' : '▼'}</span>
         </button>
         <div id="ironlog-details" style="display:${ironlogExpanded ? 'block' : 'none'}">
-          ${phaseProgressCard(settings, t, burned)}
-          ${ironlog ? `
           <div class="card ironlog-panel" style="margin-top:4px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
               <span class="label">${icon(ICON_BOLT, 13, -3)} IronLog</span>
@@ -441,7 +446,7 @@ export function renderToday(container) {
               <span class="muted">Net</span>
               <span class="num">${fmtE(net)} ${ul}</span>
             </div>
-          </div>` : ''}
+          </div>
         </div>
       </div>` : ''}
 
@@ -449,23 +454,11 @@ export function renderToday(container) {
       <div class="section-header">
         <h2>Meals</h2>
       </div>
-      ${showMorningPrompt ? `
-      <div style="padding:0 16px 12px">
-        <div class="card" style="text-align:center;border-color:var(--accent-dim)">
-          <div style="font-size:28px;margin-bottom:8px">🌅</div>
-          <div style="font-size:15px;font-weight:700;margin-bottom:4px">Good morning!</div>
-          <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Ready to log breakfast?</div>
-          <button class="btn btn-primary" id="morning-breakfast-btn" style="width:100%">Log Breakfast</button>
-        </div>
-      </div>` : ''}
       <div id="meals-list"></div>
+      <!-- "New Meal" lived here too, at the very bottom of the scroll. It's now
+           the floating button below — the two did the same thing, and the app's
+           primary action shouldn't sit three cards below the fold. -->
       <div style="display:flex;gap:8px;margin:8px 16px 16px">
-        <button class="new-meal-btn" id="new-meal-btn" style="margin:0;flex:1">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          New Meal
-        </button>
         <button class="new-meal-btn" id="quick-log-standalone" style="margin:0;flex:1;color:var(--carbs);border-color:var(--carbs)44">
           ${icon(ICON_BOLT, 14)} Quick Log
         </button>
@@ -473,6 +466,13 @@ export function renderToday(container) {
           ${icon(ICON_CLIPBOARD, 14)} Template
         </button>
       </div>
+
+      <button class="fab-log" id="fab-log" aria-label="Log food">
+        <svg width="15" height="15" viewBox="0 0 14 14" fill="none">
+          <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+        </svg>
+        Log
+      </button>
     `;
 
     // Render macro bar
@@ -480,7 +480,7 @@ export function renderToday(container) {
 
     // Render sessions
     const mealsList = document.getElementById('meals-list');
-    if (mealData.sessions.length === 0 && !showMorningPrompt) {
+    if (mealData.sessions.length === 0) {
       mealsList.innerHTML = '<div class="empty-state"><div class="empty-icon">🍽</div><div class="empty-text">No meals yet</div></div>';
     } else {
       mealData.sessions.forEach(session => {
@@ -495,12 +495,8 @@ export function renderToday(container) {
     }
 
     // Log-check banner: add a meal, or confirm "I ate light"
-    document.querySelector('.logcheck-add')?.addEventListener('click', async () => {
-      try {
-        const session = await api.post('/api/meals/sessions', { date: viewDate });
-        openFoodEntry(session.id, () => load());
-      } catch (err) { showToast(err.message, 'error'); }
-    });
+    document.querySelector('.logcheck-add')?.addEventListener('click', () =>
+      openFoodEntry(lazySession(viewDate), () => load()));
     document.querySelector('.logcheck-light')?.addEventListener('click', async () => {
       try {
         await api.post('/api/meals/log-status', { date: viewDate, status: 'confirmed' });
@@ -516,14 +512,6 @@ export function renderToday(container) {
       const chev = document.getElementById('ironlog-toggle').querySelector('.il-chevron');
       if (det) det.style.display = ironlogExpanded ? 'block' : 'none';
       if (chev) chev.textContent = ironlogExpanded ? '▲' : '▼';
-    });
-
-    // Morning prompt
-    document.getElementById('morning-breakfast-btn')?.addEventListener('click', async () => {
-      try {
-        const session = await api.post('/api/meals/sessions', { date: viewDate, name: 'Breakfast' });
-        openFoodEntry(session.id, () => load());
-      } catch (err) { showToast(err.message, 'error'); }
     });
 
     // Weight — inline save (Enter or tap). Always logs to today's local date.
@@ -563,17 +551,12 @@ export function renderToday(container) {
       });
     });
 
-    // New meal / quick log / template
-    document.getElementById('new-meal-btn').addEventListener('click', async () => {
-      try { await api.post('/api/meals/sessions', { date: viewDate }); load(); }
-      catch (err) { showToast(err.message, 'error'); }
-    });
-    document.getElementById('quick-log-standalone').addEventListener('click', async () => {
-      try {
-        const session = await api.post('/api/meals/sessions', { date: viewDate });
-        openQuickLog(session.id, () => load());
-      } catch (err) { showToast(err.message, 'error'); }
-    });
+    // Log / quick log / template — all defer creating the meal until something
+    // actually goes into it (see lazySession).
+    document.getElementById('fab-log').addEventListener('click', () =>
+      openFoodEntry(lazySession(viewDate), () => load()));
+    document.getElementById('quick-log-standalone').addEventListener('click', () =>
+      openQuickLog(lazySession(viewDate), () => load()));
     document.getElementById('from-template-btn').addEventListener('click', () => {
       openFromTemplate(viewDate, () => load());
     });
@@ -597,33 +580,10 @@ function phaseBadge(phase) {
   return `<span style="font-size:11px;font-weight:700;color:${color};background:${color}18;padding:3px 10px;border-radius:999px;border:1px solid ${color}44;display:inline-flex;align-items:center;gap:4px">${icon(glyph, 12)} ${(phase||'maintain').toUpperCase()}</span>`;
 }
 
-function phaseProgressCard(settings, totals, burned) {
-  const { tdee, phase, deficit, surplus } = parsePhaseSettings(settings);
-  const target = phaseCalorieGoal(tdee, phase, deficit, surplus);
-  if (target == null) return '';
-  const ul      = unitLabel();
-  const net     = (totals.calories || 0) - burned;
-  const diff    = net - target;
-  const onTrack = Math.abs(diff) <= 150;
-  const over    = diff > 150;
-  const diffLabel = onTrack ? 'On track ✓' : over ? `+${Math.round(diff)} over` : `${Math.round(-diff)} under`;
-  const diffColor = onTrack ? 'var(--success)' : over ? 'var(--warning)' : 'var(--fat)';
-  const pct = Math.min((net / target) * 100, 110);
-  return `
-    <div class="card" style="margin-top:4px;border-color:${onTrack?'var(--success)':'var(--border)'}44">
-      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-        <span class="label">${phase.toUpperCase()} TARGET</span>
-        <span class="num" style="font-size:12px;color:${diffColor}">${diffLabel}</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted);margin-bottom:6px">
-        <span>Net <strong style="color:var(--text)">${fmtE(net)} ${ul}</strong></span>
-        <span>Target <strong style="color:var(--text)">${fmtE(target)} ${ul}</strong></span>
-      </div>
-      <div style="height:5px;background:var(--surface-2);border-radius:999px;overflow:hidden">
-        <div style="height:100%;width:${Math.min(pct,100)}%;background:${diffColor};border-radius:999px;transition:width .5s ease-out"></div>
-      </div>
-    </div>`;
-}
+// phaseProgressCard lived here: net-vs-target with its own progress bar. It was
+// the same comparison the "Eat Target" ring already draws (eaten vs goal+burned
+// ≡ net vs goal), against a target it recomputed itself — so the two could and
+// did disagree. Deleted rather than reconciled; one ring says it once.
 
 function buildSkeleton() {
   return `

@@ -1,8 +1,7 @@
 import { api }             from '../api.js';
-import { showToast }        from '../app.js';
 import { renderMacroBar }   from '../components/macroBar.js';
 import { fmtE, unitLabel }  from '../utils/energy.js';
-import { openFoodEntry, renderMealCard } from './log.js';
+import { openFoodEntry, renderMealCard, lazySession } from './log.js';
 import { localDate }        from '../utils/date.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -298,14 +297,8 @@ export function renderHistory(container) {
         </svg>
         Add Meal to ${fmtDateFull(date)}
       `;
-      addBtn.addEventListener('click', async () => {
-        try {
-          const session = await api.post('/api/meals/sessions', { date });
-          openFoodEntry(session.id, () => refresh(date));
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
+      addBtn.addEventListener('click', () =>
+        openFoodEntry(lazySession(date), () => refresh(date)));
       el.appendChild(addBtn);
     }
   }

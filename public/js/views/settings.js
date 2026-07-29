@@ -1,5 +1,5 @@
 import { api }                        from '../api.js';
-import { showToast, showSheet, hideSheet, reloadEnergyUnit, getProfile, applyProfile, logoutToLock, ACCENTS } from '../app.js';
+import { showToast, showSheet, hideSheet, showPrompt, reloadEnergyUnit, getProfile, applyProfile, logoutToLock, ACCENTS } from '../app.js';
 import { setEnergyUnit }             from '../utils/energy.js';
 import { submitReport }              from '../utils/bugReport.js';
 import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
@@ -243,16 +243,15 @@ export function renderSettings(container) {
       }
     });
 
-    document.getElementById('pf-passcode').addEventListener('click', async () => {
-      const code = prompt('Enter a new 4-digit passcode:');
-      if (code == null) return;
-      if (!/^\d{4}$/.test(code.trim())) { showToast('Passcode must be 4 digits', 'error'); return; }
-      try {
-        await api.post('/api/auth/me/passcode', { newPasscode: code.trim() });
+    document.getElementById('pf-passcode').addEventListener('click', () => {
+      showPrompt({
+        title: 'Change passcode', label: 'New 4-digit passcode',
+        placeholder: '••••', inputMode: 'numeric', maxLength: 4, cta: 'Update',
+      }, async code => {
+        if (!/^\d{4}$/.test(code)) throw new Error('Passcode must be 4 digits');
+        await api.post('/api/auth/me/passcode', { newPasscode: code });
         showToast('Passcode updated', 'success');
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+      });
     });
 
     document.getElementById('pf-logout').addEventListener('click', async () => {
@@ -1040,13 +1039,22 @@ function phaseBtn(phase, label, current) {
 
 // Prominent "your daily calorie goal" result for the Goal Phase section.
 // Computes live from TDEE + phase + adjustment; falls back to the synced goal.
+// Shows the goal that is actually in force — calorie_goal, the one the rings,
+// History, Trends and the macro split all read. Every control in this card
+// writes it, so the two normally agree; a direct IronLog sync is the one path
+// that can set it without going through the phase math, and that divergence
+// used to show up as two different targets on Today with no explanation.
 function goalResult(s) {
   const { tdee, phase, deficit, surplus } = parsePhaseSettings(s);
-  const goal = phaseCalorieGoal(tdee, phase, deficit, surplus) ?? (parseFloat(s.calorie_goal) || null);
+  const computed = phaseCalorieGoal(tdee, phase, deficit, surplus);
+  const saved    = parseFloat(s.calorie_goal) || null;
+  const goal     = saved ?? computed;
   if (goal == null) {
     return `<div class="phase-goal-empty">Enter your TDEE above (or sync IronLog) to see your daily calorie goal.</div>`;
   }
-  const math = tdee != null
+  const off = computed != null && saved != null && Math.abs(computed - saved) >= 1;
+  const math = off ? 'set by IronLog'
+    : tdee != null
     ? (phase === 'cut'  ? `${Math.round(tdee)} TDEE − ${deficit} deficit`
      : phase === 'bulk' ? `${Math.round(tdee)} TDEE + ${surplus} surplus`
      : `at maintenance · ${Math.round(tdee)} TDEE`)
@@ -1054,5 +1062,6 @@ function goalResult(s) {
   return `
     <div class="phase-goal-label">Your daily calorie goal</div>
     <div class="phase-goal-num">${Math.round(goal)}<span> kcal</span></div>
-    <div class="phase-goal-sub">${math}</div>`;
+    <div class="phase-goal-sub">${math}</div>
+    ${off ? `<div class="phase-goal-warn">Your phase math above works out to <strong>${Math.round(computed)} kcal</strong> — IronLog set ${Math.round(saved)} directly. Tap <strong>Apply</strong> next to Maintenance to switch to ${Math.round(computed)}.</div>` : ''}`;
 }

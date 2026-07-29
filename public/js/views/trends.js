@@ -2,7 +2,7 @@ import { api }                       from '../api.js';
 import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
 import { localDate }                  from '../utils/date.js';
 import { showToast, navigateTo }      from '../app.js';
-import { openFoodEntry }              from './log.js';
+import { openFoodEntry, lazySession } from './log.js';
 import { classifyDay, isFlagged, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY } from '../utils/logCheck.js';
 import { movingAvg } from '../utils/stats.js';
 
@@ -629,15 +629,25 @@ export function renderTrends(container) {
         </div>
         <div style="height:170px;position:relative"><canvas id="chart-wt"></canvas></div>
         ${expectedCaption ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">${expectedCaption}<br><span style="opacity:.7">Last 28 days · days you didn't log are counted as maintenance.</span></div>` : ''}
-        ${localWeights.length ? `
         <details id="wt-log-details" class="nl-details" ${weighInsOpen ? 'open' : ''} style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
           <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">
             <span class="label">Weigh-ins</span>
             <span class="range-chip">${localWeights.length} logged</span>
             <span class="nl-chev" style="font-size:9px;color:var(--text-faint);margin-left:auto">▾</span>
           </summary>
+          <!-- Backfilling a missed weigh-in used to be impossible: Today's
+               logger always writes today's date, History showed the day's
+               weight read-only, and this list could edit and delete but never
+               add. That gap now moves your macro goals too — protein and fat
+               follow the 7-day trend weight. -->
+          <div style="display:flex;gap:6px;align-items:center;margin:10px 0 6px">
+            <input class="input" id="wt-add-date" type="date" max="${todayISO}" style="flex:1;height:38px;min-width:0"/>
+            <input class="input" id="wt-add-kg" type="text" inputmode="decimal" placeholder="kg"
+              style="width:72px;height:38px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums"/>
+            <button class="btn btn-primary" id="wt-add-save" style="height:38px;padding:0 14px;font-size:13px;flex-shrink:0">Add</button>
+          </div>
           <div id="wt-log-list" style="margin-top:4px"></div>
-        </details>` : ''}
+        </details>
       </div>
 
       <!-- Calories chart (the verdict's intake evidence) -->
@@ -766,6 +776,30 @@ export function renderTrends(container) {
     // mutation re-runs load() so the chart and verdict stay in sync.
     const wtDetails = document.getElementById('wt-log-details');
     wtDetails?.addEventListener('toggle', () => { weighInsOpen = wtDetails.open; });
+
+    document.getElementById('wt-add-save')?.addEventListener('click', async () => {
+      const date = document.getElementById('wt-add-date').value;
+      const kg   = parseFloat(document.getElementById('wt-add-kg').value);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return showToast('Pick a date', 'error');
+      if (!(kg > 0)) return showToast('Enter a valid weight', 'error');
+      // POST always inserts — there's no unique constraint on date — so patch
+      // an existing entry instead of leaving two rows for one day, which would
+      // show as a phantom duplicate and skew the trend average for that date.
+      const existing = localWeights.find(w => w.date === date);
+      const btn = document.getElementById('wt-add-save');
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        if (existing) await api.patch(`/api/weight/${existing.id}`, { weight_kg: kg });
+        else          await api.post('/api/weight', { weight_kg: kg, date });
+        showToast(existing ? `${date} updated to ${kg} kg` : `${kg} kg logged for ${date}`, 'success');
+        weighInsOpen = true;
+        load();
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Add';
+      }
+    });
+
     (function renderWeighIns() {
       const box = document.getElementById('wt-log-list');
       if (!box) return;
@@ -837,12 +871,8 @@ export function renderTrends(container) {
 
     // Review-list actions
     document.querySelectorAll('.review-add').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        try {
-          const session = await api.post('/api/meals/sessions', { date: btn.dataset.date });
-          openFoodEntry(session.id, () => load());
-        } catch (err) { showToast(err.message, 'error'); }
-      });
+      btn.addEventListener('click', () =>
+        openFoodEntry(lazySession(btn.dataset.date), () => load()));
     });
     document.querySelectorAll('.review-light').forEach(btn => {
       btn.addEventListener('click', async () => {

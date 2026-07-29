@@ -41,21 +41,9 @@ export function renderBatches(container) {
     container.querySelectorAll('[data-edit]').forEach(btn =>
       btn.addEventListener('click', () => openBuilder(load, find(btn.dataset.edit))));
     container.querySelectorAll('[data-adjust]').forEach(btn =>
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', () => {
         const b = find(btn.dataset.adjust);
-        if (!b) return;
-        const input = prompt(
-          `How much of "${b.name}" is actually left?\n\nGrams, up to ${g0(b.cooked_g)}. Use this if a portion went in at the wrong weight, or some got eaten without logging.`,
-          g0(b.remaining_g)
-        );
-        if (input == null) return;
-        const grams = parseFloat(input);
-        if (!Number.isFinite(grams) || grams < 0) return showToast('Enter grams (0 or more)', 'error');
-        try {
-          const r = await api.patch(`/api/batches/${b.id}`, { remaining_g: grams });
-          showToast(`${g0(r.remaining_g)} g left`, 'success');
-          load();
-        } catch (err) { showToast(err.message, 'error'); }
+        if (b) openAdjust(b, load);
       }));
     container.querySelectorAll('[data-del]').forEach(btn =>
       btn.addEventListener('click', async () => {
@@ -105,6 +93,52 @@ export function renderBatches(container) {
   }
 }
 
+// ── Correct what's left ──────────────────────────────────────
+// Was a prompt() — a system dialog in an otherwise fully themed app, with the
+// max weight buried in a paragraph of text and no way to tap a common answer.
+function openAdjust(batch, onDone) {
+  showSheet(content => {
+    const max = g0(batch.cooked_g);
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">⚖️ How much is left?</span>
+        <button class="sheet-close" id="a-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">
+          <strong style="color:var(--text)">${esc(batch.name)}</strong> — use this if a portion went in at the wrong weight, or some got eaten without logging.
+        </div>
+        <label class="form-label">Grams left · up to ${max}</label>
+        <div style="display:flex;gap:8px;align-items:center;margin:6px 0 10px">
+          <input class="input" id="a-g" type="text" inputmode="decimal" value="${g0(batch.remaining_g)}" style="flex:1"/>
+          <span style="color:var(--text-muted)">g</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px">
+          <button type="button" class="fs-chip a-quick" data-g="0">Finished it</button>
+          <button type="button" class="fs-chip a-quick" data-g="${g0(batch.cooked_g / 2)}">Half left</button>
+          <button type="button" class="fs-chip a-quick" data-g="${max}">Untouched</button>
+        </div>
+        <button class="btn btn-primary btn-full" id="a-save">Save</button>
+      </div>`;
+    const gi = document.getElementById('a-g');
+    document.getElementById('a-close').addEventListener('click', hideSheet);
+    content.querySelectorAll('.a-quick').forEach(b =>
+      b.addEventListener('click', () => { gi.value = b.dataset.g; }));
+    document.getElementById('a-save').addEventListener('click', async () => {
+      const grams = parseFloat(gi.value);
+      if (!Number.isFinite(grams) || grams < 0) return showToast('Enter grams (0 or more)', 'error');
+      const btn = document.getElementById('a-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const r = await api.patch(`/api/batches/${batch.id}`, { remaining_g: grams });
+        hideSheet();
+        showToast(`${g0(r.remaining_g)} g left`, 'success');
+        onDone?.();
+      } catch (err) { showToast(err.message, 'error'); btn.disabled = false; btn.textContent = 'Save'; }
+    });
+  });
+}
+
 // ── New / edit batch builder ─────────────────────────────────
 // Pass an existing batch to edit it in place; omit for a new one.
 function openBuilder(onDone, batch = null) {
@@ -134,6 +168,7 @@ function openBuilder(onDone, batch = null) {
           <input class="input" id="b-cooked" type="text" inputmode="decimal" placeholder="e.g. 1300" style="flex:1"/>
           <span style="color:var(--text-muted)">g</span>
         </div>
+        <div id="b-leftover"></div>
         ${isEdit ? `<div style="font-size:11px;color:var(--text-faint);margin-bottom:12px;line-height:1.5">
           Portions you already logged keep the macros they were logged with — only future portions use the updated numbers.
         </div>` : ''}
@@ -205,6 +240,33 @@ function openBuilder(onDone, batch = null) {
       });
     }
 
+    // A changed cooked weight makes "how much is left" ambiguous once some has
+    // been eaten: was the original weighing wrong (so the error applies to
+    // what's left too), or only the total? This used to be a confirm() where
+    // OK and Cancel were two different answers — so Cancel didn't abort, and
+    // there was no way to back out once it appeared. It's now an inline choice
+    // you can see, change, and simply not save.
+    let leftoverMode = 'scale';
+    function renderLeftover() {
+      const box = document.getElementById('b-leftover');
+      if (!box) return;
+      const cooked = parseFloat(cookedInput.value);
+      const eaten  = isEdit ? batch.cooked_g - batch.remaining_g : 0;
+      if (!isEdit || !(cooked > 0) || cooked === batch.cooked_g || eaten <= 0.5) { box.innerHTML = ''; return; }
+      const scaled = g0(batch.remaining_g * cooked / batch.cooked_g);
+      const kept   = Math.min(g0(batch.remaining_g), g0(cooked));
+      box.innerHTML = `
+        <label class="form-label">${g0(batch.cooked_g)} g → ${g0(cooked)} g. You have ${g0(batch.remaining_g)} g left — what's actually left now?</label>
+        <div style="display:flex;gap:6px;margin:8px 0 14px">
+          <button type="button" class="fs-chip b-left-opt${leftoverMode === 'scale' ? ' active' : ''}" data-mode="scale" style="flex:1">${scaled} g<br><span style="font-size:10px;opacity:.75">same fraction left</span></button>
+          <button type="button" class="fs-chip b-left-opt${leftoverMode === 'keep' ? ' active' : ''}" data-mode="keep" style="flex:1">${kept} g<br><span style="font-size:10px;opacity:.75">leave it as-is</span></button>
+        </div>`;
+      box.querySelectorAll('.b-left-opt').forEach(b =>
+        b.addEventListener('click', () => { leftoverMode = b.dataset.mode; renderLeftover(); }));
+    }
+    cookedInput.addEventListener('input', renderLeftover);
+    renderLeftover();
+
     document.getElementById('b-close').addEventListener('click', hideSheet);
     document.getElementById('b-save').addEventListener('click', async () => {
       const name = nameInput.value.trim();
@@ -218,23 +280,13 @@ function openBuilder(onDone, batch = null) {
 
       const body = { name, cooked_g, items: ingredients.map(it => ({ food_id: it.food_id, quantity_g: it.grams })) };
 
-      // A changed cooked weight makes "how much is left" ambiguous once some
-      // has been eaten: was the original weighing wrong (so the error applies
-      // to what's left too), or only the total? Only ask when it matters.
+      // Nothing eaten yet → what's left is simply the new total. Otherwise take
+      // whichever answer the inline choice above is showing.
       if (isEdit && cooked_g !== batch.cooked_g) {
         const eaten = batch.cooked_g - batch.remaining_g;
-        if (eaten <= 0.5) {
-          body.remaining_g = cooked_g;                       // untouched — stays full
-        } else {
-          const scaled = g0(batch.remaining_g * cooked_g / batch.cooked_g);
-          const kept   = Math.min(g0(batch.remaining_g), g0(cooked_g));
-          body.remaining_g = confirm(
-            `Cooked weight: ${g0(batch.cooked_g)} g → ${g0(cooked_g)} g\n`
-            + `You have ${g0(batch.remaining_g)} g left.\n\n`
-            + `OK — scale what's left to ${scaled} g (same fraction left)\n`
-            + `Cancel — keep ${kept} g as-is`
-          ) ? scaled : kept;
-        }
+        body.remaining_g = eaten <= 0.5 ? cooked_g
+          : leftoverMode === 'scale' ? g0(batch.remaining_g * cooked_g / batch.cooked_g)
+          : Math.min(g0(batch.remaining_g), g0(cooked_g));
       }
 
       const btn = document.getElementById('b-save');
@@ -368,10 +420,13 @@ export function openPortion(batch, onDone, opts = {}) {
       const btn = document.getElementById('p-save');
       btn.disabled = true; btn.textContent = 'Logging…';
       try {
+        // opts.sessionId may be a lazySession thunk — the meal it targets isn't
+        // created until here, so a dismissed sheet leaves nothing behind.
+        const sid = typeof opts.sessionId === 'function' ? await opts.sessionId() : opts.sessionId;
         const r = await api.post(`/api/batches/${batch.id}/portion`, {
           grams,
           date: lockedSession ? undefined : selectedDate,
-          meal_session_id: lockedSession ? opts.sessionId : (mealSel?.value || undefined),
+          meal_session_id: lockedSession ? sid : (mealSel?.value || undefined),
         });
         hideSheet();
         showToast(`Logged ${g0(r.logged_g)} g · ${g0(r.remaining_g)} g left`, 'success');

@@ -21,6 +21,23 @@ function addDaysIso(iso, n) {
   return localDate(d);
 }
 
+// ── Deferred meal creation ───────────────────────────────────
+// Every "log something" button used to POST a meal session first and open the
+// sheet second, so backing out of the sheet left an empty "Meal 3" on the day
+// forever — nothing ever cleans those up. Pass one of these instead of an id
+// and the meal is only created once a food is actually going into it.
+// The promise is memoised so two adds from one sheet share a meal, and cleared
+// on failure so a retry isn't stuck with the rejection.
+export function lazySession(date, name) {
+  let pending = null;
+  return () => (pending ??= api.post('/api/meals/sessions', { date, name })
+    .then(s => s.id)
+    .catch(err => { pending = null; throw err; }));
+}
+
+// Accepts either a plain session id or a lazySession thunk.
+export const sessionIdOf = ref => (typeof ref === 'function' ? ref() : Promise.resolve(ref));
+
 // ── Copy a single logged food, or a whole meal, to another meal/day ──
 async function dayMeals(viewDate) {
   try { return (await api.get(`/api/meals/day/${viewDate}`)).sessions || []; } catch { return []; }
@@ -390,7 +407,8 @@ export function openQuickLog(sessionId, onSuccess) {
           protein_per_100g: pro, carbs_per_100g: carb, fat_per_100g: fat,
           serving_size_g: 100, source: 'quick',
         });
-        await api.post(`/api/meals/sessions/${sessionId}/entries`, { food_id: food.id, quantity_g: 100 });
+        const sid = await sessionIdOf(sessionId);
+        await api.post(`/api/meals/sessions/${sid}/entries`, { food_id: food.id, quantity_g: 100 });
         hideSheet();
         showToast('Meal logged', 'success');
         onSuccess?.();
@@ -723,7 +741,8 @@ function showQuantitySheet(food, sessionId, onSuccess) {
       const btn = document.getElementById('qty-confirm-btn');
       btn.disabled = true; btn.textContent = 'Adding…';
       try {
-        await api.post(`/api/meals/sessions/${sessionId}/entries`, { food_id: food.id, quantity_g: qty });
+        const sid = await sessionIdOf(sessionId);
+        await api.post(`/api/meals/sessions/${sid}/entries`, { food_id: food.id, quantity_g: qty });
         hideSheet();
         showToast('Added to meal', 'success');
         onSuccess?.();
