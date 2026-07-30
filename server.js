@@ -26,7 +26,6 @@ const mealsRoutes = require('./src/routes/meals');
 const weightRoutes = require('./src/routes/weight');
 const settingsRoutes   = require('./src/routes/settings');
 const ironlogRoutes    = require('./src/routes/ironlog');
-const templatesRoutes  = require('./src/routes/templates');
 const orbitRoutes      = require('./src/routes/orbit');
 const bugReportsRoutes = require('./src/routes/bugReports');
 const batchesRoutes    = require('./src/routes/batches');
@@ -84,7 +83,6 @@ app.use('/api/meals', requireProfile, mealsRoutes);
 app.use('/api/weight', requireProfile, weightRoutes);
 app.use('/api/settings', requireProfile, settingsRoutes);
 app.use('/api/ironlog',    requireProfile, ironlogRoutes);
-app.use('/api/templates',  requireProfile, templatesRoutes);
 app.use('/api/batches',    requireProfile, batchesRoutes);
 app.use('/api/connections', requireProfile, connectionsRoutes);
 

@@ -94,7 +94,7 @@ router.patch('/', (req, res) => {
   }
 });
 
-// Delete this profile's logged data (meals, weight, templates) — keeps foods + settings
+// Delete this profile's logged data (meals, weight, batches) — keeps foods + settings
 router.delete('/data', (req, res) => {
   try {
     const db = getDb();
@@ -103,7 +103,6 @@ router.delete('/data', (req, res) => {
     try {
       db.prepare('DELETE FROM meal_sessions  WHERE profile_id = $pid').run({ pid });
       db.prepare('DELETE FROM weight_log     WHERE profile_id = $pid').run({ pid });
-      db.prepare('DELETE FROM meal_templates WHERE profile_id = $pid').run({ pid });
       // Batches are logged data too — clear them the same way the single-batch
       // DELETE route does (hide the backing food, then drop the batch), so a
       // "fresh start" doesn't leave a stale batch with old remaining_g behind.
@@ -165,7 +164,7 @@ router.get('/export', (req, res) => {
 // scratch on a fresh DB, so ids drift between exports) — they are matched by
 // name+brand and only inserted when genuinely new, never deleted. Everything
 // scoped to this profile (meals, weight, settings) is fully replaced,
-// matching what /export actually captures — batches/templates/overrides
+// matching what /export actually captures — batches/overrides
 // aren't in the export, so import leaves them alone. Body can be large (a
 // food-heavy history), so this route gets its own higher JSON size limit
 // rather than raising it app-wide.

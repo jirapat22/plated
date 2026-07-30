@@ -1,5 +1,5 @@
 import { api }                            from '../api.js';
-import { showToast, showSheet, hideSheet } from '../app.js';
+import { showToast }                       from '../app.js';
 import { openFoodEntry, openQuickLog, renderMealCard, lazySession } from './log.js';
 import { renderMacroBar }                  from '../components/macroBar.js';
 import { fmtE, unitLabel } from '../utils/energy.js';
@@ -21,7 +21,6 @@ function icon(path, size = 16, valign = null) {
 }
 const ICON_SCALE       = '<rect x="3" y="9" width="18" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 9a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.7"/><path d="M12 12v3.2M12 12l2.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
 const ICON_BOLT        = '<path d="M13 2 5 14h6l-1 8 9-12h-6l1-8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>';
-const ICON_CLIPBOARD   = '<rect x="5" y="4" width="14" height="17" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" stroke="currentColor" stroke-width="1.7"/><path d="M8.5 10.5h7M8.5 14h7M8.5 17.5h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
 const ICON_FLAME       = '<path d="M12 2.5c1.2 3.6-3.4 5-3.4 8.7a3.4 3.4 0 0 0 6.8 0c0-1-.5-1.8-.5-1.8s.3 1.6-.8 2c.9-2.6-1.7-3.4-2.1-8.9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>';
 const ICON_CHART       = '<path d="M4 19V9M9.5 19V5M15 19v-7M20 19V3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
 const ICON_TREND_DOWN  = '<path d="M5 6l14 14M19 13v7h-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>';
@@ -76,86 +75,6 @@ async function fetchIronLog(dateStr) {
     if (data.connected) return data;
     return data.last_synced ? { ...data, _stale: true } : null;
   } catch { return null; }
-}
-
-// ── Meal templates ───────────────────────────────────────────
-async function openFromTemplate(date, onSuccess) {
-  showSheet(async content => {
-    content.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-muted)">Loading templates…</div>`;
-
-    let templates;
-    try {
-      templates = await api.get('/api/templates');
-    } catch (err) {
-      content.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
-      return;
-    }
-
-    content.innerHTML = `
-      <div class="sheet-header">
-        <span class="sheet-title">📋 Meal Templates</span>
-        <button class="sheet-close" id="tmpl-close">✕</button>
-      </div>
-      ${templates.length === 0
-        ? `<div class="empty-state">
-            <div class="empty-icon" style="font-size:32px">📋</div>
-            <div class="empty-text">No templates yet<br/>
-              <span style="font-size:12px;color:var(--text-faint)">Save a meal as a template to reuse it</span>
-            </div>
-           </div>`
-        : templates.map(t => `
-          <div class="food-list-item" data-tmpl-id="${t.id}">
-            <div style="font-size:22px;width:36px;text-align:center;flex-shrink:0">📋</div>
-            <div class="food-list-info" style="flex:1">
-              <div class="food-list-name">${esc(t.name)}</div>
-              <div style="font-size:12px;color:var(--text-muted)">${t.item_count} item${t.item_count !== 1 ? 's' : ''}</div>
-            </div>
-            <div style="display:flex;gap:6px;flex-shrink:0">
-              <button class="tmpl-apply btn btn-secondary" data-tmpl-id="${t.id}" data-tmpl-name="${esc(t.name)}"
-                style="height:34px;padding:0 14px;font-size:12px;font-weight:700">Use</button>
-              <button class="tmpl-del" data-tmpl-id="${t.id}"
-                style="width:34px;height:34px;border-radius:50%;background:rgba(255,107,107,.1);color:var(--error);font-size:18px">×</button>
-            </div>
-          </div>`).join('')
-      }
-    `;
-
-    document.getElementById('tmpl-close').addEventListener('click', hideSheet);
-
-    content.querySelectorAll('.tmpl-apply').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        btn.disabled = true; btn.textContent = 'Loading…';
-        try {
-          const items = await api.get(`/api/templates/${btn.dataset.tmplId}/items`);
-          const session = await api.post('/api/meals/sessions', { date, name: btn.dataset.tmplName });
-          await Promise.all(items.map(item =>
-            api.post(`/api/meals/sessions/${session.id}/entries`, {
-              food_id: item.food_id, quantity_g: item.quantity_g,
-            })
-          ));
-          hideSheet();
-          showToast(`"${btn.dataset.tmplName}" applied`, 'success');
-          onSuccess?.();
-        } catch (err) {
-          showToast(err.message, 'error');
-          btn.disabled = false; btn.textContent = 'Use';
-        }
-      });
-    });
-
-    content.querySelectorAll('.tmpl-del').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('Delete this template?')) return;
-        try {
-          await api.delete(`/api/templates/${btn.dataset.tmplId}`);
-          btn.closest('.food-list-item').remove();
-          showToast('Template deleted', 'success');
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
-    });
-  });
 }
 
 // ── Main render ──────────────────────────────────────────────
@@ -455,15 +374,15 @@ export function renderToday(container) {
         <h2>Meals</h2>
       </div>
       <div id="meals-list"></div>
-      <!-- "New Meal" lived here too, at the very bottom of the scroll. It's now
-           the floating button below — the two did the same thing, and the app's
-           primary action shouldn't sit three cards below the fold. -->
       <div style="display:flex;gap:8px;margin:8px 16px 16px">
+        <button class="new-meal-btn" id="new-meal-btn" style="margin:0;flex:1">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          New Meal
+        </button>
         <button class="new-meal-btn" id="quick-log-standalone" style="margin:0;flex:1;color:var(--carbs);border-color:var(--carbs)44">
           ${icon(ICON_BOLT, 14)} Quick Log
-        </button>
-        <button class="new-meal-btn" id="from-template-btn" style="margin:0;flex:1;color:var(--text-muted)">
-          ${icon(ICON_CLIPBOARD, 14)} Template
         </button>
       </div>
 
@@ -487,7 +406,6 @@ export function renderToday(container) {
         mealsList.appendChild(renderMealCard(session, viewDate, {
           showTime: true,
           showMoveToday: false,   // always today — nothing to "move to today"
-          showTemplate: true,
           showPullIn: true,
           showQuickLog: true,
         }, () => load()));
@@ -551,14 +469,23 @@ export function renderToday(container) {
       });
     });
 
-    // Log / quick log / template — all defer creating the meal until something
-    // actually goes into it (see lazySession).
+    // The floating button and Quick Log defer creating the meal until something
+    // actually goes into it (see lazySession), so dismissing leaves nothing.
     document.getElementById('fab-log').addEventListener('click', () =>
       openFoodEntry(lazySession(viewDate), () => load()));
     document.getElementById('quick-log-standalone').addEventListener('click', () =>
       openQuickLog(lazySession(viewDate), () => load()));
-    document.getElementById('from-template-btn').addEventListener('click', () => {
-      openFromTemplate(viewDate, () => load());
+
+    // "New Meal" is the one button whose job IS to create the meal, so it does
+    // it eagerly and you get a real card to name and fill over the day. It also
+    // opens the food sheet straight away rather than making you find the card's
+    // own Add Food button, which was the original complaint.
+    document.getElementById('new-meal-btn').addEventListener('click', async () => {
+      try {
+        const session = await api.post('/api/meals/sessions', { date: viewDate });
+        openFoodEntry(session.id, () => load(), { sessionName: session.name });
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
     });
   }
 

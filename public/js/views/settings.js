@@ -1,11 +1,22 @@
 import { api }                        from '../api.js';
-import { showToast, showSheet, hideSheet, showPrompt, reloadEnergyUnit, getProfile, applyProfile, logoutToLock, ACCENTS } from '../app.js';
-import { setEnergyUnit }             from '../utils/energy.js';
+import { showToast, showSheet, hideSheet, showPrompt, getProfile, applyProfile, logoutToLock, ACCENTS } from '../app.js';
+import { setEnergyUnit, fmtE, unitLabel, toKcal } from '../utils/energy.js';
 import { submitReport }              from '../utils/bugReport.js';
 import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
 import { localDate }                 from '../utils/date.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+// Every energy value is STORED in kcal, whatever unit is on display. This whole
+// section used to hardcode "kcal" on its labels — including the boxes directly
+// under the kcal/kJ toggle — so a kJ user read kJ everywhere else in the app and
+// then had to type kcal here. These convert on the way in and back out, so the
+// toggle governs the inputs too.
+const ENERGY_KEYS = new Set(['calorie_goal', 'tdee', 'cut_deficit', 'bulk_surplus']);
+const eIn  = v => (v == null || v === '' ? '' : fmtE(v));
+const eOut = v => { const n = parseFloat(v); return Number.isFinite(n) ? String(toKcal(n)) : ''; };
+// Reads an energy input's current value back as kcal.
+const eRead = el => (el ? parseFloat(eOut(el.value)) : NaN);
 
 export function renderSettings(container) {
   container.innerHTML = `
@@ -87,11 +98,11 @@ export function renderSettings(container) {
         <div style="padding:14px 16px">
           <!-- 1. Maintenance / TDEE — the basis everything is derived from -->
           <label class="form-label">① Maintenance (TDEE)</label>
-          <div style="font-size:11px;color:var(--text-faint);margin:2px 0 6px">Calories you burn per day. Synced from IronLog, or set it manually.</div>
+          <div style="font-size:11px;color:var(--text-faint);margin:2px 0 6px">Energy you burn per day. Synced from IronLog, or set it manually.</div>
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-            <input class="input settings-row-input" type="text" inputmode="decimal" value="${s.tdee || ''}"
-              data-key="tdee" placeholder="e.g. 2700" style="height:40px;flex:1;width:auto" />
-            <span style="font-size:12px;color:var(--text-muted)">kcal</span>
+            <input class="input settings-row-input" type="text" inputmode="decimal" value="${eIn(s.tdee)}"
+              data-key="tdee" placeholder="${unitLabel() === 'kJ' ? 'e.g. 11300' : 'e.g. 2700'}" style="height:40px;flex:1;width:auto" />
+            <span style="font-size:12px;color:var(--text-muted)">${unitLabel()}</span>
             <button class="btn btn-secondary" id="manual-tdee-apply" style="height:40px;padding:0 14px;font-size:13px">Apply</button>
           </div>
           <button class="btn btn-secondary btn-full" id="ironlog-sync" style="height:36px;font-size:12px;margin-bottom:4px">⟳ Sync from IronLog</button>
@@ -108,8 +119,8 @@ export function renderSettings(container) {
           <!-- 3. Adjustment -->
           <label class="form-label">③ Adjustment</label>
           <div class="form-row" style="margin:6px 0 8px">
-            ${goalRow('cut_deficit',  'Cut deficit',   s.cut_deficit,  'kcal', true)}
-            ${goalRow('bulk_surplus', 'Bulk surplus',  s.bulk_surplus, 'kcal', true)}
+            ${goalRow('cut_deficit',  'Cut deficit',   eIn(s.cut_deficit),  unitLabel(), true)}
+            ${goalRow('bulk_surplus', 'Bulk surplus',  eIn(s.bulk_surplus), unitLabel(), true)}
           </div>
           <div id="rate-row" style="margin-bottom:16px"></div>
 
@@ -143,7 +154,7 @@ export function renderSettings(container) {
             </button>
           </div>
         </div>
-        ${goalRow('calorie_goal',      'Calories',      s.calorie_goal,      'kcal')}
+        ${goalRow('calorie_goal',      'Energy',        eIn(s.calorie_goal), unitLabel())}
         <div id="msplit-box"></div>
         ${goalRow('protein_goal',      'Protein',       s.protein_goal,      'g')}
         ${goalRow('carb_goal',         'Carbs',         s.carb_goal,         'g')}
@@ -210,7 +221,7 @@ export function renderSettings(container) {
         <div class="sec-head danger">⚠️ Danger Zone<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
-            Permanently deletes all logged meals, weight entries, templates, and meal-prep batches. Your food database and goal settings are kept.
+            Permanently deletes all logged meals, weight entries, and meal-prep batches. Your food database and goal settings are kept.
           </div>
           <button class="btn btn-danger btn-full" id="reset-data-btn">🗑 Clear all logged data</button>
         </div>
@@ -260,7 +271,7 @@ export function renderSettings(container) {
     });
 
     document.getElementById('pf-delete').addEventListener('click', async () => {
-      if (!confirm('Delete this profile and ALL its meals, weight, goals and templates?\n\nThis cannot be undone.')) return;
+      if (!confirm('Delete this profile and ALL its meals, weight, goals and batches?\n\nThis cannot be undone.')) return;
       const typed = prompt('Type DELETE to confirm:');
       if (typed !== 'DELETE') { showToast('Cancelled', 'info'); return; }
       try {
@@ -374,7 +385,11 @@ export function renderSettings(container) {
           setEnergyUnit(unit);
           window.dispatchEvent(new CustomEvent('plated:settings-changed'));
           showToast(`Energy unit set to ${unit}`, 'success');
-          setTimeout(() => load(), 200);
+          // Re-render immediately, not on a timer: now that the goal inputs hold
+          // values in the displayed unit, any gap between switching the unit and
+          // redrawing is a window where blurring an input would save a number
+          // read in the old unit and converted with the new one.
+          load();
         } catch (err) {
           showToast(err.message, 'error');
         }
@@ -392,7 +407,7 @@ export function renderSettings(container) {
         s.calorie_goal = String(cal);
         try { await api.patch('/api/settings', { calorie_goal: s.calorie_goal }); } catch { /* non-fatal */ }
         const ci = body.querySelector('[data-key="calorie_goal"]');
-        if (ci) ci.value = cal;
+        if (ci) ci.value = eIn(cal);
       }
       if (goalEl) goalEl.innerHTML = goalResult(s);
       renderRateRow();
@@ -416,7 +431,7 @@ export function renderSettings(container) {
         const kcalVal = Math.round(r * 7700 / 7);
         s[key] = String(kcalVal);
         const kcalInput = body.querySelector(`[data-key="${key}"]`);
-        if (kcalInput) kcalInput.value = kcalVal;
+        if (kcalInput) kcalInput.value = eIn(kcalVal);
         try {
           await api.patch('/api/settings', { [key]: String(kcalVal) });
           showToast(`Target set: ${r} kg/week`, 'success');
@@ -493,7 +508,7 @@ export function renderSettings(container) {
           // silently zeroing carbs would look like a bug.
           const used = r.pG * 4 + r.fG * 9;
           total.textContent = used > cal
-            ? `Over by ${Math.round(used - cal)} kcal — no room for carbs`
+            ? `Over by ${fmtE(used - cal)} ${unitLabel()} — no room for carbs`
             : `Updates itself on every weigh-in`;
           total.style.color = used > cal ? 'var(--warning)' : 'var(--text-faint)';
         } else {
@@ -544,8 +559,11 @@ export function renderSettings(container) {
     body.querySelectorAll('.settings-row-input').forEach(input => {
       input.addEventListener('change', async () => {
         try {
-          await api.patch('/api/settings', { [input.dataset.key]: input.value });
-          if (input.dataset.key) s[input.dataset.key] = input.value;
+          // Energy fields are typed in the displayed unit but stored in kcal.
+          const key = input.dataset.key;
+          const value = ENERGY_KEYS.has(key) ? eOut(input.value) : input.value;
+          await api.patch('/api/settings', { [key]: value });
+          if (key) s[key] = value;
           showToast('Saved', 'success');
           if (input.dataset.key === 'cut_deficit' || input.dataset.key === 'bulk_surplus') refreshGoal();
           else if (input.dataset.key === 'calorie_goal') renderMacroSplit();
@@ -571,8 +589,8 @@ export function renderSettings(container) {
           renderMacroSplit();
           if (result.calorie_goal) {
             const calInput = body.querySelector('[data-key="calorie_goal"]');
-            if (calInput) calInput.value = result.calorie_goal;
-            showToast(`Phase set to ${phase} — goal updated to ${result.calorie_goal} kcal`, 'success');
+            if (calInput) calInput.value = eIn(result.calorie_goal);
+            showToast(`Phase set to ${phase} — goal updated to ${fmtE(result.calorie_goal)} ${unitLabel()}`, 'success');
           } else {
             showToast(`Phase set to ${phase} — set your TDEE to compute the goal`, 'info');
           }
@@ -584,8 +602,11 @@ export function renderSettings(container) {
 
     // Manual TDEE apply
     document.getElementById('manual-tdee-apply').addEventListener('click', async () => {
-      const tdee = parseFloat(body.querySelector('[data-key="tdee"]')?.value);
-      if (!tdee || tdee < 500) { showToast('Enter a valid TDEE (e.g. 2400)', 'error'); return; }
+      const tdee = eRead(body.querySelector('[data-key="tdee"]'));   // typed in display unit → kcal
+      if (!tdee || tdee < 500) {
+        showToast(`Enter a valid TDEE (e.g. ${unitLabel() === 'kJ' ? '10000' : '2400'})`, 'error');
+        return;
+      }
       const { phase, deficit, surplus } = parsePhaseSettings(s);
       const calGoal = phaseCalorieGoal(tdee, phase, deficit, surplus);
       try {
@@ -593,11 +614,11 @@ export function renderSettings(container) {
         s.tdee = String(tdee);
         s.calorie_goal = String(calGoal);
         const calInput = body.querySelector('[data-key="calorie_goal"]');
-        if (calInput) calInput.value = calGoal;
+        if (calInput) calInput.value = eIn(calGoal);
         const goalEl = document.getElementById('phase-goal');
         if (goalEl) goalEl.innerHTML = goalResult(s);
         renderMacroSplit();
-        showToast(`TDEE saved · goal → ${calGoal} kcal`, 'success');
+        showToast(`TDEE saved · goal → ${fmtE(calGoal)} ${unitLabel()}`, 'success');
         window.dispatchEvent(new CustomEvent('plated:settings-changed'));
       } catch (err) {
         showToast(err.message, 'error');
@@ -616,8 +637,8 @@ export function renderSettings(container) {
         const u = result.updates;
         const lines = [`✓ Synced from IronLog at ${new Date().toLocaleTimeString()}`];
         if (u.phase)        lines.push(`Phase: ${u.phase}`);
-        if (u.tdee)         lines.push(`TDEE: ${u.tdee} kcal`);
-        if (u.calorie_goal) lines.push(`Calories: ${u.calorie_goal} kcal`);
+        if (u.tdee)         lines.push(`TDEE: ${fmtE(u.tdee)} ${unitLabel()}`);
+        if (u.calorie_goal) lines.push(`Energy: ${fmtE(u.calorie_goal)} ${unitLabel()}`);
         if (u.protein_goal) lines.push(`Protein: ${u.protein_goal}g`);
         if (u.carb_goal)    lines.push(`Carbs: ${u.carb_goal}g`);
         if (u.fat_goal)     lines.push(`Fat: ${u.fat_goal}g`);
@@ -625,10 +646,11 @@ export function renderSettings(container) {
         statusEl.style.color = 'var(--success)';
         statusEl.innerHTML = lines.join('<br/>');
 
-        // Immediately update every visible goal input
+        // Immediately update every visible goal input. IronLog sends kcal, so
+        // energy fields go through eIn to land in the displayed unit.
         const patch = (key, val) => {
           const el = body.querySelector(`[data-key="${key}"]`);
-          if (el && val != null) el.value = val;
+          if (el && val != null) el.value = ENERGY_KEYS.has(key) ? eIn(val) : val;
         };
         patch('calorie_goal', u.calorie_goal);
         patch('protein_goal', u.protein_goal);
@@ -710,7 +732,7 @@ export function renderSettings(container) {
 
     // Reset all data
     document.getElementById('reset-data-btn').addEventListener('click', async () => {
-      if (!confirm('This will permanently delete all logged meals, weight, and templates.\n\nThis cannot be undone. Continue?')) return;
+      if (!confirm('This will permanently delete all logged meals, weight, and meal-prep batches.\n\nThis cannot be undone. Continue?')) return;
       const typed = prompt('Type DELETE to confirm:');
       if (typed !== 'DELETE') { showToast('Cancelled', 'info'); return; }
       try {
@@ -977,7 +999,7 @@ function macroSplitBox(s) {
     const pg = Math.round(bw * pMul);
     const fg = Math.round(bw * fMul);
     const cg = Math.max(0, Math.round((cal - pg * 4 - fg * 9) / 4));
-    head = `Multiples of your <strong style="color:var(--text)">${bw} kg</strong> 7-day trend weight. Carbs fill the rest of your ${Math.round(cal)} kcal.`;
+    head = `Multiples of your <strong style="color:var(--text)">${bw} kg</strong> 7-day trend weight. Carbs fill the rest of your ${fmtE(cal)} ${unitLabel()}.`;
     rows = splitRow('p', 'Protein', 'var(--protein)', pMul, pg, true, '×')
          + splitRow('f', 'Fat',     'var(--fat)',     fMul, fg, true, '×')
          + splitRow('c', 'Carbs',   'var(--carbs)',   '—',  cg, false, '');
@@ -989,7 +1011,7 @@ function macroSplitBox(s) {
     fPct = Math.max(0, Math.min(100 - pPct, fPct));
     const cPct = 100 - pPct - fPct;
     const g = (pct, kpg) => Math.round(cal * pct / 100 / kpg);
-    head = `Of your ${Math.round(cal)} kcal goal. Set protein &amp; fat — carbs fill the rest.`;
+    head = `Of your ${fmtE(cal)} ${unitLabel()} goal. Set protein &amp; fat — carbs fill the rest.`;
     rows = splitRow('p', 'Protein', 'var(--protein)', pPct, g(pPct, 4), true, '%')
          + splitRow('f', 'Fat',     'var(--fat)',     fPct, g(fPct, 9), true, '%')
          + splitRow('c', 'Carbs',   'var(--carbs)',   cPct, g(cPct, 4), false, '%');
@@ -1053,15 +1075,16 @@ function goalResult(s) {
     return `<div class="phase-goal-empty">Enter your TDEE above (or sync IronLog) to see your daily calorie goal.</div>`;
   }
   const off = computed != null && saved != null && Math.abs(computed - saved) >= 1;
+  const ul  = unitLabel();
   const math = off ? 'set by IronLog'
     : tdee != null
-    ? (phase === 'cut'  ? `${Math.round(tdee)} TDEE − ${deficit} deficit`
-     : phase === 'bulk' ? `${Math.round(tdee)} TDEE + ${surplus} surplus`
-     : `at maintenance · ${Math.round(tdee)} TDEE`)
+    ? (phase === 'cut'  ? `${fmtE(tdee)} TDEE − ${fmtE(deficit)} deficit`
+     : phase === 'bulk' ? `${fmtE(tdee)} TDEE + ${fmtE(surplus)} surplus`
+     : `at maintenance · ${fmtE(tdee)} TDEE`)
     : 'from your synced goal';
   return `
-    <div class="phase-goal-label">Your daily calorie goal</div>
-    <div class="phase-goal-num">${Math.round(goal)}<span> kcal</span></div>
+    <div class="phase-goal-label">Your daily energy goal</div>
+    <div class="phase-goal-num">${fmtE(goal)}<span> ${ul}</span></div>
     <div class="phase-goal-sub">${math}</div>
-    ${off ? `<div class="phase-goal-warn">Your phase math above works out to <strong>${Math.round(computed)} kcal</strong> — IronLog set ${Math.round(saved)} directly. Tap <strong>Apply</strong> next to Maintenance to switch to ${Math.round(computed)}.</div>` : ''}`;
+    ${off ? `<div class="phase-goal-warn">Your phase math above works out to <strong>${fmtE(computed)} ${ul}</strong> — IronLog set ${fmtE(saved)} directly. Tap <strong>Apply</strong> next to Maintenance to switch to ${fmtE(computed)}.</div>` : ''}`;
 }

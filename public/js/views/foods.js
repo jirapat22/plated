@@ -53,7 +53,6 @@ export function renderFoods(container) {
         <button class="search-tab" data-tab="batches">🍱 Batches</button>
         <button class="search-tab" data-tab="custom">Custom</button>
         <button class="search-tab" data-tab="scanned">Scanned</button>
-        <button class="search-tab" data-tab="templates">📋 Templates</button>
       </div>
       <button class="btn btn-secondary" id="add-custom-btn" style="height:36px;font-size:12px;flex-shrink:0">+ Add</button>
     </div>
@@ -66,12 +65,11 @@ export function renderFoods(container) {
   async function loadList() {
     const list = document.getElementById('foods-list');
     if (!list) return;   // view torn down (tab switch) before/while loading
-    // Batches and templates are their own thing, not a food list.
-    const nonFoodTab = currentTab === 'batches' || currentTab === 'templates';
+    // Batches are their own thing, not a food list.
+    const nonFoodTab = currentTab === 'batches';
     document.getElementById('foods-search').closest('.search-input-wrap').style.display = nonFoodTab ? 'none' : '';
     document.getElementById('add-custom-btn').style.display = nonFoodTab ? 'none' : '';
     if (currentTab === 'batches')   { renderBatches(list); return; }
-    if (currentTab === 'templates') { renderTemplatesTab(list); return; }
     list.innerHTML = '<div class="skeleton skel-line" style="margin:8px 16px"></div>';
 
     try {
@@ -298,87 +296,6 @@ export function renderFoods(container) {
       }
 
       renderDetail();
-    });
-  }
-
-  // ── Templates tab — view a template's foods, rename, delete ─────────
-  async function renderTemplatesTab(list) {
-    list.innerHTML = '<div class="skeleton skel-line" style="margin:8px 16px"></div>';
-    let templates;
-    try { templates = await api.get('/api/templates'); }
-    catch (err) { list.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`; return; }
-    if (!document.getElementById('foods-list')) return;   // view torn down during fetch
-
-    if (templates.length === 0) {
-      list.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">No templates yet<br><span style="font-size:12px;color:var(--text-faint)">On Today, tap 🔖 on a meal to save it as a template</span></div></div>`;
-      return;
-    }
-
-    list.innerHTML = '';
-    templates.forEach(t => {
-      const el = document.createElement('div');
-      el.style.cssText = 'margin:0 16px 10px;border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;background:var(--surface)';
-      el.innerHTML = `
-        <div class="tpl-head" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer">
-          <div style="font-size:20px;flex-shrink:0">📋</div>
-          <div style="flex:1;min-width:0">
-            <div class="tpl-name" style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.name)}</div>
-            <div style="font-size:12px;color:var(--text-muted)">${t.item_count} item${t.item_count === 1 ? '' : 's'}</div>
-          </div>
-          <button class="tpl-rename" title="Rename" style="width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);font-size:12px">✏️</button>
-          <button class="tpl-del" title="Delete" style="width:30px;height:30px;border-radius:50%;background:rgba(255,107,107,.1);color:var(--error);font-size:15px">×</button>
-          <span class="nl-chev" style="font-size:9px;color:var(--text-faint);transition:transform .15s">▾</span>
-        </div>
-        <div class="tpl-items" style="display:none;border-top:1px solid var(--border)"></div>
-      `;
-
-      const itemsEl = el.querySelector('.tpl-items');
-      let loaded = false;
-      el.querySelector('.tpl-head').addEventListener('click', async e => {
-        if (e.target.closest('.tpl-rename') || e.target.closest('.tpl-del')) return;
-        const open = itemsEl.style.display !== 'none';
-        itemsEl.style.display = open ? 'none' : 'block';
-        el.querySelector('.nl-chev').style.transform = open ? 'rotate(-90deg)' : '';
-        if (loaded || open) return;
-        loaded = true;
-        itemsEl.innerHTML = '<div class="skeleton skel-line" style="margin:10px 14px"></div>';
-        try {
-          const items = await api.get(`/api/templates/${t.id}/items`);
-          itemsEl.innerHTML = items.map(it => {
-            const kcal = it.calories_per_100g != null ? Math.round(it.calories_per_100g * it.quantity_g / 100) : null;
-            return `<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border);font-size:13px">
-              <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.food_name)}</span>
-              <span class="num" style="color:var(--text-muted);flex-shrink:0">${Math.round(it.quantity_g)}g${kcal != null ? ` · ${kcal} kcal` : ''}</span>
-            </div>`;
-          }).join('') || '<div style="padding:10px 14px;font-size:12px;color:var(--text-faint)">Empty template</div>';
-          itemsEl.lastElementChild?.style.setProperty('border-bottom', 'none');
-        } catch (err) {
-          itemsEl.innerHTML = `<div style="padding:10px 14px;font-size:12px;color:var(--error)">${err.message}</div>`;
-        }
-      });
-
-      el.querySelector('.tpl-rename').addEventListener('click', () => {
-        showPrompt({ title: 'Rename template', label: 'Template name', value: t.name, cta: 'Rename' },
-          async name => {
-            if (!name) throw new Error('Enter a name');
-            if (name === t.name) return;
-            await api.patch(`/api/templates/${t.id}`, { name });
-            t.name = name;
-            el.querySelector('.tpl-name').textContent = name;
-            showToast('Template renamed', 'success');
-          });
-      });
-
-      el.querySelector('.tpl-del').addEventListener('click', async () => {
-        if (!confirm(`Delete template "${t.name}"?`)) return;
-        try {
-          await api.delete(`/api/templates/${t.id}`);
-          el.remove();
-          showToast('Template deleted', 'success');
-        } catch (err) { showToast(err.message, 'error'); }
-      });
-
-      list.appendChild(el);
     });
   }
 

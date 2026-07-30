@@ -223,53 +223,6 @@ export function openRenameSession(sessionId, currentName, onSuccess) {
   });
 }
 
-// ── Save / apply meal templates ───────────────────────────────
-export function openSaveAsTemplate(session) {
-  if (session.entries.length === 0) {
-    showToast('Add foods to this meal before saving as a template', 'error');
-    return;
-  }
-  showSheet(content => {
-    content.innerHTML = `
-      <div class="sheet-header">
-        <span class="sheet-title">🔖 Save as Template</span>
-        <button class="sheet-close" id="st-close">✕</button>
-      </div>
-      <div style="padding:0 16px">
-        <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">
-          Save <strong>${esc(session.name)}</strong> (${session.entries.length} foods) as a reusable template.
-        </div>
-        <div class="form-group">
-          <label class="form-label">Template name</label>
-          <input class="input" id="st-name" placeholder="e.g. My Breakfast" />
-        </div>
-        <button class="btn btn-primary btn-full" id="st-save">Save Template</button>
-      </div>
-    `;
-    document.getElementById('st-name').value = session.name;
-    document.getElementById('st-close').addEventListener('click', hideSheet);
-    setTimeout(() => document.getElementById('st-name')?.focus(), 200);
-
-    document.getElementById('st-save').addEventListener('click', async () => {
-      const name = document.getElementById('st-name').value.trim();
-      if (!name) { showToast('Enter a template name', 'error'); return; }
-      const btn = document.getElementById('st-save');
-      btn.disabled = true; btn.textContent = 'Saving…';
-      try {
-        await api.post('/api/templates', {
-          name,
-          items: session.entries.map(e => ({ food_id: e.food_id, food_name: e.food_name, quantity_g: e.quantity_g })),
-        });
-        hideSheet();
-        showToast(`Template "${name}" saved`, 'success');
-      } catch (err) {
-        showToast(err.message, 'error');
-        btn.disabled = false; btn.textContent = 'Save Template';
-      }
-    });
-  });
-}
-
 // ── Copy past meal (pull foods from a meal in the last 7 days) ─
 export function openCopyPastMeal(targetSessionId, onSuccess) {
   showSheet(async content => {
@@ -757,9 +710,9 @@ function showQuantitySheet(food, sessionId, onSuccess) {
 // ── Shared meal card: header (rename/copy/move/delete) + entry rows
 // (copy/edit/delete) + add-food footer. Used by both Today and History so
 // the two views can't drift into different UX for the same actions.
-//   opts: { showTime, showMoveToday, showTemplate, showPullIn, showQuickLog }
+//   opts: { showTime, showMoveToday, showPullIn, showQuickLog }
 export function renderMealCard(session, viewDate, opts = {}, onDone) {
-  const { showTime = false, showMoveToday = false, showTemplate = false, showPullIn = false, showQuickLog = false } = opts;
+  const { showTime = false, showMoveToday = false, showPullIn = false, showQuickLog = false } = opts;
   const ul = unitLabel();
   const sessionKcal    = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
   const sessionProtein = Math.round(session.entries.reduce((s, e) => s + (e.protein || 0), 0));
@@ -784,7 +737,6 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
           style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">
           → Today
         </button>` : ''}
-        ${showTemplate ? `<button class="session-save-tmpl-btn" title="Save as template" style="color:var(--text-faint);padding:4px;font-size:15px">🔖</button>` : ''}
         ${showPullIn ? `<button class="session-copy-btn" title="Pull a past meal in" style="color:var(--text-faint);padding:4px;font-size:15px">♻️</button>` : ''}
         <button class="session-copyout-btn" title="Copy this meal to…" style="color:var(--text-faint);padding:4px;font-size:14px">⧉</button>
         <button class="session-del-btn" title="Delete" style="color:var(--text-faint);padding:4px">
@@ -861,9 +813,6 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
   sessionEl.querySelector('.session-rename-btn').addEventListener('click', () =>
     openRenameSession(session.id, session.name, onDone)
   );
-  if (showTemplate) {
-    sessionEl.querySelector('.session-save-tmpl-btn').addEventListener('click', () => openSaveAsTemplate(session));
-  }
   if (showPullIn) {
     sessionEl.querySelector('.session-copy-btn').addEventListener('click', () => openCopyPastMeal(session.id, onDone));
   }

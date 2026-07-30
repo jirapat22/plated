@@ -167,7 +167,6 @@ router.delete('/me', requireProfile, (req, res) => {
   try {
     db.prepare('DELETE FROM meal_sessions  WHERE profile_id = $id').run({ id }); // cascades entries
     db.prepare('DELETE FROM weight_log     WHERE profile_id = $id').run({ id });
-    db.prepare('DELETE FROM meal_templates WHERE profile_id = $id').run({ id }); // cascades items
     // Batches aren't cascade-deleted with the profile — hide their backing
     // foods first (same treatment as the single-batch DELETE route) so they
     // don't linger visible in search/Custom after the profile is gone.

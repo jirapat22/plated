@@ -73,20 +73,6 @@ function initDb() {
       logged_at  TEXT    DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS meal_templates (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      name       TEXT    NOT NULL,
-      created_at TEXT    DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS meal_template_items (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      template_id INTEGER REFERENCES meal_templates(id) ON DELETE CASCADE,
-      food_id     INTEGER REFERENCES foods(id),
-      food_name   TEXT    NOT NULL,
-      quantity_g  REAL    NOT NULL
-    );
-
     CREATE TABLE IF NOT EXISTS daily_overrides (
       profile_id INTEGER NOT NULL DEFAULT 0,
       date  TEXT NOT NULL,
@@ -187,9 +173,15 @@ function migrateSchema(db) {
   // with the feature rather than leaving a dead, unreferenced table behind.
   db.exec('DROP TABLE IF EXISTS water_log');
 
+  // Meal templates removed the same way (user didn't use them — production
+  // held zero rows when this ran). Items table first: it has a FK to
+  // meal_templates, and foreign_keys is ON.
+  db.exec('DROP TABLE IF EXISTS meal_template_items');
+  db.exec('DROP TABLE IF EXISTS meal_templates');
+
   // Add nullable profile_id to data tables that predate multi-profile.
   // NULL marks "orphan" rows adopted by the first profile created.
-  for (const t of ['meal_sessions', 'weight_log', 'meal_templates']) {
+  for (const t of ['meal_sessions', 'weight_log']) {
     if (!tableHasColumn(db, t, 'profile_id')) {
       db.exec(`ALTER TABLE ${t} ADD COLUMN profile_id INTEGER`);
     }
@@ -293,10 +285,10 @@ function seedProfileDefaults(db, profileId) {
 }
 
 // The first profile created adopts all pre-existing single-user data:
-// orphan meals/weight/templates/overrides, the old global settings
-// values, and any favourites / use-counts recorded on the shared foods table.
+// orphan meals/weight/overrides, the old global settings values, and any
+// favourites / use-counts recorded on the shared foods table.
 function adoptOrphanData(db, profileId) {
-  for (const t of ['meal_sessions', 'weight_log', 'meal_templates']) {
+  for (const t of ['meal_sessions', 'weight_log']) {
     db.prepare(`UPDATE ${t} SET profile_id = $p WHERE profile_id IS NULL`).run({ p: profileId });
   }
   db.prepare('UPDATE daily_overrides SET profile_id = $p WHERE profile_id = 0').run({ p: profileId });
