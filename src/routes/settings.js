@@ -14,6 +14,10 @@ const ALLOWED = new Set([
   // Macro targets: 'pct' (a % split of the calorie goal, applied once) or
   // 'gkg' (multiples of trend bodyweight, re-derived whenever weight moves).
   'macro_mode', 'protein_multiplier', 'fat_multiplier',
+  // Inputs to the Mifflin-St Jeor TDEE estimate. Stored so the estimator can be
+  // reopened pre-filled and re-run; birth_year rather than age so it doesn't go
+  // stale. They feed the estimate only — nothing reads them to change a goal.
+  'height_cm', 'birth_year', 'sex', 'activity_level',
 ]);
 
 // Settings that feed the g/kg macro formula — changing any of them has to
@@ -135,12 +139,23 @@ router.get('/export', (req, res) => {
       // Only foods this profile actually logged — not the whole shared
       // ~4,800-row seed table, which every profile can already re-derive
       // (it's re-seeded on a fresh DB) and would bloat every export.
+      // The UNION covers foods that back a batch: a batch you've never taken a
+      // portion from has no meal_entries row, so its backing food would be
+      // missing and the restored batch would have nothing to log against.
       foods: db.prepare(`
         SELECT DISTINCT f.* FROM foods f
         JOIN meal_entries me ON me.food_id = f.id
         JOIN meal_sessions ms ON ms.id = me.meal_session_id
         WHERE ms.profile_id = $pid
+        UNION
+        SELECT f.* FROM foods f
+        JOIN batches b ON b.food_id = f.id
+        WHERE b.profile_id = $pid
       `).all({ pid }),
+      // Batches were absent from every export until now, while "Clear all
+      // logged data" deleted them — so export → clear → restore silently lost
+      // every meal prep you'd saved.
+      batches: db.prepare('SELECT * FROM batches WHERE profile_id = $pid').all({ pid }),
       meal_sessions: db.prepare('SELECT * FROM meal_sessions WHERE profile_id = $pid').all({ pid }),
       meal_entries:  db.prepare(`
         SELECT me.* FROM meal_entries me
@@ -177,6 +192,9 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
     const meal_sessions = Array.isArray(body.meal_sessions) ? body.meal_sessions : [];
     const meal_entries  = Array.isArray(body.meal_entries) ? body.meal_entries : [];
     const weight_log    = Array.isArray(body.weight_log) ? body.weight_log : [];
+    // Absent from exports taken before batches were included — an older backup
+    // restores exactly as it did before rather than wiping the batches you have.
+    const batches       = Array.isArray(body.batches) ? body.batches : null;
     const settings      = (body.settings && typeof body.settings === 'object') ? body.settings : {};
 
     if (!body.exported_at || !Array.isArray(body.meal_sessions)) {
@@ -185,6 +203,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
 
     let foodsAdded = 0;
     let entriesImported = 0;
+    let batchesImported = 0;
     db.exec('BEGIN');
     try {
       const findFood = db.prepare('SELECT id FROM foods WHERE name = $name AND brand IS $brand');
@@ -235,6 +254,47 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
       const insWeight = db.prepare('INSERT INTO weight_log (date, weight_kg, note, source, logged_at, profile_id) VALUES ($date, $kg, $note, $src, $logged_at, $pid)');
       for (const w of weight_log) insWeight.run({ date: w.date, kg: w.weight_kg, note: w.note ?? null, src: w.source || 'manual', logged_at: w.logged_at || null, pid });
 
+      // Batches. Only touched when the file actually carries them, so restoring
+      // a pre-batch backup leaves your current batches alone instead of wiping
+      // them to match a file that never knew about them.
+      if (batches) {
+        db.prepare('DELETE FROM batches WHERE profile_id = $pid').run({ pid });
+        const insBatch = db.prepare(`
+          INSERT INTO batches (profile_id, name, food_id, calories, protein, carbs, fat, fiber, cooked_g, remaining_g, ingredients, created_at)
+          VALUES ($pid, $name, $fid, $cal, $pro, $carb, $fat, $fiber, $cooked, $remaining, $ing, $created)
+        `);
+        for (const b of batches) {
+          if (!b.name || !(b.cooked_g > 0)) continue;          // unusable without a divisor
+          // Ingredients are stored as JSON carrying the ORIGINAL database's
+          // food ids. Remap them the same way entries are, and drop an id that
+          // didn't come across rather than leaving one pointing at a stranger's
+          // food — the name and grams still render, and batches.js already
+          // falls back to resolving an ingredient by name.
+          let ing = b.ingredients ?? null;
+          try {
+            const parsed = JSON.parse(b.ingredients || '[]');
+            if (Array.isArray(parsed)) {
+              ing = JSON.stringify(parsed.map(i => ({
+                ...i,
+                food_id: i.food_id != null ? (foodIdMap.get(i.food_id) ?? null) : null,
+              })));
+            }
+          } catch { /* not JSON — keep whatever was there */ }
+          insBatch.run({
+            pid, name: b.name,
+            fid: b.food_id != null ? (foodIdMap.get(b.food_id) ?? null) : null,
+            cal: b.calories ?? null, pro: b.protein ?? null, carb: b.carbs ?? null,
+            fat: b.fat ?? null, fiber: b.fiber ?? null,
+            cooked: b.cooked_g,
+            // Clamp so a hand-edited file can't leave a batch claiming more is
+            // left than was ever cooked.
+            remaining: Math.max(0, Math.min(b.cooked_g, b.remaining_g ?? b.cooked_g)),
+            ing, created: b.created_at || null,
+          });
+          batchesImported++;
+        }
+      }
+
       const setSetting = db.prepare('INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)');
       for (const [key, value] of Object.entries(settings)) {
         if (ALLOWED.has(key) && value != null) setSetting.run({ pid, key, value: String(value) });
@@ -248,7 +308,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
 
     res.json({
       success: true,
-      imported: { meals: meal_sessions.length, entries: entriesImported, weight: weight_log.length, foods_added: foodsAdded },
+      imported: { meals: meal_sessions.length, entries: entriesImported, weight: weight_log.length, foods_added: foodsAdded, batches: batchesImported },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

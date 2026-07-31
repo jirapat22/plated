@@ -105,7 +105,10 @@ export function renderSettings(container) {
             <span style="font-size:12px;color:var(--text-muted)">${unitLabel()}</span>
             <button class="btn btn-secondary" id="manual-tdee-apply" style="height:40px;padding:0 14px;font-size:13px">Apply</button>
           </div>
-          <button class="btn btn-secondary btn-full" id="ironlog-sync" style="height:36px;font-size:12px;margin-bottom:4px">⟳ Sync from IronLog</button>
+          <div style="display:flex;gap:8px;margin-bottom:4px">
+            <button class="btn btn-secondary" id="tdee-estimate" style="height:36px;font-size:12px;flex:1">🧮 Not sure? Estimate it</button>
+            <button class="btn btn-secondary" id="ironlog-sync" style="height:36px;font-size:12px;flex:1">⟳ Sync from IronLog</button>
+          </div>
           <div id="tdee-sync-status" style="font-size:11px;color:var(--text-muted);margin-bottom:16px"></div>
 
           <!-- 2. Phase -->
@@ -772,6 +775,16 @@ export function renderSettings(container) {
       }
     });
 
+    document.getElementById('tdee-estimate').addEventListener('click', () => {
+      openTdeeEstimator(s, kcal => {
+        const el = body.querySelector('[data-key="tdee"]');
+        if (el) { el.value = eIn(kcal); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        // Deliberately fills the field without saving — the estimate is a
+        // starting point, and Apply is what commits it to your calorie goal.
+        showToast(`Estimated ${fmtE(kcal)} ${unitLabel()} — tap Apply to use it`, 'info', { duration: 5000 });
+      });
+    });
+
     document.getElementById('open-report').addEventListener('click', openReportSheet);
 
     document.getElementById('export-json').addEventListener('click', async () => {
@@ -795,11 +808,14 @@ export function renderSettings(container) {
       }
 
       const exportedDate = new Date(data.exported_at).toLocaleDateString();
+      const hasBatches = Array.isArray(data.batches);
       const summary = `Backup from ${exportedDate}:\n`
         + `${data.meal_sessions.length} meals, ${(data.meal_entries || []).length} food entries, `
-        + `${(data.weight_log || []).length} weigh-ins.\n\n`
-        + `This REPLACES your current meal history and weight log. `
-        + `Your food database and other profiles aren't touched.\n\nContinue?`;
+        + `${(data.weight_log || []).length} weigh-ins`
+        + (hasBatches ? `, ${data.batches.length} meal-prep batches.\n\n` : `.\n\n`)
+        + `This REPLACES your current meal history and weight log`
+        + (hasBatches ? ' and batches' : ' (this file predates batch backups, so your batches are left as they are)')
+        + `. Your food database and other profiles aren't touched.\n\nContinue?`;
       if (!confirm(summary)) return;
       if (prompt('Type RESTORE to confirm:') !== 'RESTORE') return showToast('Cancelled', 'info');
 
@@ -807,7 +823,8 @@ export function renderSettings(container) {
       btn.disabled = true; btn.textContent = 'Restoring…';
       try {
         const result = await api.post('/api/settings/import', data);
-        showToast(`Restored ${result.imported.entries} food entries, ${result.imported.weight} weigh-ins`, 'success');
+        const im = result.imported;
+        showToast(`Restored ${im.entries} food entries, ${im.weight} weigh-ins${im.batches ? `, ${im.batches} batches` : ''}`, 'success');
         window.dispatchEvent(new CustomEvent('plated:settings-changed'));
       } catch (err) {
         showToast(err.message, 'error');
@@ -831,6 +848,150 @@ function downloadBlob(text, filename, mime) {
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ── TDEE estimator (Mifflin-St Jeor) ───────────────────────────
+// Settings asked you to type a number most people don't know, with no way to
+// derive it short of connecting IronLog. This gives a defensible starting
+// point; Trends' measured "real maintenance" corrects it from your own data
+// once there's enough of it, so it only has to be roughly right.
+const ACTIVITY = [
+  { k: '1.2',   label: 'Sedentary',    hint: 'desk job, little exercise' },
+  { k: '1.375', label: 'Light',        hint: 'training 1–3×/week' },
+  { k: '1.55',  label: 'Moderate',     hint: 'training 3–5×/week' },
+  { k: '1.725', label: 'Very active',  hint: 'training 6–7×/week' },
+  { k: '1.9',   label: 'Athlete',      hint: 'twice a day, or physical job' },
+];
+
+// Mifflin-St Jeor. Returns null until every input it needs is present.
+export function estimateTdee({ weightKg, heightCm, age, sex, activity }) {
+  if (!(weightKg > 0) || !(heightCm > 0) || !(age > 0) || !activity) return null;
+  const bmr = 10 * weightKg + 6.25 * heightCm - 5 * age + (sex === 'female' ? -161 : 5);
+  return Math.round(bmr * activity);
+}
+
+function openTdeeEstimator(s, onUse) {
+  showSheet(content => {
+    // Trend weight if we have one — it's the same number the g/kg macro targets
+    // use, and steadier than whatever the scale said this morning.
+    const weightKg = parseFloat(s.trend_weight_kg) || parseFloat(s.bodyweight_kg) || null;
+    const thisYear = new Date().getFullYear();
+    const age = s.birth_year ? thisYear - parseInt(s.birth_year) : null;
+
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">🧮 Estimate your TDEE</span>
+        <button class="sheet-close" id="te-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">
+          A starting figure from your size and how much you train. It's an average for people like you, not a measurement — Trends works out your real maintenance from your own intake and weight once you've logged a couple of weeks.
+        </div>
+
+        <div class="form-row" style="margin-bottom:12px">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Weight</label>
+            <div style="display:flex;align-items:center;gap:6px">
+              <input class="input" id="te-kg" type="text" inputmode="decimal" style="height:40px;flex:1" placeholder="e.g. 76"/>
+              <span style="font-size:12px;color:var(--text-muted)">kg</span>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Height</label>
+            <div style="display:flex;align-items:center;gap:6px">
+              <input class="input" id="te-cm" type="text" inputmode="decimal" style="height:40px;flex:1" placeholder="e.g. 178"/>
+              <span style="font-size:12px;color:var(--text-muted)">cm</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom:12px">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Age</label>
+            <input class="input" id="te-age" type="text" inputmode="decimal" style="height:40px" placeholder="e.g. 28"/>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Sex</label>
+            <div style="display:flex;gap:6px" id="te-sex">
+              <button type="button" class="fs-chip te-sex-opt" data-sex="male" style="flex:1">Male</button>
+              <button type="button" class="fs-chip te-sex-opt" data-sex="female" style="flex:1">Female</button>
+            </div>
+          </div>
+        </div>
+
+        <label class="form-label">Activity</label>
+        <div id="te-act" style="display:flex;flex-direction:column;gap:6px;margin:6px 0 14px">
+          ${ACTIVITY.map(a => `
+            <button type="button" class="fs-chip te-act-opt" data-k="${a.k}" style="text-align:left;justify-content:flex-start;height:auto;padding:9px 12px">
+              <span style="font-weight:700">${a.label}</span>
+              <span style="opacity:.7;font-weight:400"> · ${a.hint}</span>
+            </button>`).join('')}
+        </div>
+
+        <div id="te-result" class="phase-goal" style="margin-bottom:14px"></div>
+        <button class="btn btn-primary btn-full" id="te-use" disabled>Use this figure</button>
+        <div style="font-size:11px;color:var(--text-faint);margin:8px 0 4px;line-height:1.5">
+          It fills the Maintenance box — nothing changes until you tap Apply.
+        </div>
+      </div>`;
+
+    const $ = id => document.getElementById(id);
+    if (weightKg) $('te-kg').value = Math.round(weightKg * 10) / 10;
+    if (s.height_cm) $('te-cm').value = s.height_cm;
+    if (age) $('te-age').value = age;
+    let sex = s.sex || 'male';
+    let act = s.activity_level || '';
+
+    const paint = () => {
+      content.querySelectorAll('.te-sex-opt').forEach(b => b.classList.toggle('active', b.dataset.sex === sex));
+      content.querySelectorAll('.te-act-opt').forEach(b => b.classList.toggle('active', b.dataset.k === act));
+    };
+    const read = () => estimateTdee({
+      weightKg: parseFloat($('te-kg').value),
+      heightCm: parseFloat($('te-cm').value),
+      age:      parseFloat($('te-age').value),
+      sex, activity: parseFloat(act),
+    });
+
+    let current = null;
+    const draw = () => {
+      current = read();
+      const box = $('te-result');
+      if (current == null) {
+        box.innerHTML = `<div class="phase-goal-empty">Fill in weight, height, age and activity.</div>`;
+        $('te-use').disabled = true;
+        return;
+      }
+      box.innerHTML = `
+        <div class="phase-goal-label">Estimated maintenance</div>
+        <div class="phase-goal-num">${fmtE(current)}<span> ${unitLabel()}</span></div>
+        <div class="phase-goal-sub">Mifflin-St Jeor × activity</div>`;
+      $('te-use').disabled = false;
+    };
+
+    content.querySelectorAll('.te-sex-opt').forEach(b =>
+      b.addEventListener('click', () => { sex = b.dataset.sex; paint(); draw(); }));
+    content.querySelectorAll('.te-act-opt').forEach(b =>
+      b.addEventListener('click', () => { act = b.dataset.k; paint(); draw(); }));
+    ['te-kg', 'te-cm', 'te-age'].forEach(id => $(id).addEventListener('input', draw));
+    $('te-close').addEventListener('click', hideSheet);
+    paint(); draw();
+
+    $('te-use').addEventListener('click', async () => {
+      if (current == null) return;
+      // Remember the inputs so reopening this doesn't mean retyping them.
+      // birth_year, not age, so it doesn't quietly go stale.
+      const patch = { sex, activity_level: act };
+      const cm = parseFloat($('te-cm').value);
+      const yrs = parseFloat($('te-age').value);
+      if (cm > 0) patch.height_cm = String(cm);
+      if (yrs > 0) patch.birth_year = String(new Date().getFullYear() - Math.round(yrs));
+      try { await api.patch('/api/settings', patch); Object.assign(s, patch); }
+      catch { /* the estimate still stands even if remembering it failed */ }
+      hideSheet();
+      onUse(current);
+    });
+  });
 }
 
 // ── Detailed nutrition report ──────────────────────────────────
