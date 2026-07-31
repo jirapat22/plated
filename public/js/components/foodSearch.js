@@ -162,7 +162,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
 
   function buildFoodRow(food) {
     const el = document.createElement('div');
-    el.className = 'food-list-item';
+    el.className = `food-list-item${food.is_favourite ? ' is-fav' : ''}`;
     const ul       = unitLabel();
     const kcalStr  = food.calories_per_100g != null ? `${fmtE(food.calories_per_100g)} ${ul}/100g` : 'no cal data';
     const pro      = food.protein_per_100g  != null ? `${food.protein_per_100g.toFixed(1)}P` : '';
@@ -201,6 +201,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
           food.is_favourite = res.is_favourite;
           favBtn.textContent = res.is_favourite ? '⭐' : '☆';
           favBtn.style.color = res.is_favourite ? '#ffd700' : 'var(--text-faint)';
+          el.classList.toggle('is-fav', !!res.is_favourite);
         } catch (err) {
           showToast(err.message, 'error');
         }

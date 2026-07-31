@@ -594,6 +594,20 @@ img { display: block; max-width: 100%; }
   flex-shrink: 0;
   font-size: 18px;
 }
+/* Favourites: mark the ROW, not the icon. Swapping the food's icon for a star
+   read as "this item is a star" rather than "this item is favourited", cost you
+   the at-a-glance food identity, and sat right next to the star toggle. A gold
+   edge + tinted tile makes the state louder while every icon stays put. */
+.food-list-item.is-fav {
+  background: linear-gradient(90deg, rgba(255,209,102,.09), rgba(255,209,102,0) 55%);
+  box-shadow: inset 3px 0 0 #ffd166;
+}
+.food-list-item.is-fav .food-list-icon {
+  background: rgba(255,209,102,.16);
+  box-shadow: inset 0 0 0 1px rgba(255,209,102,.35);
+}
+.food-list-item.is-fav:active { background: var(--surface-2); }
+
 .food-list-info { flex: 1; min-width: 0; }
 .food-list-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .food-list-sub  { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
@@ -1083,7 +1097,7 @@ img { display: block; max-width: 100%; }
 
 /* ─── Favourite star ─────────────────────────────────────── */
 .fav-btn { color: var(--text-faint); padding: 6px; transition: color 0.15s; }
-.fav-btn.active { color: var(--carbs); }
+.fav-btn.active { color: #ffd166; filter: drop-shadow(0 0 4px rgba(255,209,102,.45)); }
 
 /* ─── Profile top bar ────────────────────────────────────── */
 .profile-bar {

@@ -102,9 +102,12 @@ export function renderFoods(container) {
 
   function buildFoodItem(food) {
     const el = document.createElement('div');
-    el.className = 'food-list-item';
+    // is-fav tints the row and its icon tile — favouriting used to REPLACE the
+    // food's icon with a star, which both lost the food's identity at a glance
+    // and put a second star next to the star toggle on the right.
+    el.className = `food-list-item${food.is_favourite ? ' is-fav' : ''}`;
     el.innerHTML = `
-      <div class="food-list-icon" style="font-size:18px">${food.is_favourite ? '⭐' : getFoodIcon(food.name)}</div>
+      <div class="food-list-icon" style="font-size:18px">${getFoodIcon(food.name)}</div>
       <div class="food-list-info">
         <div class="food-list-name">${esc(food.name)} ${foodTagHtml(food)}</div>
         <div class="food-list-sub">${food.brand ? esc(food.brand) + ' · ' : ''}${food.calories_per_100g != null ? food.calories_per_100g.toFixed(0) + ' kcal/100g' : 'no cal data'}${isMine(food) ? ' · <span style="color:var(--accent)">by you</span>' : ''}</div>
@@ -129,6 +132,7 @@ export function renderFoods(container) {
         const btn = el.querySelector('.fav-btn');
         btn.classList.toggle('active', !!is_favourite);
         btn.querySelector('path').setAttribute('fill', is_favourite ? 'currentColor' : 'none');
+        el.classList.toggle('is-fav', !!is_favourite);   // row tint follows immediately
       } catch (err) {
         showToast(err.message, 'error');
       }
