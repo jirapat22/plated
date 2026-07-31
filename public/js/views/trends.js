@@ -4,7 +4,7 @@ import { localDate }                  from '../utils/date.js';
 import { showToast, navigateTo }      from '../app.js';
 import { openFoodEntry, lazySession } from './log.js';
 import { classifyDay, isFlagged, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY } from '../utils/logCheck.js';
-import { movingAvg } from '../utils/stats.js';
+import { movingAvg, weeklyTrendChange } from '../utils/stats.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -366,9 +366,12 @@ export function renderTrends(container) {
     const weekMap = {};
     rows.forEach(r => { if ((r.meal_count || 0) > 0 && mondayOf(r.date) !== thisMon) (weekMap[mondayOf(r.date)] ||= []).push(r); });
     const avgOf = (arr, k) => arr.reduce((s, r) => s + (r[k] || 0), 0) / arr.length;
+    // Weight moved per week, on the smoothed trend (see weeklyTrendChange).
+    const weekKg = mon => weeklyTrendChange(weightSorted, mon);
+
     const weekData = Object.entries(weekMap)
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([mon, arr]) => ({ mon, cal: avgOf(arr, 'calories'), protein: avgOf(arr, 'protein'), carbs: avgOf(arr, 'carbs'), fat: avgOf(arr, 'fat') }));
+      .map(([mon, arr]) => ({ mon, kg: weekKg(mon), cal: avgOf(arr, 'calories'), protein: avgOf(arr, 'protein'), carbs: avgOf(arr, 'carbs'), fat: avgOf(arr, 'fat') }));
 
     const macroMeta = {
       cal:     { label: 'Calories', goal, color: 'var(--accent)',  disp: v => fmtE(v) },
@@ -383,20 +386,34 @@ export function renderTrends(container) {
       const max = Math.max(m.goal || 1, ...weekData.map(w => w[metric])) * 1.08;  // headroom
       const goalPct = m.goal ? (m.goal / max) * 100 : null;
       const f = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      // A week's weight move counts as progress when it goes the way the phase
+      // wants. Colouring by raw direction would mark every good bulking week red.
+      const phase = settings.phase || 'maintain';
+      const kgGood = kg => phase === 'cut' ? kg < -0.05 : phase === 'bulk' ? kg > 0.05 : Math.abs(kg) <= 0.3;
+      const anyKg = weekData.some(w => w.kg != null);
+
       box.innerHTML = weekData.slice().reverse().map(w => {   // most recent week on top
         const mon = new Date(w.mon + 'T00:00:00');
         const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
         const val = w[metric];
         const over = m.goal && val > m.goal;
-        return `<div style="display:flex;align-items:center;gap:10px;margin:9px 0">
-          <span style="width:82px;flex-shrink:0;font-size:11px;color:var(--text-muted)">${f(mon)}–${sun.getDate()}</span>
-          <div style="flex:1;height:20px;background:var(--surface-2);border-radius:5px;position:relative;overflow:hidden">
+        const kgTxt = w.kg == null ? '–'
+          : `${w.kg > 0 ? '+' : w.kg < 0 ? '−' : ''}${Math.abs(w.kg).toFixed(1)}`;
+        const kgColor = w.kg == null ? 'var(--text-faint)'
+          : kgGood(w.kg) ? 'var(--success)' : 'var(--text-muted)';
+        return `<div style="display:flex;align-items:center;gap:8px;margin:9px 0">
+          <span style="width:74px;flex-shrink:0;font-size:11px;color:var(--text-muted)">${f(mon)}–${sun.getDate()}</span>
+          <div style="flex:1;min-width:30px;height:20px;background:var(--surface-2);border-radius:5px;position:relative;overflow:hidden">
             <div style="height:100%;width:${Math.round(val / max * 100)}%;background:${m.color};border-radius:5px"></div>
             ${goalPct != null ? `<div title="goal" style="position:absolute;top:-1px;bottom:-1px;left:${goalPct}%;width:2px;background:var(--text);opacity:.5"></div>` : ''}
           </div>
-          <span style="width:50px;text-align:right;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;${over ? 'color:var(--warning)' : ''}">${m.disp(val)}</span>
+          <span style="width:46px;text-align:right;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;${over ? 'color:var(--warning)' : ''}">${m.disp(val)}</span>
+          ${anyKg ? `<span title="trend weight change" style="width:52px;text-align:right;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:${kgColor}">${kgTxt}${w.kg == null ? '' : ' kg'}</span>` : ''}
         </div>`;
-      }).join('') + `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-faint);margin-top:8px;border-top:1px solid var(--border);padding-top:8px"><span>avg per logged day</span><span>┃ goal ${m.disp(m.goal)}</span></div>`;
+      }).join('') + `<div style="display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--text-faint);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+          <span>avg per logged day</span>
+          <span>┃ goal ${m.disp(m.goal)}${anyKg ? ' · kg = 7-day trend move' : ''}</span>
+        </div>${anyKg && weekData.some(w => w.kg == null) ? `<div style="font-size:10px;color:var(--text-faint);margin-top:4px">“–” = no weigh-in that week, so there's nothing to compare.</div>` : ''}`;
     }
 
     // ── "Is it working?" verdict — intake vs actual weight change ──
