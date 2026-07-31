@@ -231,6 +231,17 @@ function migrateSchema(db) {
       db.prepare('UPDATE profiles SET is_admin = 1 WHERE id = $id').run({ id: first.id });
     }
   }
+
+  // Backfill PROFILE_DEFAULTS onto profiles that already existed when a new
+  // default was introduced. seedProfileDefaults only ever ran at profile
+  // creation, so every key added later (macro_mode, fat_multiplier, …) was
+  // simply absent for existing profiles — and an absent multiplier read as
+  // `parseFloat(undefined) || 0`, i.e. a fat target of 0 g with no hint why.
+  // INSERT OR IGNORE means this only fills gaps and never overwrites a value
+  // you've set, so it's safe to re-run on every boot.
+  for (const { id } of db.prepare('SELECT id FROM profiles').all()) {
+    seedProfileDefaults(db, id);
+  }
 }
 
 // Indexes for the hot read paths. Runs after migrateSchema so the profile_id
