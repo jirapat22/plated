@@ -1,26 +1,46 @@
 const express = require('express');
 const crypto = require('crypto');
+const { promisify } = require('util');
 const { getDb, seedProfileDefaults, adoptOrphanData, countProfiles } = require('../db');
 const { requireProfile } = require('../middleware/auth');
+const { rateLimit } = require('../middleware/rateLimit');
 
 const router = express.Router();
 
 // ── Passcode hashing (node:crypto scrypt — no native deps) ───────
-function hashCode(code, salt) {
-  return crypto.scryptSync(String(code), salt, 64).toString('hex');
+// ASYNC scrypt, not scryptSync. Node runs one thread: scryptSync measured ~33ms
+// and findProfileByCode runs it once per profile, so every wrong passcode froze
+// the entire app for ~33ms × profile count. A trivial request loop against
+// /login made Plated unresponsive for everyone. The callback form hands the work
+// to the libuv threadpool instead, leaving the event loop free.
+const scrypt = promisify(crypto.scrypt);
+
+async function hashCode(code, salt) {
+  return (await scrypt(String(code), salt, 64)).toString('hex');
 }
-function verifyCode(code, salt, expectedHex) {
-  const a = Buffer.from(hashCode(code, salt), 'hex');
+async function verifyCode(code, salt, expectedHex) {
+  const a = Buffer.from(await hashCode(code, salt), 'hex');
   const b = Buffer.from(expectedHex, 'hex');
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 function newToken() {
   return crypto.randomBytes(32).toString('hex');
 }
-function findProfileByCode(db, code) {
-  return db.prepare('SELECT * FROM profiles').all()
-    .find(p => verifyCode(code, p.pass_salt, p.pass_hash)) || null;
+// Sequential rather than Promise.all: the threadpool is 4 wide by default so
+// parallel hashes only queue, and each profile carries its own salt, so there's
+// no way to skip the scan.
+async function findProfileByCode(db, code) {
+  for (const p of db.prepare('SELECT * FROM profiles').all()) {
+    if (await verifyCode(code, p.pass_salt, p.pass_hash)) return p;
+  }
+  return null;
 }
+
+// Passcodes are 4 digits and globally unique, so the whole space is 10,000 and
+// a handful of those are live — brute force was purely a matter of patience.
+// Ten tries per IP per 15 minutes, then a 15-minute cooling-off; a successful
+// login clears the counter, so normal use never trips it.
+const loginLimiter = rateLimit({ windowMs: 15 * 60_000, max: 10, blockMs: 15 * 60_000 });
 function publicProfile(p) {
   return { id: p.id, name: p.name, accent_color: p.accent_color, is_admin: !!p.is_admin };
 }
@@ -48,15 +68,16 @@ router.get('/status', (req, res) => {
 });
 
 // POST /api/auth/login { passcode } — public
-router.post('/login', (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { passcode } = req.body;
     if (!isValidCode(passcode)) return res.status(400).json({ error: 'Passcode must be 4 digits' });
 
     const db = getDb();
-    const profile = findProfileByCode(db, passcode);
+    const profile = await findProfileByCode(db, passcode);
     if (!profile) return res.status(404).json({ error: 'No profile for this code' });
 
+    res.locals.clearRateLimit?.();   // a real login shouldn't count toward a lockout
     res.json({ token: createSession(db, profile.id), profile: publicProfile(profile) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -64,7 +85,9 @@ router.post('/login', (req, res) => {
 });
 
 // POST /api/auth/profiles { name, passcode, accent_color } — public (create)
-router.post('/profiles', (req, res) => {
+// Rate-limited too: it runs the same per-profile scrypt scan to reject a
+// taken code, so it's the same DoS lever as /login if left open.
+router.post('/profiles', loginLimiter, async (req, res) => {
   try {
     const { name, passcode, accent_color } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
@@ -74,15 +97,16 @@ router.post('/profiles', (req, res) => {
     }
 
     const db = getDb();
-    if (findProfileByCode(db, passcode)) {
+    if (await findProfileByCode(db, passcode)) {
       return res.status(409).json({ error: 'That code is already taken — pick another' });
     }
 
     const wasFirst = countProfiles(db) === 0;
     const salt = crypto.randomBytes(16).toString('hex');
+    const hash = await hashCode(passcode, salt);
     const result = db.prepare(
       'INSERT INTO profiles (name, accent_color, pass_hash, pass_salt) VALUES ($n, $c, $h, $s)'
-    ).run({ n: name.trim(), c: accent_color || '#c8b8ff', h: hashCode(passcode, salt), s: salt });
+    ).run({ n: name.trim(), c: accent_color || '#c8b8ff', h: hash, s: salt });
 
     const id = result.lastInsertRowid;
     seedProfileDefaults(db, id);
@@ -92,6 +116,7 @@ router.post('/profiles', (req, res) => {
     }
 
     const profile = db.prepare('SELECT * FROM profiles WHERE id = $id').get({ id });
+    res.locals.clearRateLimit?.();
     res.status(201).json({ token: createSession(db, id), profile: publicProfile(profile) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -129,20 +154,23 @@ router.patch('/me', requireProfile, (req, res) => {
 });
 
 // POST /api/auth/me/passcode { newPasscode }
-router.post('/me/passcode', requireProfile, (req, res) => {
+router.post('/me/passcode', requireProfile, async (req, res) => {
   try {
     const { newPasscode } = req.body;
     if (!isValidCode(newPasscode)) return res.status(400).json({ error: 'Passcode must be 4 digits' });
 
     const db = getDb();
     const others = db.prepare('SELECT * FROM profiles WHERE id != $id').all({ id: req.profileId });
-    if (others.some(p => verifyCode(newPasscode, p.pass_salt, p.pass_hash))) {
-      return res.status(409).json({ error: 'That code is already taken' });
+    for (const p of others) {
+      if (await verifyCode(newPasscode, p.pass_salt, p.pass_hash)) {
+        return res.status(409).json({ error: 'That code is already taken' });
+      }
     }
 
     const salt = crypto.randomBytes(16).toString('hex');
+    const hash = await hashCode(newPasscode, salt);
     db.prepare('UPDATE profiles SET pass_hash = $h, pass_salt = $s WHERE id = $id')
-      .run({ h: hashCode(newPasscode, salt), s: salt, id: req.profileId });
+      .run({ h: hash, s: salt, id: req.profileId });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

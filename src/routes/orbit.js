@@ -12,12 +12,17 @@ const router = express.Router();
 const ORBIT_TZ = process.env.ORBIT_TZ?.trim() || 'Pacific/Auckland';
 const isoInTz = (date, tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(date);
 
-// Admin feed for the Orbit dashboard. Open by default (single-admin use); set
-// ORBIT_API_KEY in the environment to require `X-API-Key` / Bearer once you want
-// to lock it down — no code change needed.
+// Admin feed for the Orbit dashboard: every profile's name, goals, and today's
+// and yesterday's intake. Requires ORBIT_API_KEY as `X-API-Key` or Bearer.
+//
+// Fails CLOSED when the variable is missing. It used to `return next()` in that
+// case, so a deploy that forgot the variable published all of the above to
+// anyone who found the URL, silently and with nothing to notice.
 router.use((req, res, next) => {
   const required = process.env.ORBIT_API_KEY?.trim();
-  if (!required) return next();
+  if (!required) {
+    return res.status(503).json({ error: 'Orbit feed is not configured (ORBIT_API_KEY unset)' });
+  }
   const auth = req.headers['authorization'];
   const key = req.headers['x-api-key']
     || (auth?.startsWith('Bearer ') ? auth.slice(7) : null);

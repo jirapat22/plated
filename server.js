@@ -34,6 +34,11 @@ const connectionsRoutes = require('./src/routes/connections');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Railway terminates TLS at its proxy, so without this every request arrives
+// with the proxy's address and the per-IP login limiter would treat the whole
+// internet as one client — one attacker would lock everybody out.
+app.set('trust proxy', 1);
+
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '256kb' }));
 

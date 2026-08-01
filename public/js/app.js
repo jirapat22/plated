@@ -307,6 +307,12 @@ async function submitLogin() {
     if (String(err.message).toLowerCase().includes('no profile')) {
       showCreate(code);          // offer to create a profile with this code
     } else {
+      // A lockout (429) looks identical to a wrong code otherwise — same shake,
+      // no explanation — so say what happened rather than letting someone keep
+      // retrying a code that's actually correct.
+      if (err.status === 429) {
+        document.getElementById('lock-subtitle').textContent = err.message;
+      }
       setDots(code.length, 'error');
       shakeDots();
     }

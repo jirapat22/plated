@@ -4,6 +4,7 @@ import { setEnergyUnit, fmtE, unitLabel, toKcal } from '../utils/energy.js';
 import { submitReport }              from '../utils/bugReport.js';
 import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
 import { localDate }                 from '../utils/date.js';
+import { estimateTdee }              from '../utils/stats.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -862,13 +863,6 @@ const ACTIVITY = [
   { k: '1.725', label: 'Very active',  hint: 'training 6–7×/week' },
   { k: '1.9',   label: 'Athlete',      hint: 'twice a day, or physical job' },
 ];
-
-// Mifflin-St Jeor. Returns null until every input it needs is present.
-export function estimateTdee({ weightKg, heightCm, age, sex, activity }) {
-  if (!(weightKg > 0) || !(heightCm > 0) || !(age > 0) || !activity) return null;
-  const bmr = 10 * weightKg + 6.25 * heightCm - 5 * age + (sex === 'female' ? -161 : 5);
-  return Math.round(bmr * activity);
-}
 
 function openTdeeEstimator(s, onUse) {
   showSheet(content => {

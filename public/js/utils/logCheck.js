@@ -32,9 +32,15 @@ export function classifyDay(day, goal, todayISO) {
   // Don't judge today or the future — still being logged.
   if (todayISO && day.date && day.date >= todayISO) return LOG_COMPLETE;
 
+  // The calorie floor is checked BEFORE the meal-count shortcut. It used to run
+  // after, so three 100-kcal snacks counted as a fully-logged day: it held a
+  // streak together, and — the part that actually costs you — passed the
+  // !isFlagged filter into the 28-day intake average behind Trends' real-
+  // maintenance estimate, dragging that estimate down. Days above the floor are
+  // unaffected, so this only catches the pathological case.
+  if (goal > 0 && cals <  STRONG_FRAC   * goal) return LOG_STRONG;
   if (meals >= FULL_MEALS) return LOG_COMPLETE;
   if (goal > 0 && cals >= COMPLETE_FRAC * goal) return LOG_COMPLETE;
-  if (goal > 0 && cals <  STRONG_FRAC   * goal) return LOG_STRONG;
   return LOG_INCOMPLETE;
 }
 

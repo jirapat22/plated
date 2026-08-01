@@ -35,6 +35,17 @@ function trendAsOf(entries, iso, windowStart, win) {
 // Smoothed rather than raw on purpose: a raw Monday-to-Sunday diff reports a
 // salty last meal as fat gained. `entries`: [[isoDate, kg], …] ascending, one
 // per date. Returns null when either endpoint has no weigh-in to stand on.
+// Mifflin-St Jeor resting burn × an activity multiplier. Lives here rather than
+// inline in the settings view so it can be imported and tested directly — it was
+// previously exported from a view nothing imports, which meant the tests
+// exercised a copy of the formula instead of the shipped one.
+// Null until every input it needs is present, which is what disables the button.
+export function estimateTdee({ weightKg, heightCm, age, sex, activity }) {
+  if (!(weightKg > 0) || !(heightCm > 0) || !(age > 0) || !(activity > 0)) return null;
+  const bmr = 10 * weightKg + 6.25 * heightCm - 5 * age + (sex === 'female' ? -161 : 5);
+  return Math.round(bmr * activity);
+}
+
 export function weeklyTrendChange(entries, monday, win = 7) {
   const end  = trendAsOf(entries, shift(monday, 6),  monday, win);
   const prev = trendAsOf(entries, shift(monday, -1), shift(monday, -7), win);
