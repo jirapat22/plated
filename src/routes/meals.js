@@ -347,7 +347,11 @@ router.patch('/entries/:id', (req, res) => {
     `).get({ id, pid: req.profileId });
     if (!entry) return res.status(404).json({ error: 'Entry not found' });
 
+    // An entry can reference a food that's since gone (or was never set, e.g. a
+    // batch portion restored without its backing food). calcMacros dereferences
+    // it, so guard here rather than throwing a 500 the caller can't act on.
     const food = db.prepare('SELECT * FROM foods WHERE id = $id').get({ id: entry.food_id });
+    if (!food) return res.status(409).json({ error: "That food no longer exists — delete this entry and re-add it" });
     const macros = calcMacros(food, quantity_g);
 
     db.prepare(`
