@@ -41,14 +41,23 @@ async function sendToOrbit({ type, message, stack, context, created_at }) {
 }
 
 // Was an identical (source, message, stack) report stored in the last 5 minutes?
+// created_at is stored as ISO-8601 ('2026-08-06T09:35:12.429Z') but this used to
+// compare it against datetime('now', …), which renders '2026-08-06 09:30:12' —
+// same day, space instead of 'T'. String comparison put 'T' (0x54) above ' '
+// (0x20), so ANY earlier report from the same UTC day matched: a 5-minute window
+// silently became a whole day, and the second occurrence of a real recurring bug
+// was swallowed with a 202 instead of reaching Orbit. Compare ISO against ISO.
 function isDuplicate(db, source, message, stack) {
   return !!db.prepare(`
     SELECT 1 FROM bug_reports
     WHERE source = $source AND message = $message
       AND IFNULL(stack,'') = IFNULL($stack,'')
-      AND created_at >= datetime('now', '-5 minutes')
+      AND created_at >= $since
     LIMIT 1
-  `).get({ source, message, stack: stack ?? null });
+  `).get({
+    source, message, stack: stack ?? null,
+    since: new Date(Date.now() - 5 * 60_000).toISOString(),
+  });
 }
 
 // Store a report locally, then try to forward it to Orbit (best-effort).

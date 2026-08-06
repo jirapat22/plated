@@ -46,13 +46,17 @@ app.use(express.json({ limit: '256kb' }));
 app.get('/api/orbit-summary', (req, res) => {
   try {
     const { getDb } = require('./src/db');
+    const { todayLocal } = require('./src/utils/tz');
+    // ms.date is a LOCAL calendar day (the client sends its own localDate()).
+    // date('now') is UTC, so this compared a local day against a UTC one and
+    // served yesterday's totals as "Today" for the whole NZ morning.
     const row = getDb().prepare(`
       SELECT COALESCE(SUM(me.calories), 0) AS calories,
              COALESCE(SUM(me.protein),  0) AS protein
       FROM meal_entries me
       JOIN meal_sessions ms ON ms.id = me.meal_session_id
-      WHERE ms.date = date('now')
-    `).get();
+      WHERE ms.date = $today
+    `).get({ today: todayLocal() });
     const logged = row.calories > 0 || row.protein > 0;
     res.json({
       label:     'Today',

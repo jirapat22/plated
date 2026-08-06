@@ -244,7 +244,10 @@ function migrateSchema(db) {
   // Orbit it has no further use here. Nothing pruned it, so on a volume shared
   // with the food database it just grew. Delivered rows older than 90 days go;
   // anything still unsent is kept regardless of age so it can retry.
-  db.prepare("DELETE FROM bug_reports WHERE orbit_sent = 1 AND created_at < datetime('now', '-90 days')").run();
+  // Cutoff built in JS: created_at is ISO ('…T…Z') and datetime('now', …) is
+  // not, so the two formats don't compare correctly as strings.
+  db.prepare('DELETE FROM bug_reports WHERE orbit_sent = 1 AND created_at < $cutoff')
+    .run({ cutoff: new Date(Date.now() - 90 * 864e5).toISOString() });
 
   // Backfill PROFILE_DEFAULTS onto profiles that already existed when a new
   // default was introduced. seedProfileDefaults only ever ran at profile

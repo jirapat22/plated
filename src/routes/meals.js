@@ -161,10 +161,10 @@ router.get('/summary', (req, res) => {
       LEFT JOIN meal_entries me ON me.meal_session_id = ms.id
       LEFT JOIN daily_overrides ovr
         ON ovr.profile_id = ms.profile_id AND ovr.date = ms.date AND ovr.key = 'log_status'
-      WHERE ms.profile_id = $pid ${all ? '' : "AND ms.date >= date('now', $offset)"}
+      WHERE ms.profile_id = $pid ${all ? '' : 'AND ms.date >= date($today, $offset)'}
       GROUP BY ms.date
       ORDER BY ms.date ASC
-    `).all(all ? { pid } : { offset: `-${days} days`, pid });
+    `).all(all ? { pid } : { offset: `-${days} days`, today: todayLocal(), pid });
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
