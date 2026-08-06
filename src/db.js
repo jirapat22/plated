@@ -232,6 +232,12 @@ function migrateSchema(db) {
     }
   }
 
+  // bug_reports is an outbound buffer, not an archive: once a row has reached
+  // Orbit it has no further use here. Nothing pruned it, so on a volume shared
+  // with the food database it just grew. Delivered rows older than 90 days go;
+  // anything still unsent is kept regardless of age so it can retry.
+  db.prepare("DELETE FROM bug_reports WHERE orbit_sent = 1 AND created_at < datetime('now', '-90 days')").run();
+
   // Backfill PROFILE_DEFAULTS onto profiles that already existed when a new
   // default was introduced. seedProfileDefaults only ever ran at profile
   // creation, so every key added later (macro_mode, fat_multiplier, …) was
@@ -255,6 +261,11 @@ function ensureIndexes(db) {
     CREATE INDEX IF NOT EXISTS idx_meal_sessions_pid_date ON meal_sessions(profile_id, date);
     CREATE INDEX IF NOT EXISTS idx_weight_log_pid_date    ON weight_log(profile_id, date);
     CREATE INDEX IF NOT EXISTS idx_foods_name             ON foods(name);
+    -- /api/foods/recent groups every one of a profile's entries by food_id;
+    -- without this it's a full meal_entries scan that grows with the log.
+    CREATE INDEX IF NOT EXISTS idx_meal_entries_food      ON meal_entries(food_id);
+    -- The bug-report dedupe filters on source + created_at on every capture.
+    CREATE INDEX IF NOT EXISTS idx_bug_reports_recent     ON bug_reports(source, created_at);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_connect_code ON profiles(connect_code) WHERE connect_code IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_profile_connections_a  ON profile_connections(profile_a_id);
     CREATE INDEX IF NOT EXISTS idx_profile_connections_b  ON profile_connections(profile_b_id);

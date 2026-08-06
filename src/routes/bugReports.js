@@ -1,8 +1,18 @@
 const express = require('express');
 const { getDb } = require('../db');
+const { rateLimit } = require('../middleware/rateLimit');
 
 const router = express.Router();
 const APP_NAME = 'plated';
+
+// This endpoint is unauthenticated by design (crash capture has to work before
+// login), and every accepted call both writes a row on the volume and fires an
+// outbound request to Orbit. Unlimited, that's storage growth and a request
+// amplifier pointed at Orbit. Dedupe alone didn't cover it: `source` comes from
+// the client, and the dedupe deliberately exempts 'manual', so anything
+// claiming to be manual bypassed it. Generous enough that a genuine error burst
+// still gets through — the client already caps itself at 25 per page load.
+const reportLimiter = rateLimit({ windowMs: 10 * 60_000, max: 40, blockMs: 10 * 60_000 });
 
 // Forward a report to the shared Orbit dashboard. Best-effort/fire-and-forget:
 // never throws, never blocks. No-ops if ORBIT_URL isn't configured.
@@ -73,7 +83,7 @@ async function captureReport({ source, type, message, stack, context }) {
 }
 
 // POST /api/bug-report — manual + frontend-automatic reports
-router.post('/', async (req, res) => {
+router.post('/', reportLimiter, async (req, res) => {
   try {
     const { source, type, message, stack, context } = req.body || {};
     const msg = typeof message === 'string' ? message.trim() : '';
@@ -97,7 +107,18 @@ router.post('/', async (req, res) => {
 
 // GET /api/bug-report/status — diagnose Orbit delivery. Never exposes the
 // secret (only its presence/length so you can compare to what Orbit expects).
-router.get('/status', (req, res) => {
+// Gated behind the same key as the Orbit feed: it names the Orbit deployment
+// host and reports whether the ingest secret is set, which is infrastructure
+// detail with no reason to be public. Nothing in the app calls it — it's a
+// hand-run diagnostic.
+router.get('/status', (req, res, next) => {
+  const required = process.env.ORBIT_API_KEY?.trim();
+  if (!required) return res.status(503).json({ error: 'Diagnostics not configured (ORBIT_API_KEY unset)' });
+  const auth = req.headers['authorization'];
+  const key = req.headers['x-api-key'] || (auth?.startsWith('Bearer ') ? auth.slice(7) : null);
+  if (key?.trim() !== required) return res.status(401).json({ error: 'invalid or missing Orbit key' });
+  next();
+}, (req, res) => {
   try {
     const db = getDb();
     const base = process.env.ORBIT_URL?.trim() || null;
