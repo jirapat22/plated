@@ -48,7 +48,11 @@ export function renderFoods(container) {
     </div>
     <div style="padding:0 16px 10px;display:flex;gap:8px;align-items:center">
       <div class="search-tabs" id="foods-tabs" style="padding:0;flex:1;overflow-x:auto;flex-wrap:nowrap">
-        <button class="search-tab active" data-tab="all">All</button>
+        <!-- Labelled "All" but it serves /foods/recent — your 40 most-logged.
+             A fresh profile tapped it and read "No foods found" with ~4,800
+             seeded foods sitting right there. Cheapest honest fix: call it
+             what it is; the search box above reaches everything. -->
+        <button class="search-tab active" data-tab="all">🕐 Recent</button>
         <button class="search-tab" data-tab="favourites">★ Favourites</button>
         <button class="search-tab" data-tab="batches">🍱 Batches</button>
         <button class="search-tab" data-tab="custom">Custom</button>
@@ -93,7 +97,12 @@ export function renderFoods(container) {
 
   function renderList(list, rows) {
     if (rows.length === 0) {
-      list.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-text">No foods found</div></div>';
+      // "No foods found" on an empty Recent list reads as an empty database.
+      const blankRecent = currentTab === 'all' && !query.trim();
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>
+        <div class="empty-text">${blankRecent
+          ? 'Nothing logged yet<br><span style="font-size:12px;color:var(--text-faint)">Search above — thousands of foods are already in here</span>'
+          : 'No foods found'}</div></div>`;
       return;
     }
     list.innerHTML = '';

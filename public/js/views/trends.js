@@ -28,7 +28,15 @@ const CHART_DEFAULTS = {
   },
 };
 
-function destroyChart(id) { Chart.getChart(id)?.destroy(); }
+// Chart.js comes from a CDN and the service worker deliberately doesn't cache
+// cross-origin, so offline it's simply absent — and every one of these threw
+// "Chart is not defined", which took the whole Trends render down with it. The
+// verdict, weekly bars, streak and review list need no charts at all, so guard
+// here and let the rest of the page stand.
+// ponytail: guarding beats vendoring ~550kb of Chart.js + html5-qrcode into the
+// repo; self-host if offline charts ever actually matter.
+const haveChart = () => typeof Chart !== 'undefined';
+function destroyChart(id) { if (haveChart()) Chart.getChart(id)?.destroy(); }
 
 // "set target" in the verdict card was inert text with no way to act on it —
 // jump to Settings and land right on the field instead of leaving the user
@@ -67,6 +75,13 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
   destroyChart(id);
   const ctx = document.getElementById(id);
   if (!ctx) return;
+  if (!haveChart()) {
+    ctx.replaceWith(Object.assign(document.createElement('div'), {
+      className: 'chart-offline',
+      textContent: 'Chart needs a connection',
+    }));
+    return;
+  }
 
   const datasets = [{
     data,

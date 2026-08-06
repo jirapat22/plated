@@ -342,7 +342,10 @@ export function openPortion(batch, onDone, opts = {}) {
         <select class="input" id="p-meal" style="margin-bottom:14px"></select>`}
         <label class="form-label">How much are you eating?</label>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-          <input class="input" id="p-g" type="text" inputmode="decimal" value="220" style="flex:1"/>
+          <!-- 220 was a magic number that happily proposed more than existed
+               when a batch was nearly gone. Still arbitrary, but never more
+               than what's left. -->
+          <input class="input" id="p-g" type="text" inputmode="decimal" value="${Math.min(220, g0(batch.remaining_g))}" style="flex:1"/>
           <span style="color:var(--text-muted)">g</span>
         </div>
         <div id="p-cals" style="font-size:13px;color:var(--accent);font-weight:600;margin-bottom:16px"></div>
