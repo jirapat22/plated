@@ -179,6 +179,14 @@ function migrateSchema(db) {
   db.exec('DROP TABLE IF EXISTS meal_template_items');
   db.exec('DROP TABLE IF EXISTS meal_templates');
 
+  // `notes` predates this schema and nothing in the codebase has referenced it
+  // for as long as it's been here. Production had the table and zero rows.
+  db.exec('DROP TABLE IF EXISTS notes');
+
+  // Settings rows left behind by features that were removed. They're inert, but
+  // they ride along in every export and read as live config to anyone looking.
+  db.prepare("DELETE FROM profile_settings WHERE key IN ('water_goal_ml','tdee_suggestion_dismissed_at')").run();
+
   // Add nullable profile_id to data tables that predate multi-profile.
   // NULL marks "orphan" rows adopted by the first profile created.
   for (const t of ['meal_sessions', 'weight_log']) {

@@ -14,7 +14,7 @@
 
 export const LOG_EMPTY      = 'empty';
 export const LOG_COMPLETE   = 'complete';
-export const LOG_INCOMPLETE = 'incomplete';
+const LOG_INCOMPLETE = 'incomplete';
 export const LOG_STRONG     = 'strong';
 
 const COMPLETE_FRAC = 0.60;   // >= 60% of goal counts as a full day

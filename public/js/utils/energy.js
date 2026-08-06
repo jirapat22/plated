@@ -3,7 +3,6 @@
 let _unit = 'kcal'; // 'kcal' | 'kj'
 
 export function setEnergyUnit(u) { _unit = u; }
-export function getEnergyUnit()  { return _unit; }
 export function unitLabel()      { return _unit === 'kj' ? 'kJ' : 'kcal'; }
 
 // Convert stored kcal value to display unit

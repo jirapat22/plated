@@ -69,7 +69,7 @@ function writeOutbox(q) {
 function enqueue(body) { const q = readOutbox(); q.push(body); writeOutbox(q); }
 
 // Retry queued manual reports; keep any that still fail.
-export async function flushOutbox() {
+async function flushOutbox() {
   const q = readOutbox();
   if (!q.length) return;
   const remaining = [];
@@ -114,16 +114,6 @@ export function reportApiError({ method = 'GET', path = '', status = 0, message 
   const label = `API ${status || 'network error'} on ${method} ${path}${message ? ` — ${message}` : ''}`;
   autoPost({ source: 'frontend', type: 'bug_report', message: label, stack: null,
     context: baseContext({ kind: 'api_error', method, path, status }) });
-}
-
-// Report an error you CAUGHT but that shouldn't normally happen. Use inside a
-// catch block instead of silently swallowing:  catch (e) { reportHandled(e, {where:'foo'}); }
-// Don't use for expected control-flow (optional fetches, private-mode storage…).
-export function reportHandled(err, ctx = {}) {
-  const message = err?.message || (typeof err === 'string' ? err : 'Handled error');
-  if (!shouldSend(`handled:${message}@${ctx.where || location.pathname}`)) return;
-  autoPost({ source: 'frontend', type: 'bug_report', message, stack: err?.stack || null,
-    context: baseContext({ ...ctx, kind: 'handled' }) });
 }
 
 // Runtime invariant: report (but don't throw) when something that must always

@@ -186,12 +186,6 @@ img { display: block; max-width: 100%; }
 .btn:disabled { opacity: 0.4; pointer-events: none; }
 
 /* ─── Calorie Ring ───────────────────────────────────────── */
-.calorie-ring-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
 .calorie-ring {
   width: 140px; height: 140px;
   transform: rotate(-90deg);
@@ -261,40 +255,6 @@ img { display: block; max-width: 100%; }
 }
 
 /* ─── Macro Bar ──────────────────────────────────────────── */
-.macro-bar-outer {
-  height: 10px;
-  border-radius: var(--radius-full);
-  background: var(--surface-2);
-  overflow: hidden;
-  display: flex;
-}
-.macro-seg {
-  height: 100%;
-  transition: width 600ms ease-out;
-}
-.macro-seg.protein { background: var(--protein); }
-.macro-seg.carbs   { background: var(--carbs); }
-.macro-seg.fat     { background: var(--fat); }
-.macro-seg.fiber   { background: var(--fiber); }
-
-.macro-legend {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-}
-.macro-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-}
-.macro-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.macro-item .num { font-size: 13px; }
 
 /* Confirms a row just got added when the list may be off-screen (batch
    builder on a phone) — the highlight fades out on its own. */
@@ -381,29 +341,6 @@ img { display: block; max-width: 100%; }
 .meal-entry-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .meal-entry-kcal { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .meal-entry-sub span { white-space: nowrap; }
-.meal-entry-dots {
-  display: flex;
-  gap: 3px;
-  margin-top: 4px;
-}
-.macro-mini-dot {
-  width: 6px; height: 6px;
-  border-radius: 50%;
-}
-.meal-entry-delete-reveal {
-  position: absolute;
-  right: 0; top: 0; bottom: 0;
-  width: 72px;
-  background: var(--error);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  transform: translateX(72px);
-  transition: transform 0.2s;
-}
 .meal-entry.swiped .meal-entry-delete-reveal { transform: translateX(0); }
 .meal-session-add {
   width: 100%;
@@ -611,7 +548,6 @@ img { display: block; max-width: 100%; }
 .food-list-info { flex: 1; min-width: 0; }
 .food-list-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .food-list-sub  { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.food-list-kcal { font-size: 13px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 /* ─── Quantity Sheet ─────────────────────────────────────── */
 .qty-food-name { font-size: 18px; font-weight: 700; padding: 4px 16px 2px; }
@@ -724,14 +660,6 @@ img { display: block; max-width: 100%; }
 .cal-day.future.selected .cal-day-num { color: var(--text); }
 
 /* ─── Trends ─────────────────────────────────────────────── */
-.chart-card { padding: 16px; position: relative; height: 200px; }
-.streak-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-.streak-num { font-size: 40px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
-.streak-label { font-size: 13px; color: var(--text-muted); }
 
 /* ─── Toast ──────────────────────────────────────────────── */
 .toast-container {
@@ -847,7 +775,6 @@ img { display: block; max-width: 100%; }
 .form-group { margin-bottom: 16px; }
 .form-label { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; display: block; letter-spacing: 0.06em; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.form-hint { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
 
 /* ─── Quantity mode buttons ──────────────────────────────── */
 .qty-mode-btn {
@@ -877,7 +804,6 @@ img { display: block; max-width: 100%; }
 }
 .settings-row:last-child { border-bottom: none; }
 .settings-row-label { font-size: 14px; font-weight: 500; }
-.settings-row-value { font-size: 14px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .settings-row-input {
   height: 36px;
   width: 80px;
@@ -964,16 +890,6 @@ img { display: block; max-width: 100%; }
 .nl-details:not([open]) .nl-chev { transform: rotate(-90deg); }
 
 /* ─── Summary Cards Row ──────────────────────────────────── */
-.summary-row {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 16px;
-  gap: 16px;
-}
-.macros-section {
-  width: 100%;
-}
 .macro-totals-row {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -985,21 +901,8 @@ img { display: block; max-width: 100%; }
 .macro-total-lbl { font-size: 11px; margin-top: 2px; }
 
 /* ─── IronLog callout banner inside Today ────────────────── */
-.ironlog-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: var(--radius-full);
-  background: var(--accent-dim);
-  color: var(--accent);
-  border: 1px solid rgba(200,184,255,.2);
-}
 
 /* ─── Weight Form ────────────────────────────────────────── */
-.weight-list { list-style: none; }
 .weight-entry {
   display: flex;
   align-items: center;
@@ -1007,7 +910,6 @@ img { display: block; max-width: 100%; }
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
 }
-.weight-val { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .weight-date { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .weight-del {
   color: var(--text-faint);
@@ -1061,39 +963,6 @@ img { display: block; max-width: 100%; }
 }
 
 /* ─── Notes / Ideas checklist ────────────────────────────── */
-.note-list { list-style: none; }
-.note-entry {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
-}
-.note-entry:last-child { border-bottom: none; }
-.note-check {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  accent-color: var(--accent);
-}
-.note-text {
-  flex: 1;
-  font-size: 14px;
-  line-height: 1.4;
-  word-break: break-word;
-}
-.note-entry.done .note-text {
-  text-decoration: line-through;
-  color: var(--text-faint);
-}
-.note-del {
-  color: var(--text-faint);
-  padding: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  transition: color 0.15s;
-}
-.note-del:active { color: var(--error); }
 
 /* ─── Favourite star ─────────────────────────────────────── */
 .fav-btn { color: var(--text-faint); padding: 6px; transition: color 0.15s; }
@@ -1251,14 +1120,6 @@ img { display: block; max-width: 100%; }
 }
 .stat-num { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .stat-lbl { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-
-.gp-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 0; gap: 12px;
-}
-.gp-row + .gp-row { border-top: 1px solid var(--border); }
-.gp-lbl { font-size: 13px; color: var(--text-muted); }
-.gp-val { font-size: 15px; font-weight: 700; text-align: right; }
 
 .review-row {
   display: flex; align-items: center; justify-content: space-between;
