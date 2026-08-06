@@ -36,6 +36,21 @@ async function findProfileByCode(db, code) {
   return null;
 }
 
+// Serialises the passcode check-then-write sequences. Ordering alone can't make
+// them safe: findProfileByCode reads the profile list once and then `await`s a
+// hash per row, so its snapshot is already stale by the time it answers — two
+// concurrent creates both saw "that code is free" and both wrote, and since
+// findProfileByCode returns the first match, the loser became permanently
+// unreachable with no recovery path. scryptSync hid this by being atomic.
+// These are rare, human-initiated operations, so a plain in-process lock costs
+// nothing real. Single instance, so a process-wide lock is sufficient.
+let passcodeLock = Promise.resolve();
+function withPasscodeLock(fn) {
+  const run = passcodeLock.then(fn, fn);          // run regardless of the previous outcome
+  passcodeLock = run.then(() => {}, () => {});    // and never let a rejection break the chain
+  return run;
+}
+
 // Passcodes are 4 digits and globally unique, so the whole space is 10,000 and
 // a handful of those are live — brute force was purely a matter of patience.
 // Ten tries per IP per 15 minutes, then a 15-minute cooling-off; a successful
@@ -97,23 +112,26 @@ router.post('/profiles', loginLimiter, async (req, res) => {
     }
 
     const db = getDb();
-    if (await findProfileByCode(db, passcode)) {
-      return res.status(409).json({ error: 'That code is already taken — pick another' });
-    }
 
-    const wasFirst = countProfiles(db) === 0;
+    // Hashing is the slow part and needs no exclusivity — do it before taking
+    // the lock so concurrent creates only serialise over the check and write.
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = await hashCode(passcode, salt);
-    const result = db.prepare(
-      'INSERT INTO profiles (name, accent_color, pass_hash, pass_salt) VALUES ($n, $c, $h, $s)'
-    ).run({ n: name.trim(), c: accent_color || '#c8b8ff', h: hash, s: salt });
 
-    const id = result.lastInsertRowid;
-    seedProfileDefaults(db, id);
-    if (wasFirst) {
-      adoptOrphanData(db, id);                          // inherits legacy single-user data
-      db.prepare('UPDATE profiles SET is_admin = 1 WHERE id = $id').run({ id }); // first profile = admin
-    }
+    const id = await withPasscodeLock(async () => {
+      if (await findProfileByCode(db, passcode)) return null;   // code taken
+      const wasFirst = countProfiles(db) === 0;
+      const newId = db.prepare(
+        'INSERT INTO profiles (name, accent_color, pass_hash, pass_salt) VALUES ($n, $c, $h, $s)'
+      ).run({ n: name.trim(), c: accent_color || '#c8b8ff', h: hash, s: salt }).lastInsertRowid;
+      seedProfileDefaults(db, newId);
+      if (wasFirst) {
+        adoptOrphanData(db, newId);                       // inherits legacy single-user data
+        db.prepare('UPDATE profiles SET is_admin = 1 WHERE id = $id').run({ id: newId }); // first = admin
+      }
+      return newId;
+    });
+    if (id == null) return res.status(409).json({ error: 'That code is already taken — pick another' });
 
     const profile = db.prepare('SELECT * FROM profiles WHERE id = $id').get({ id });
     res.locals.clearRateLimit?.();
@@ -160,17 +178,22 @@ router.post('/me/passcode', requireProfile, async (req, res) => {
     if (!isValidCode(newPasscode)) return res.status(400).json({ error: 'Passcode must be 4 digits' });
 
     const db = getDb();
-    const others = db.prepare('SELECT * FROM profiles WHERE id != $id').all({ id: req.profileId });
-    for (const p of others) {
-      if (await verifyCode(newPasscode, p.pass_salt, p.pass_hash)) {
-        return res.status(409).json({ error: 'That code is already taken' });
-      }
-    }
 
+    // Same lock as profile creation, for the same reason: two profiles claiming
+    // the same code concurrently would lock one of them out.
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = await hashCode(newPasscode, salt);
-    db.prepare('UPDATE profiles SET pass_hash = $h, pass_salt = $s WHERE id = $id')
-      .run({ h: hash, s: salt, id: req.profileId });
+
+    const taken = await withPasscodeLock(async () => {
+      const others = db.prepare('SELECT * FROM profiles WHERE id != $id').all({ id: req.profileId });
+      for (const p of others) {
+        if (await verifyCode(newPasscode, p.pass_salt, p.pass_hash)) return true;
+      }
+      db.prepare('UPDATE profiles SET pass_hash = $h, pass_salt = $s WHERE id = $id')
+        .run({ h: hash, s: salt, id: req.profileId });
+      return false;
+    });
+    if (taken) return res.status(409).json({ error: 'That code is already taken' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
