@@ -272,7 +272,10 @@ router.post('/sync', async (req, res) => {
     const macros = recalcMacroGoals(db, pid);
     if (macros) Object.assign(updates, { protein_goal: macros.protein, carb_goal: macros.carbs, fat_goal: macros.fat });
 
-    res.json({ synced: true, updates, profile_raw: profileData });
+    // profile_raw (IronLog's entire upstream payload) used to ride along here.
+    // Nothing consumed it — /api/ironlog/raw already exists for inspection —
+    // so it was upstream data echoed to the client for no reason.
+    res.json({ synced: true, updates });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

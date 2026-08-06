@@ -670,15 +670,11 @@ export function renderSettings(container) {
         setTimeout(() => load(), 1200);
       } catch (err) {
         statusEl.style.color = 'var(--error)';
-        // Try to parse the error body for profile_raw hint
-        let detail = err.message;
-        try {
-          const raw = JSON.parse(err.message.match(/\{.*\}/s)?.[0] || '{}');
-          if (raw.profile_raw) {
-            detail = `IronLog profile fields: ${Object.keys(raw.profile_raw).join(', ')}`;
-          }
-        } catch { /* ignore */ }
-        statusEl.innerHTML = `✕ ${err.message}<br/><span style="color:var(--text-faint);font-size:11px">${detail}<br/>Enter TDEE manually above instead.</span>`;
+        // This used to dig a `profile_raw` object out of the error text to list
+        // IronLog's field names. The error body only ever carries `error`, so
+        // the parse never matched — it printed err.message twice. Use the
+        // Inspect button below for the raw payload.
+        statusEl.innerHTML = `✕ ${esc(err.message)}<br/><span style="color:var(--text-faint);font-size:11px">Enter TDEE manually above, or tap “Inspect raw IronLog data”.</span>`;
       } finally {
         btn.disabled = false;
         btn.textContent = '⟳ Sync from IronLog';

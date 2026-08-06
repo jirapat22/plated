@@ -63,6 +63,13 @@ export function openBarcodeScanner(onScan) {
       hideSheet();
     });
 
+    // Tapping the backdrop closes the sheet through showSheet's own handler,
+    // which knows nothing about the camera. Without this the stream stays live
+    // — indicator light on, battery draining — and the next scan builds a
+    // second decoder over a container that no longer exists.
+    document.getElementById('sheet-overlay')
+      .addEventListener('click', stopScanner, { once: true });
+
     document.getElementById('scan-manual').addEventListener('click', () => {
       stopScanner();
       const barcode = prompt('Enter barcode number:');
