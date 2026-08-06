@@ -1,7 +1,7 @@
 import { api }             from '../api.js';
 import { renderMacroBar }   from '../components/macroBar.js';
 import { fmtE, unitLabel }  from '../utils/energy.js';
-import { openFoodEntry, renderMealCard, lazySession } from './log.js';
+import { openFoodEntry, openQuickLog, renderMealCard, lazySession } from './log.js';
 import { localDate }        from '../utils/date.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -285,21 +285,36 @@ export function renderHistory(container) {
       });
     }
 
-    // ── Add meal to past date — not available while viewing someone else ──
+    // ── Add to a past date — not available while viewing someone else ──
+    // Quick Log used to live only on meal cards that already existed, so a day
+    // with nothing logged had no way to record a rough "ate out" meal: the only
+    // button opened food search. Today has both side by side; this matches it.
+    // The day's date is already the heading on the card above, so the buttons
+    // don't need to repeat it and can sit two-up.
     if (!viewed) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px;margin:8px 0 16px';
+
       const addBtn = document.createElement('button');
       addBtn.className = 'new-meal-btn';
-      addBtn.style.margin = '8px 0 16px';
-      addBtn.style.width = '100%';
+      addBtn.style.cssText = 'margin:0;flex:1';
       addBtn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
-        Add Meal to ${fmtDateFull(date)}
-      `;
+        Add Meal`;
       addBtn.addEventListener('click', () =>
         openFoodEntry(lazySession(date), () => refresh(date)));
-      el.appendChild(addBtn);
+
+      const qlBtn = document.createElement('button');
+      qlBtn.className = 'new-meal-btn';
+      qlBtn.style.cssText = 'margin:0;flex:1;color:var(--carbs);border-color:var(--carbs)44';
+      qlBtn.textContent = '⚡ Quick Log';
+      qlBtn.addEventListener('click', () =>
+        openQuickLog(lazySession(date), () => refresh(date)));
+
+      row.append(addBtn, qlBtn);
+      el.appendChild(row);
     }
   }
 
