@@ -4,7 +4,7 @@ import { localDate }                  from '../utils/date.js';
 import { showToast, navigateTo }      from '../app.js';
 import { openFoodEntry, lazySession } from './log.js';
 import { classifyDay, isFlagged, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY } from '../utils/logCheck.js';
-import { movingAvg, weeklyTrendChange, etaWeeks } from '../utils/stats.js';
+import { movingAvg, weeklyTrendChange, etaWeeks, maintenanceShortfall } from '../utils/stats.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -469,6 +469,16 @@ export function renderTrends(container) {
     const realTDEE = (avgCal != null && slopePerDay != null && rateReliable)
       ? Math.round((avgCal - slopePerDay * 7700) / 10) * 10 : null;
 
+    // Does the measured figure square with your size and training? Only
+    // answerable once the TDEE estimator has stored height/age/sex/activity.
+    const shortfall = maintenanceShortfall(realTDEE, {
+      weightKg: curWeight,
+      heightCm: parseFloat(settings.height_cm) || null,
+      age:      settings.birth_year ? new Date().getFullYear() - parseInt(settings.birth_year) : null,
+      sex:      settings.sex,
+      activity: parseFloat(settings.activity_level) || null,
+    });
+
     const haveVerdict = wWinVals.length >= 4 && spanDays >= 10 && validForAvg.length >= 5 && weeklyRate != null;
 
     let verdictGood = null, verdictSub = '', weeksToTarget = null;
@@ -641,6 +651,7 @@ export function renderTrends(container) {
             <div class="stat-cell${!targetWeight ? ' set-target-cell' : ''}"${!targetWeight ? ' style="cursor:pointer"' : ''}><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl"${!targetWeight ? ' style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px"' : ''}>${targetWeight ? 'to ' + targetWeight + ' kg' : 'set target'}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">${weeksToTarget ? 'at this pace' : (targetWeight ? 'not at this pace' : '&nbsp;')}</div></div>
           </div>
           ${staleDays >= 4 ? `<div style="font-size:11px;color:var(--warning);margin-top:10px">Newest weigh-in is ${staleDays} days old — nothing since then counts toward this.</div>` : ''}
+          ${shortfall ? `<div style="font-size:11px;color:var(--warning);margin-top:10px">Your size and training predict about ${fmtE(shortfall.predicted)} ${ul} — measured maintenance is ${fmtE(shortfall.gap)} lower. That's usually under-logging, sometimes an over-stated activity level. Weigh your food for two weeks before cutting any lower.</div>` : ''}
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>${howWorkedOut}`
             : `<details class="nl-details" style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
                 <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">

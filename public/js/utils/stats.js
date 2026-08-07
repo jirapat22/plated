@@ -56,10 +56,32 @@ function trendAsOf(entries, iso, windowStart, win) {
 // previously exported from a view nothing imports, which meant the tests
 // exercised a copy of the formula instead of the shipped one.
 // Null until every input it needs is present, which is what disables the button.
+// Mifflin-St Jeor resting burn — what you'd spend doing nothing at all.
+function bmr({ weightKg, heightCm, age, sex }) {
+  if (!(weightKg > 0) || !(heightCm > 0) || !(age > 0)) return null;
+  return 10 * weightKg + 6.25 * heightCm - 5 * age + (sex === 'female' ? -161 : 5);
+}
+
 export function estimateTdee({ weightKg, heightCm, age, sex, activity }) {
-  if (!(weightKg > 0) || !(heightCm > 0) || !(age > 0) || !(activity > 0)) return null;
-  const bmr = 10 * weightKg + 6.25 * heightCm - 5 * age + (sex === 'female' ? -161 : 5);
-  return Math.round(bmr * activity);
+  const rest = bmr({ weightKg, heightCm, age, sex });
+  return rest != null && activity > 0 ? Math.round(rest * activity) : null;
+}
+
+// Measured maintenance is derived from logged intake, so it inherits that
+// intake's honesty. Against what your size and your OWN stated training load
+// predict, a large shortfall is the one signal separating "TDEE set too high"
+// from "under-logging" — otherwise indistinguishable in this data.
+//
+// Deliberately not a bare BMR × 1.2 "below sedentary" floor: that lands within
+// ~50 kcal of a real user here, so a centimetre of height would flip a
+// confident accusation on and off. Mifflin is a population average and
+// individuals vary ~±10%, so this stays silent under 300 kcal rather than
+// crying wolf on estimate error.
+export function maintenanceShortfall(realTDEE, body) {
+  const predicted = estimateTdee(body);
+  if (realTDEE == null || predicted == null) return null;
+  const gap = Math.round(predicted - realTDEE);
+  return gap >= 300 ? { predicted, gap } : null;
 }
 
 export function weeklyTrendChange(entries, monday, win = 7) {
