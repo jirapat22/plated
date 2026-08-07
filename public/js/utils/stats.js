@@ -10,6 +10,22 @@ export function movingAvg(arr, win = 7) {
   });
 }
 
+// Weeks until `targetWeight` at the current pace, or null when there's no
+// honest answer. `working` is the verdict itself: if the app is telling you the
+// plan isn't working, it has no business projecting an arrival date.
+//
+// The old floor was |rate| > 0.02 kg/wk, which is well inside the noise. A
+// -0.025 kg/wk fit — displayed, rounded, as "-0.02" — printed a confident
+// "~115w to 73 kg" directly beside OFF TRACK, and -0.019 would have shown
+// nothing at all. 0.1 kg/wk is the smallest pace a 4-week trend can actually
+// distinguish from a flat line.
+export function etaWeeks({ curWeight, targetWeight, weeklyRate, working }) {
+  if (!working || curWeight == null || targetWeight == null || weeklyRate == null) return null;
+  if (Math.abs(weeklyRate) < 0.1) return null;
+  const w = (curWeight - targetWeight) / -weeklyRate;   // <0 = moving away
+  return w > 0 && w < 104 ? w : null;                   // ponytail: 2y ceiling, past that "at this pace" means nothing
+}
+
 // Shift an ISO date by whole days. UTC throughout so the result depends only on
 // the string, never on the machine's timezone.
 const shift = (iso, n) => {

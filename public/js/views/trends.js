@@ -4,7 +4,7 @@ import { localDate }                  from '../utils/date.js';
 import { showToast, navigateTo }      from '../app.js';
 import { openFoodEntry, lazySession } from './log.js';
 import { classifyDay, isFlagged, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY } from '../utils/logCheck.js';
-import { movingAvg, weeklyTrendChange } from '../utils/stats.js';
+import { movingAvg, weeklyTrendChange, etaWeeks } from '../utils/stats.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -443,7 +443,15 @@ export function renderTrends(container) {
     const targetWeight = parseFloat(settings.target_weight_kg) || null;
     const cfgTdee      = parseFloat(settings.tdee) || null;
     const phase        = settings.phase || 'maintain';
-    const curWeight    = weightSorted.length ? weightSorted[weightSorted.length - 1][1] : null;
+    // Trend weight, not the last raw reading: one weigh-in carries the whole
+    // day-to-day water swing, and this feeds the ETA.
+    const curWeight    = weightSorted.length
+      ? movingAvg(weightSorted.map(([, v]) => v), 7).at(-1) : null;
+    // The verdict spans 4 weeks but never said how much of that had weigh-ins.
+    const lastWeighIn  = weightSorted.length ? weightSorted[weightSorted.length - 1][0] : null;
+    const staleDays    = lastWeighIn
+      ? Math.round((new Date(todayISO + 'T00:00:00') - new Date(lastWeighIn + 'T00:00:00')) / 86400000)
+      : null;
 
     // Weight trend slope (kg/day) — least-squares over the last 28 days of weigh-ins.
     const wWin = weightSorted.filter(([d]) => d >= win28);
@@ -477,10 +485,9 @@ export function renderTrends(container) {
           : (verdictGood ? `Gaining ${weeklyRate.toFixed(2)} kg/wk — your surplus is working.`
                          : 'Not gaining — intake is at or below maintenance.');
       }
-      if (rateReliable && targetWeight != null && curWeight != null && Math.abs(weeklyRate) > 0.02) {
-        const w = (curWeight - targetWeight) / (-weeklyRate);
-        if (w > 0 && w < 520) weeksToTarget = w;
-      }
+      weeksToTarget = etaWeeks({
+        curWeight, targetWeight, weeklyRate, working: verdictGood && rateReliable,
+      });
     }
     const etaLabel = weeksToTarget ? (() => {
       const d = new Date(); d.setDate(d.getDate() + Math.round(weeksToTarget * 7));
@@ -631,8 +638,9 @@ export function renderTrends(container) {
           <div class="stat-grid">
             <div class="stat-cell"><div class="stat-num">${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(2)}</div><div class="stat-lbl">kg / week</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">your real pace</div></div>
             <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">what you burn</div></div>
-            <div class="stat-cell${!targetWeight ? ' set-target-cell' : ''}"${!targetWeight ? ' style="cursor:pointer"' : ''}><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl"${!targetWeight ? ' style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px"' : ''}>${weeksToTarget ? 'to ' + targetWeight + ' kg' : (targetWeight ? 'on target' : 'set target')}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">${weeksToTarget ? 'at this pace' : '&nbsp;'}</div></div>
+            <div class="stat-cell${!targetWeight ? ' set-target-cell' : ''}"${!targetWeight ? ' style="cursor:pointer"' : ''}><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl"${!targetWeight ? ' style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px"' : ''}>${targetWeight ? 'to ' + targetWeight + ' kg' : 'set target'}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">${weeksToTarget ? 'at this pace' : (targetWeight ? 'not at this pace' : '&nbsp;')}</div></div>
           </div>
+          ${staleDays >= 4 ? `<div style="font-size:11px;color:var(--warning);margin-top:10px">Newest weigh-in is ${staleDays} days old — nothing since then counts toward this.</div>` : ''}
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>${howWorkedOut}`
             : `<details class="nl-details" style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
                 <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">
