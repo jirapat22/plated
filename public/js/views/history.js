@@ -34,7 +34,12 @@ function hexToRgba(hex, alpha) {
 }
 
 export function renderHistory(container) {
-  let selectedDate = localDate();
+  // Yesterday, not today. History is a review tool and today isn't finished —
+  // you can't review a day you're still eating. Today also has its own tab with
+  // the rings and the logging buttons, so landing here on today duplicated it
+  // and, early in the morning, opened on a blank page. The day strip makes the
+  // selection obvious and today is one tap away.
+  let selectedDate = localDate(addDays(new Date(), -1));
   let summary = [];
   let connections = [];
   let viewed = null;   // { id, name, accent_color } — null means viewing yourself
