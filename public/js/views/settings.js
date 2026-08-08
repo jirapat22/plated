@@ -400,8 +400,23 @@ export function renderSettings(container) {
       const box = document.getElementById('admin-list');
       if (!box) return;
       try {
-        const profiles = await api.get('/api/auth/admin/profiles');
-        box.innerHTML = profiles.map(p => `
+        const [profiles, requests] = await Promise.all([
+          api.get('/api/auth/admin/profiles'),
+          api.get('/api/auth/admin/reset-requests').catch(() => []),
+        ]);
+        // Lock-screen "Forgot passcode?" submissions, straight from Plated's own
+        // bug_reports table — Orbit gets a copy, but you don't need it to act.
+        // Names are typed by whoever submitted the form, so escape and mark them.
+        box.innerHTML = (requests.length ? `
+          <div style="border:1px solid rgba(249,115,22,.35);background:rgba(249,115,22,.07);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px">
+            <div class="label" style="color:var(--warning);margin-bottom:6px">${requests.length} passcode request${requests.length === 1 ? '' : 's'} · last 14 days</div>
+            ${requests.map(r => `
+              <div style="font-size:12px;color:var(--text-muted);padding:4px 0;line-height:1.5">
+                <span style="color:var(--text)">“${esc(r.stated_name || r.message)}”</span>
+                <span style="color:var(--text-faint)"> · ${esc((r.created_at || '').slice(0, 10))}</span>
+              </div>`).join('')}
+            <div style="font-size:10px;color:var(--text-faint);margin-top:6px">Typed by whoever asked — unverified. Match it to a profile below yourself.</div>
+          </div>` : '') + profiles.map(p => `
           <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
             <span style="display:flex;align-items:center;gap:8px">
               <span style="width:10px;height:10px;border-radius:50%;background:${p.accent_color}"></span>
@@ -424,28 +439,21 @@ export function renderSettings(container) {
             } catch (err) { showToast(err.message, 'error'); }
           });
         });
-        // Acts on the reset requests that arrive in Orbit from the lock screen.
+        // One tap: the server picks a free code, sets it, and hands it back to
+        // be read out. Inventing a code by hand only risked a collision, since
+        // codes are globally unique.
         box.querySelectorAll('.admin-code').forEach(btn => {
-          btn.addEventListener('click', () => {
-            showPrompt({
-              title: `New passcode for ${btn.dataset.name}`,
-              label: 'Four digits. Tell them separately — it is not sent anywhere.',
-              placeholder: '••••',
-              cta: 'Reset',
-              inputMode: 'numeric',
-              maxLength: 4,
-            }, async code => {
-              if (!/^\d{4}$/.test(String(code || '').trim())) {
-                showToast('Passcode must be 4 digits', 'error');
-                return;
-              }
-              try {
-                await api.post('/api/auth/admin/passcode', {
-                  profileId: parseInt(btn.dataset.id), passcode: String(code).trim(),
-                });
-                showToast(`${btn.dataset.name} can log in with that code now`, 'success', { duration: 6000 });
-              } catch (err) { showToast(err.message, 'error'); }
-            });
+          btn.addEventListener('click', async () => {
+            if (!confirm(`Give ${btn.dataset.name} a new passcode?\n\nTheir current code stops working immediately and they'll be signed out on every device.`)) return;
+            btn.disabled = true; btn.textContent = '…';
+            try {
+              const r = await api.post('/api/auth/admin/passcode', { profileId: parseInt(btn.dataset.id) });
+              showIssuedCode(btn.dataset.name, r.passcode);
+            } catch (err) {
+              showToast(err.message, 'error');
+            } finally {
+              btn.disabled = false; btn.textContent = 'Reset code';
+            }
           });
         });
       } catch (err) {
@@ -1167,6 +1175,28 @@ function openReportSheet() {
         btn.disabled = false; btn.textContent = 'Generate report';
       }
     });
+  });
+}
+
+// The one moment the plaintext code exists. It's scrypt-hashed the instant it's
+// stored, so this sheet is the only place it can ever be read — hence shown big
+// enough to read aloud down a phone, and not auto-dismissed.
+function showIssuedCode(name, code) {
+  showSheet(content => {
+    content.innerHTML = `
+      <div class="sheet-header"><span class="sheet-title">New code for ${esc(name)}</span>
+        <button class="sheet-close" id="ic-close">✕</button></div>
+      <div style="padding:0 16px 20px;text-align:center">
+        <div class="num" style="font-size:44px;font-weight:800;letter-spacing:.18em;color:var(--accent);margin:14px 0 6px;user-select:text;-webkit-user-select:text">${esc(code)}</div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.55;margin-bottom:16px">
+          Tell ${esc(name)} this code — it's the only time it can be shown.
+          Plated stores it scrambled, so nobody can look it up later, including you.
+          They can change it themselves once they're in.
+        </div>
+        <button class="btn btn-primary btn-full" id="ic-done" style="height:44px">Done</button>
+      </div>`;
+    document.getElementById('ic-close').addEventListener('click', hideSheet);
+    document.getElementById('ic-done').addEventListener('click', hideSheet);
   });
 }
 

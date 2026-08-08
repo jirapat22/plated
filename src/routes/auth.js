@@ -210,29 +210,73 @@ router.post('/admin/passcode', requireProfile, async (req, res) => {
     const db = getDb();
     if (!isAdmin(db, req.profileId)) return res.status(403).json({ error: 'Admin only' });
 
-    const { profileId, passcode } = req.body;
-    if (!isValidCode(passcode)) return res.status(400).json({ error: 'Passcode must be 4 digits' });
+    const { profileId } = req.body;
+    // Omit passcode and the server picks one. Saves the admin inventing a code
+    // and then discovering it collides — codes are globally unique because
+    // login has no username and identifies you by the code alone.
+    const wanted = req.body.passcode == null || req.body.passcode === '' ? null : String(req.body.passcode);
+    if (wanted !== null && !isValidCode(wanted)) {
+      return res.status(400).json({ error: 'Passcode must be 4 digits' });
+    }
     const target = db.prepare('SELECT id, name FROM profiles WHERE id = $id').get({ id: profileId });
     if (!target) return res.status(404).json({ error: 'Profile not found' });
 
-    // Codes are globally unique (login scans every profile), so the same lock
-    // and the same collision check as /me/passcode apply here.
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = await hashCode(passcode, salt);
+    const others = () => db.prepare('SELECT * FROM profiles WHERE id != $id').all({ id: target.id });
+    const isTaken = async code => {
+      for (const p of others()) if (await verifyCode(code, p.pass_salt, p.pass_hash)) return true;
+      return false;
+    };
+
+    let issued = null;
     const taken = await withPasscodeLock(async () => {
-      for (const p of db.prepare('SELECT * FROM profiles WHERE id != $id').all({ id: target.id })) {
-        if (await verifyCode(passcode, p.pass_salt, p.pass_hash)) return true;
+      if (wanted !== null) {
+        if (await isTaken(wanted)) return true;
+        issued = wanted;
+      } else {
+        // 10,000 codes against a handful of profiles — the first draw almost
+        // always lands. Bounded anyway so a pathological state can't spin.
+        for (let i = 0; i < 25 && issued === null; i++) {
+          const c = String(crypto.randomInt(0, 10000)).padStart(4, '0');
+          if (!await isTaken(c)) issued = c;
+        }
+        if (issued === null) return true;
       }
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = await hashCode(issued, salt);
       db.prepare('UPDATE profiles SET pass_hash = $h, pass_salt = $s WHERE id = $id')
         .run({ h: hash, s: salt, id: target.id });
       return false;
     });
-    if (taken) return res.status(409).json({ error: 'That code is already taken' });
+    if (taken) return res.status(409).json({ error: wanted ? 'That code is already taken' : 'Could not find a free code' });
 
     // Every session for that profile dies with the old code — otherwise a reset
     // done because a device was lost would leave that device logged in.
     db.prepare('DELETE FROM sessions WHERE profile_id = $id').run({ id: target.id });
-    res.json({ success: true, name: target.name });
+    res.json({ success: true, name: target.name, passcode: issued });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/auth/admin/reset-requests — the "Forgot passcode?" submissions.
+// They're already in bug_reports: captureReport stores locally first and only
+// then forwards to Orbit, so the admin can work entirely inside Plated and
+// treat the Orbit copy as the notification rather than the workflow.
+router.get('/admin/reset-requests', requireProfile, (req, res) => {
+  try {
+    const db = getDb();
+    if (!isAdmin(db, req.profileId)) return res.status(403).json({ error: 'Admin only' });
+    const since = new Date(Date.now() - 14 * 864e5).toISOString();
+    const rows = db.prepare(`
+      SELECT id, message, context, created_at FROM bug_reports
+      WHERE type = 'passcode_reset' AND created_at >= $since
+      ORDER BY id DESC LIMIT 20
+    `).all({ since });
+    res.json(rows.map(r => {
+      let stated = null;
+      try { stated = JSON.parse(r.context || '{}').stated_name || null; } catch { /* free text below */ }
+      return { id: r.id, stated_name: stated, message: r.message, created_at: r.created_at };
+    }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
