@@ -355,9 +355,14 @@ export function renderTrends(container) {
     // Weight series (IronLog + local merged by date). Normalize hard: IronLog
     // can send ISO timestamps and a 'weight' field — both produce NaN/NaN if
     // used raw. Keep only valid YYYY-MM-DD dates with finite kg.
+    // split('T')[0] took the UTC day off IronLog's ISO stamps. Weighing at 7am
+    // local timestamps at ~19:00 UTC the day BEFORE, so most weigh-ins landed a
+    // day early — against calorie days that are local. A plain YYYY-MM-DD (our
+    // own weight_log) is already local and passes through untouched.
     const weightMap = {};
     const addWeight = (rawDate, rawKg) => {
-      const date = String(rawDate || '').split('T')[0];
+      const s = String(rawDate || '');
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : (t => Number.isNaN(t) ? '' : localDate(new Date(t)))(Date.parse(s));
       const kg = Number(rawKg);
       if (/^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(kg)) weightMap[date] = kg;
     };

@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
-const { todayLocal } = require('../utils/tz');
+const { todayLocal, localDayOf } = require('../utils/tz');
 const { recalcMacroGoals } = require('../utils/macros');
 
 // Extract all goals from IronLog profile data
@@ -257,9 +257,12 @@ router.post('/sync', async (req, res) => {
           "INSERT INTO weight_log (date, weight_kg, profile_id, source) VALUES ($date, $kg, $pid, 'ironlog')"
         );
         for (const w of bwList) {
-          const date = String(w.date || '').split('T')[0];
+          // localDayOf, not split('T')[0] — see the note there. Weighing at 7am
+          // NZ timestamps at ~19:00 UTC the previous day, so the UTC day filed
+          // most weigh-ins a day early, and this loop WRITES those dates.
+          const date = localDayOf(w.date);
           const kg   = w.weight_kg ?? w.weight;
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || kg == null) continue;
+          if (!date || kg == null) continue;
           if (!exists.get({ pid, date })) { insert.run({ date, kg, pid }); weightsImported++; }
         }
       }
