@@ -273,6 +273,10 @@ router.post('/sessions/:id/copy', (req, res) => {
       const m = food ? calcMacros(food, e.quantity_g) : e;   // food gone (rare) — fall back to the old snapshot
       ins.run({ s: targetId, f: e.food_id, q: e.quantity_g, cal: m.calories, p: m.protein, c: m.carbs, ft: m.fat, fb: m.fiber });
       bumpStats.run({ pid, fid: e.food_id, qty: e.quantity_g });
+      // Copying a meal that contains a batch portion eats more of that batch.
+      // Deleting the copy already handed grams back, so without this a
+      // copy-then-delete round trip minted stock that was never taken.
+      adjustBatchStock(db, pid, e.food_id, -e.quantity_g);
     }
     res.status(201).json({ session_id: targetId, copied: entries.length });
   } catch (err) {
@@ -309,6 +313,11 @@ router.post('/sessions/:id/entries', (req, res) => {
       calories: macros.calories, protein: macros.protein,
       carbs: macros.carbs, fat: macros.fat, fiber: macros.fiber,
     });
+
+    // Batch foods are hidden from search, so the only way one reaches this route
+    // is copying an existing portion — which is still eating the batch. DELETE
+    // and PATCH both adjust stock already; creation was the missing half.
+    adjustBatchStock(db, req.profileId, food_id, -quantity_g);
 
     db.prepare(`
       INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used, last_qty_g)

@@ -33,7 +33,7 @@ function computeTotals(db, items) {
 // Shape a batch row for the client. Nutrition is stored as whole-batch totals,
 // so both the per-100g density (what you need to pick a portion size) and the
 // what's-left figures are derived here rather than re-done in the frontend.
-function shapeBatch(b, db = null) {
+function shapeBatch(b, db = null, pid = null) {
   const per100 = k => round1((b[k] || 0) / b.cooked_g * 100);
   const left   = k => round1((b[k] || 0) * b.remaining_g / b.cooked_g);
 
@@ -46,8 +46,16 @@ function shapeBatch(b, db = null) {
       i.food_id != null ? i : { ...i, food_id: find.get({ n: i.name })?.id ?? null });
   }
 
+  // How big your last portion of THIS batch's food was, so the portion sheet
+  // can offer it instead of a hardcoded 220g.
+  const lastPortion = db && pid && b.food_id
+    ? db.prepare('SELECT last_qty_g FROM profile_food_stats WHERE profile_id = $p AND food_id = $f')
+        .get({ p: pid, f: b.food_id })?.last_qty_g ?? null
+    : null;
+
   return {
     id: b.id, name: b.name, cooked_g: b.cooked_g, remaining_g: round1(b.remaining_g),
+    last_portion_g: lastPortion,
     calories: b.calories, protein: b.protein, carbs: b.carbs, fat: b.fat, fiber: b.fiber,
     ingredients,
     kcal_left:     Math.round(b.calories * b.remaining_g / b.cooked_g),
@@ -64,7 +72,7 @@ router.get('/', (req, res) => {
     const rows = db.prepare(
       'SELECT * FROM batches WHERE profile_id = $p AND remaining_g > 1 ORDER BY created_at DESC'
     ).all({ p: req.profileId });
-    res.json(rows.map(b => shapeBatch(b, db)));
+    res.json(rows.map(b => shapeBatch(b, db, req.profileId)));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -143,11 +151,12 @@ router.post('/:id/portion', (req, res) => {
     // showed up under "recent" the way the same food logged manually would.
     if (b.food_id) {
       db.prepare(`
-        INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used)
-        VALUES ($pid, $fid, 1, datetime('now'))
+        INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used, last_qty_g)
+        VALUES ($pid, $fid, 1, datetime('now'), $qty)
         ON CONFLICT(profile_id, food_id)
-        DO UPDATE SET use_count = use_count + 1, last_used = datetime('now')
-      `).run({ pid: req.profileId, fid: b.food_id });
+        DO UPDATE SET use_count = use_count + 1, last_used = datetime('now'),
+                      last_qty_g = excluded.last_qty_g
+      `).run({ pid: req.profileId, fid: b.food_id, qty: round1(grams) });
     }
 
     res.status(201).json({ logged_g: round1(grams), remaining_g: remaining });
@@ -223,7 +232,7 @@ router.patch('/:id', (req, res) => {
     }
 
     const updated = db.prepare('SELECT * FROM batches WHERE id = $id').get({ id: b.id });
-    res.json(shapeBatch(updated, db));
+    res.json(shapeBatch(updated, db, req.profileId));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
