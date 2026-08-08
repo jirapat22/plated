@@ -98,8 +98,18 @@ export function renderToday(container) {
         api.get('/api/weight?limit=10').catch(() => []),
       ]);
       if (myGen !== loadGen) return;            // a newer load() superseded us
+      // Paint your own data now. Awaiting IronLog here made it a SECOND
+      // sequential round trip from the phone — the four calls above finish, then
+      // Today sits on its skeleton for another full trip before showing meals it
+      // already holds. IronLog itself measures 20-94ms from Railway, so this
+      // isn't about a slow service: it's the extra serialised leg over mobile
+      // data, bounded only by the route's 6s timeout when the other end stalls.
+      render(mealData, settings, null, todayWeight, weightHistory);
       const ironlog = await fetchIronLog(viewDate);   // always today — fetch fresh
-      if (myGen !== loadGen) return;            // and again after the IronLog fetch
+      if (myGen !== loadGen || !ironlog) return;      // superseded, or nothing to add
+      // ponytail: a second full render rather than patching just the IronLog
+      // panel — one extra paint on the slow path. Make it surgical if it ever
+      // interrupts a scroll.
       render(mealData, settings, ironlog, todayWeight, weightHistory);
     } catch (err) {
       if (myGen !== loadGen) return;

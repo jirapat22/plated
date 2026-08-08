@@ -126,8 +126,13 @@ export function showPrompt({ title, label, value = '', placeholder = '', cta = '
 // ─── Navigation ─────────────────────────────────────────────
 const views = { today: renderToday, history: renderHistory, trends: renderTrends, foods: renderFoods, settings: renderSettings };
 
-export function navigateTo(view) {
-  if (view === currentView && document.getElementById('view-container').children.length > 0) return;
+// force=true re-renders even if you're already on the view. The wrapper div is
+// appended synchronously, so children.length is always 1 after a navigation —
+// meaning a view that loaded blank or errored could never be retried by tapping
+// its own tab, and the only way out was switching tabs and back. Tapping the
+// active tab now reloads it, which is the usual idiom anyway.
+export function navigateTo(view, force = false) {
+  if (!force && view === currentView && document.getElementById('view-container').children.length > 0) return;
   currentView = view;
 
   // Update nav
@@ -388,7 +393,7 @@ function setupCreate() {
 onUnauthorized(() => { clearToken(); currentProfile = null; renderProfileBar(); showLock(); });
 
 document.querySelectorAll('.nav-item').forEach(btn => {
-  btn.addEventListener('click', () => navigateTo(btn.dataset.view));
+  btn.addEventListener('click', () => navigateTo(btn.dataset.view, true));
 });
 setupNumpad();
 setupCreate();
