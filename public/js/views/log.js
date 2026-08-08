@@ -749,13 +749,20 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
   `;
 
   session.entries.forEach(entry => {
+    // Quick Log has no weight — it stores the calories you typed as a 100g
+    // "food" and logs exactly 100g of it, so the per-100g maths the rest of the
+    // app runs on comes out right. That 100g is bookkeeping, not something you
+    // put on a scale, so showing it invited the obvious question.
+    const isQuick = entry.food_source === 'quick';
     const entryEl = document.createElement('div');
     entryEl.className = 'meal-entry';
     entryEl.innerHTML = `
       <div style="font-size:20px;flex-shrink:0;width:30px;text-align:center">${getFoodIcon(entry.food_name)}</div>
       <div class="meal-entry-info">
         <div class="meal-entry-name">${esc(entry.food_name)}</div>
-        <div class="meal-entry-sub"><span style="color:var(--text)">${fmt(entry.quantity_g)}g</span> <span style="color:var(--text-faint)">·</span>
+        <div class="meal-entry-sub">${isQuick
+          ? '<span style="color:var(--text-faint)">⚡ quick</span>'
+          : `<span style="color:var(--text)">${fmt(entry.quantity_g)}g</span>`} <span style="color:var(--text-faint)">·</span>
           <span style="color:var(--protein)">${fmt(entry.protein)}P</span>
           <span style="color:var(--carbs)">${fmt(entry.carbs)}C</span>
           <span style="color:var(--fat)">${fmt(entry.fat)}F</span>
