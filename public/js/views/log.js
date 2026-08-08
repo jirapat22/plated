@@ -731,8 +731,8 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
         </div>
         ${timeStr ? `<div class="meal-session-kcal">${timeStr}</div>` : ''}
       </button>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-        <span class="meal-session-kcal num">${fmtE(sessionKcal)} ${ul}${sessionProtein > 0 ? ` · <span style="color:var(--protein);font-weight:600">${sessionProtein}g P</span>` : ''}${sessionCarb > 0 ? ` · <span style="color:var(--carbs);font-weight:600">${sessionCarb}g C</span>` : ''}${sessionFat > 0 ? ` · <span style="color:var(--fat);font-weight:600">${sessionFat}g F</span>` : ''}</span>
+      <span class="meal-session-kcal meal-session-macros num">${fmtE(sessionKcal)} ${ul}${sessionProtein > 0 ? ` · <span style="color:var(--protein);font-weight:600">${sessionProtein}g P</span>` : ''}${sessionCarb > 0 ? ` · <span style="color:var(--carbs);font-weight:600">${sessionCarb}g C</span>` : ''}${sessionFat > 0 ? ` · <span style="color:var(--fat);font-weight:600">${sessionFat}g F</span>` : ''}</span>
+      <div class="meal-session-actions">
         ${showMoveToday ? `<button class="session-move-btn" title="Move to today"
           style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">
           → Today

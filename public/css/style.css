@@ -216,6 +216,10 @@ img { display: block; max-width: 100%; }
   align-items: center; justify-content: center;
   text-align: center;
   pointer-events: none;
+  /* Inherited line-height turned a wrapped "/ 1041 kcal · nothing yet" into
+     five tall lines that spilled past the arc. Tightening only ever reduces
+     the block's height. */
+  line-height: 1.15;
 }
 .ring-wrap-relative {
   position: relative;
@@ -252,6 +256,9 @@ img { display: block; max-width: 100%; }
   .tri-rings .calorie-ring.ring-sm { width: clamp(58px, 19vw, 82px);  height: clamp(58px, 19vw, 82px); }
   .tri-rings .ring-kcal    { font-size: clamp(18px, 6vw, 26px); }
   .tri-rings .ring-kcal-sm { font-size: clamp(12px, 4vw, 15px); }
+  /* The captions never scaled with the rings, so "nothing yet" broke in two. */
+  .tri-rings .ring-goal    { font-size: clamp(9px, 2.8vw, 12px); }
+  .tri-rings .ring-goal-sm { font-size: clamp(8px, 2.3vw, 9px); }
 }
 
 /* ─── Macro Bar ──────────────────────────────────────────── */
@@ -311,12 +318,31 @@ img { display: block; max-width: 100%; }
   background: var(--surface);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
 }
 .meal-session-title { font-size: 13px; font-weight: 600; }
 .meal-session-kcal  { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+/* Right-aligned by margin rather than space-between, so the macros can be
+   re-ordered onto their own line below without the title losing its place. */
+.meal-session-macros  { margin-left: auto; white-space: nowrap; }
+.meal-session-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* The title button is flex:1 — basis 0 — so it only ever got the space the
+   macros didn't want, and "671 kcal · 62g P · 54g C · 19g F" wants ~224px of
+   monospace. On a phone that left ~45px for the title, breaking "Meal 1" and
+   "8:27 AM" across two lines each and colliding them with the figures. Drop
+   the macros to their own full-width line; the title keeps line one. */
+@media (max-width: 430px) {
+  .meal-session-macros {
+    order: 3;
+    flex: 1 1 100%;
+    margin-left: 0;
+    white-space: normal;
+  }
+}
 
 .meal-entry {
   display: flex;
