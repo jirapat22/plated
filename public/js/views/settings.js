@@ -44,8 +44,9 @@ export function renderSettings(container) {
 
     const prof = getProfile() || { name: '', accent_color: ACCENTS[0] };
     body.innerHTML = `
-      <!-- Profile -->
-      <div class="card sec" style="margin-bottom:12px;padding:0">
+      <!-- Profile — collapsed like every other section. Settings opens as a
+           list of headings you scan, not a wall you scroll past. -->
+      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
         <div class="sec-head">👤 Profile<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <label class="form-label">Display name</label>
@@ -94,7 +95,7 @@ export function renderSettings(container) {
       </div>` : ''}
 
       <!-- Phase Selector -->
-      <div class="card sec" style="margin-bottom:12px;padding:0">
+      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
         <div class="sec-head">🎯 Goal Phase<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <!-- 1. Maintenance / TDEE — the basis everything is derived from -->
