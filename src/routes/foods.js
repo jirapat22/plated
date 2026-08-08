@@ -83,7 +83,8 @@ router.get('/search', (req, res) => {
     const rows = getDb().prepare(`
       SELECT ${FCOLS},
              COALESCE(pfs.is_favourite, 0) AS is_favourite,
-             COALESCE(pfs.use_count, 0)    AS use_count
+             COALESCE(pfs.use_count, 0)    AS use_count,
+             pfs.last_qty_g
       FROM foods f
       LEFT JOIN profile_food_stats pfs ON pfs.food_id = f.id AND pfs.profile_id = $pid
       WHERE (f.name LIKE $term OR f.brand LIKE $term)
@@ -141,7 +142,8 @@ router.get('/recent', (req, res) => {
     const rows = getDb().prepare(`
       SELECT ${FCOLS},
              COALESCE(pfs.is_favourite, 0) AS is_favourite,
-             COALESCE(pfs.use_count, 0)    AS use_count
+             COALESCE(pfs.use_count, 0)    AS use_count,
+             pfs.last_qty_g
       FROM foods f
       INNER JOIN (
         SELECT me.food_id, MAX(me.logged_at) AS last_used
@@ -165,7 +167,7 @@ router.get('/recent', (req, res) => {
 router.get('/favourites', (req, res) => {
   try {
     const rows = getDb().prepare(`
-      SELECT ${FCOLS}, 1 AS is_favourite, COALESCE(pfs.use_count, 0) AS use_count
+      SELECT ${FCOLS}, 1 AS is_favourite, COALESCE(pfs.use_count, 0) AS use_count, pfs.last_qty_g
       FROM foods f
       JOIN profile_food_stats pfs
         ON pfs.food_id = f.id AND pfs.profile_id = $pid AND pfs.is_favourite = 1
@@ -191,7 +193,8 @@ router.get('/by-source', (req, res) => {
     const rows = getDb().prepare(`
       SELECT ${FCOLS},
              COALESCE(pfs.is_favourite, 0) AS is_favourite,
-             COALESCE(pfs.use_count, 0)    AS use_count
+             COALESCE(pfs.use_count, 0)    AS use_count,
+             pfs.last_qty_g
       FROM foods f
       LEFT JOIN profile_food_stats pfs ON pfs.food_id = f.id AND pfs.profile_id = $pid
       WHERE f.source = $source AND f.hidden = 0
@@ -220,7 +223,7 @@ router.get('/barcode/:barcode', async (req, res) => {
 
     // Local DB — check both forms
     const local = db.prepare(`
-      SELECT ${FCOLS}, COALESCE(pfs.is_favourite, 0) AS is_favourite, COALESCE(pfs.use_count, 0) AS use_count
+      SELECT ${FCOLS}, COALESCE(pfs.is_favourite, 0) AS is_favourite, COALESCE(pfs.use_count, 0) AS use_count, pfs.last_qty_g
       FROM foods f
       LEFT JOIN profile_food_stats pfs ON pfs.food_id = f.id AND pfs.profile_id = $pid
       WHERE (f.barcode = $b1 OR f.barcode = $b2) AND f.hidden = 0
@@ -261,7 +264,7 @@ router.get('/barcode/:barcode', async (req, res) => {
 router.get('/:id', (req, res) => {
   try {
     const food = getDb().prepare(`
-      SELECT ${FCOLS}, COALESCE(pfs.is_favourite, 0) AS is_favourite, COALESCE(pfs.use_count, 0) AS use_count
+      SELECT ${FCOLS}, COALESCE(pfs.is_favourite, 0) AS is_favourite, COALESCE(pfs.use_count, 0) AS use_count, pfs.last_qty_g
       FROM foods f
       LEFT JOIN profile_food_stats pfs ON pfs.food_id = f.id AND pfs.profile_id = $pid
       WHERE f.id = $id

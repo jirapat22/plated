@@ -563,6 +563,10 @@ function showQuantitySheet(food, sessionId, onSuccess) {
   showSheet(content => {
     const srv = food.serving_size_g || 100;
     const ul  = unitLabel();
+    // What you had last time beats what the packet says. serving_size_g
+    // describes the product, not your portion of it — rice ships a 15g serving
+    // against your 158g average across 35 logs, egg white 30g against 229g.
+    const startQty = food.last_qty_g > 0 ? +(+food.last_qty_g).toFixed(1) : srv;
 
     content.innerHTML = `
       <div class="sheet-header">
@@ -582,7 +586,7 @@ function showQuantitySheet(food, sessionId, onSuccess) {
       <!-- Weight mode -->
       <div id="mode-g">
         <div class="qty-input-wrap">
-          <input type="text" inputmode="decimal" id="qty-g" class="qty-input" value="${srv}" min="1" step="1" />
+          <input type="text" inputmode="decimal" id="qty-g" class="qty-input" value="${startQty}" min="1" step="1" />
           <span class="qty-unit">g</span>
         </div>
         <div style="display:flex;gap:6px;padding:8px 16px;flex-wrap:wrap">

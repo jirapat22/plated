@@ -226,6 +226,23 @@ function migrateSchema(db) {
   if (!tableHasColumn(db, 'weight_log', 'source')) {
     db.exec("ALTER TABLE weight_log ADD COLUMN source TEXT DEFAULT 'manual'");
   }
+  // How much of this food you had last time. The quantity sheet defaulted to
+  // the food database's serving_size_g, which describes the product, not you:
+  // measured against real logs, rice defaulted to 15g against a 158g average
+  // over 35 entries, and egg white to 30g against 229g over 21. Every repeat
+  // meant retyping. Backfilled from existing entries so it works on day one.
+  if (!tableHasColumn(db, 'profile_food_stats', 'last_qty_g')) {
+    db.exec('ALTER TABLE profile_food_stats ADD COLUMN last_qty_g REAL');
+    db.exec(`
+      UPDATE profile_food_stats SET last_qty_g = (
+        SELECT me.quantity_g FROM meal_entries me
+        JOIN meal_sessions ms ON ms.id = me.meal_session_id
+        WHERE me.food_id = profile_food_stats.food_id
+          AND ms.profile_id = profile_food_stats.profile_id
+        ORDER BY me.id DESC LIMIT 1
+      )
+    `);
+  }
   if (!tableHasColumn(db, 'profiles', 'connect_code')) {
     db.exec('ALTER TABLE profiles ADD COLUMN connect_code TEXT');
   }

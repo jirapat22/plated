@@ -262,16 +262,17 @@ router.post('/sessions/:id/copy', (req, res) => {
     const ins = db.prepare(`INSERT INTO meal_entries (meal_session_id, food_id, quantity_g, calories, protein, carbs, fat, fiber)
       VALUES ($s, $f, $q, $cal, $p, $c, $ft, $fb)`);
     const bumpStats = db.prepare(`
-      INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used)
-      VALUES ($pid, $fid, 1, datetime('now'))
+      INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used, last_qty_g)
+      VALUES ($pid, $fid, 1, datetime('now'), $qty)
       ON CONFLICT(profile_id, food_id)
-      DO UPDATE SET use_count = use_count + 1, last_used = datetime('now')
+      DO UPDATE SET use_count = use_count + 1, last_used = datetime('now'),
+                    last_qty_g = excluded.last_qty_g
     `);
     for (const e of entries) {
       const food = getFood.get({ id: e.food_id });
       const m = food ? calcMacros(food, e.quantity_g) : e;   // food gone (rare) — fall back to the old snapshot
       ins.run({ s: targetId, f: e.food_id, q: e.quantity_g, cal: m.calories, p: m.protein, c: m.carbs, ft: m.fat, fb: m.fiber });
-      bumpStats.run({ pid, fid: e.food_id });
+      bumpStats.run({ pid, fid: e.food_id, qty: e.quantity_g });
     }
     res.status(201).json({ session_id: targetId, copied: entries.length });
   } catch (err) {
@@ -310,11 +311,12 @@ router.post('/sessions/:id/entries', (req, res) => {
     });
 
     db.prepare(`
-      INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used)
-      VALUES ($pid, $fid, 1, datetime('now'))
+      INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used, last_qty_g)
+      VALUES ($pid, $fid, 1, datetime('now'), $qty)
       ON CONFLICT(profile_id, food_id)
-      DO UPDATE SET use_count = use_count + 1, last_used = datetime('now')
-    `).run({ pid: req.profileId, fid: food_id });
+      DO UPDATE SET use_count = use_count + 1, last_used = datetime('now'),
+                    last_qty_g = excluded.last_qty_g
+    `).run({ pid: req.profileId, fid: food_id, qty: quantity_g });
 
     const entry = db.prepare(`
       SELECT me.*, f.name AS food_name, f.brand AS food_brand, f.serving_size_g
