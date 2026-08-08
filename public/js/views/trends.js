@@ -244,6 +244,7 @@ export function renderTrends(container) {
   container.classList.add('trends-view');
   let days = 30;                  // Infinity = all time
   let weighInsOpen = false;       // weigh-ins disclosure survives re-renders
+  let waistOpen    = false;       // ditto for waist
   let weighInsExpanded = false;   // "show older" state, ditto
   const rangeLabel = () => (days === Infinity ? 'all time' : `${days} days`);
 
@@ -733,41 +734,52 @@ export function renderTrends(container) {
                weight read-only, and this list could edit and delete but never
                add. That gap now moves your macro goals too — protein and fat
                follow the 7-day trend weight. -->
-          <div style="display:flex;gap:6px;align-items:center;margin:10px 0 6px">
-            <input class="input" id="wt-add-date" type="date" max="${todayISO}" style="flex:1;height:38px;min-width:0"/>
-            <input class="input" id="wt-add-kg" type="text" inputmode="decimal" placeholder="kg"
-              style="width:72px;height:38px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums"/>
-            <button class="btn btn-primary" id="wt-add-save" style="height:38px;padding:0 14px;font-size:13px;flex-shrink:0">Add</button>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:10px 0 6px">
+            <div style="position:relative;flex:1 1 120px;min-width:0">
+              <input class="input" id="wt-add-kg" type="text" inputmode="decimal" placeholder="e.g. 76.4"
+                style="width:100%;height:38px;padding-right:30px;font-weight:700;font-variant-numeric:tabular-nums"/>
+              <span style="position:absolute;right:11px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text-muted);pointer-events:none">kg</span>
+            </div>
+            <button class="btn btn-primary" id="wt-add-save" style="height:38px;padding:0 16px;font-size:13px;flex-shrink:0;order:3">Add</button>
+            <input class="input" id="wt-add-date" type="date" max="${todayISO}"
+              style="flex:0 1 138px;height:38px;min-width:0;font-size:12px;color:var(--text-muted)"/>
           </div>
           <div id="wt-log-list" style="margin-top:4px"></div>
         </details>
-      </div>
 
-      <!-- Waist. Separate card, not a second line on the weight chart: cm and
-           kg share no axis, and this is meant to be read on its own — it's the
-           number that tracks a cut when the scale is busy swinging on water. -->
-      <div class="card" style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
-          <div class="label">Waist <span class="range-chip">· ${rangeLabel()}</span></div>
-          ${waistChange != null ? `<span class="num" style="font-size:12px;font-weight:700;color:${waistChange < 0 ? 'var(--success)' : waistChange > 0 ? 'var(--warning)' : 'var(--text-muted)'}">
-            ${waistChange > 0 ? '+' : ''}${waistChange.toFixed(1)} cm
-          </span>` : ''}
-        </div>
-        ${waistEntries.length >= 2
-          ? `<div style="height:150px;position:relative"><canvas id="chart-waist"></canvas></div>`
-          : `<div style="font-size:12px;color:var(--text-muted);line-height:1.55">
-               ${waistEntries.length === 1
-                 ? `First measurement logged: <b style="color:var(--text)">${waistEntries[0][1]} cm</b>. One more and this charts.`
-                 : `Measure at the navel, standing relaxed, same time of day — first thing works best.
-                    Waist ignores the water swings the scale doesn't, so it's the honest read on a cut.`}
-             </div>`}
-        <div style="display:flex;gap:6px;align-items:center;margin-top:${waistEntries.length >= 2 ? '12px' : '10px'}">
-          <input class="input" id="waist-date" type="date" max="${todayISO}" value="${todayISO}" style="flex:1;height:38px;min-width:0"/>
-          <input class="input" id="waist-cm" type="text" inputmode="decimal" placeholder="cm"
-            style="width:72px;height:38px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums"/>
-          <button class="btn btn-primary" id="waist-save" style="height:38px;padding:0 14px;font-size:13px;flex-shrink:0">Log</button>
-        </div>
-        ${waistLatest ? `<div style="font-size:11px;color:var(--text-faint);margin-top:8px">Last measured ${waistLatest[1]} cm on ${waistLatest[0]}</div>` : ''}
+        <!-- Waist lives inside Bodyweight rather than in a card of its own: it
+             measures the same thing by a steadier route, and anyone not using a
+             tape shouldn't be scrolling past an empty card forever. Collapsed
+             until opened; the summary carries the number so the disclosure only
+             hides the chart and the logger, never the reading. -->
+        <details id="waist-details" class="nl-details" ${waistOpen ? 'open' : ''} style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
+          <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">
+            <span class="label">Waist</span>
+            ${waistLatest ? `<span class="range-chip">${waistLatest[1]} cm</span>` : '<span class="range-chip">not measured</span>'}
+            ${waistChange != null ? `<span class="num" style="font-size:11px;font-weight:700;color:${waistChange < 0 ? 'var(--success)' : waistChange > 0 ? 'var(--warning)' : 'var(--text-muted)'}">${waistChange > 0 ? '+' : ''}${waistChange.toFixed(1)}</span>` : ''}
+            <span class="nl-chev" style="font-size:9px;color:var(--text-faint);margin-left:auto">▾</span>
+          </summary>
+          ${waistEntries.length >= 2
+            ? `<div style="height:150px;position:relative;margin-top:10px"><canvas id="chart-waist"></canvas></div>`
+            : `<div style="font-size:12px;color:var(--text-muted);line-height:1.55;margin-top:10px">
+                 ${waistEntries.length === 1
+                   ? `First measurement logged: <b style="color:var(--text)">${waistEntries[0][1]} cm</b>. One more and this charts.`
+                   : `Measure at the navel, standing relaxed, same time of day — first thing works best.
+                      Waist ignores the water swings the scale doesn't, so it's the honest read on a cut.`}
+               </div>`}
+          <!-- The number leads. The date defaults to today and is changed
+               rarely, so it takes what's left and wraps when short. -->
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px">
+            <div style="position:relative;flex:1 1 130px;min-width:0">
+              <input class="input" id="waist-cm" type="text" inputmode="decimal" placeholder="e.g. 86.5"
+                style="width:100%;height:38px;padding-right:32px;font-weight:700;font-variant-numeric:tabular-nums"/>
+              <span style="position:absolute;right:11px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text-muted);pointer-events:none">cm</span>
+            </div>
+            <button class="btn btn-primary" id="waist-save" style="height:38px;padding:0 16px;font-size:13px;flex-shrink:0;order:3">Log</button>
+            <input class="input" id="waist-date" type="date" max="${todayISO}" value="${todayISO}"
+              style="flex:0 1 138px;height:38px;min-width:0;font-size:12px;color:var(--text-muted)"/>
+          </div>
+        </details>
       </div>
 
       <!-- Calories chart (the verdict's intake evidence) -->
@@ -896,6 +908,23 @@ export function renderTrends(container) {
     // mutation re-runs load() so the chart and verdict stay in sync.
     const wtDetails = document.getElementById('wt-log-details');
     wtDetails?.addEventListener('toggle', () => { weighInsOpen = wtDetails.open; });
+
+    // Chart.js sizes off the canvas, and a canvas inside a closed <details> has
+    // no size — so draw on first open, same as the carbs/fat section below.
+    const waistDetails = document.getElementById('waist-details');
+    let waistDrawn = false;
+    const drawWaist = () => {
+      if (!waistDetails?.open || waistDrawn || waistEntries.length < 2) return;
+      waistDrawn = true;
+      const wsLabels = waistEntries.map(([d]) => {
+        const dt = new Date(d + 'T00:00:00');
+        return `${dt.getMonth() + 1}/${dt.getDate()}`;
+      });
+      makeChart('chart-waist', wsLabels, waistEntries.map(([, v]) => v), '#ffd166', 'cm',
+        { trendData: movingAvg(waistEntries.map(([, v]) => v), 5) });
+    };
+    waistDetails?.addEventListener('toggle', () => { waistOpen = waistDetails.open; drawWaist(); });
+    drawWaist();
 
     document.getElementById('waist-save')?.addEventListener('click', async () => {
       const el = document.getElementById('waist-cm');
@@ -1037,11 +1066,6 @@ export function renderTrends(container) {
         pointColors, pointRadii, trendData: calTrend,
       });
       makeChart('chart-pro',  labels, proteins, '#1E88E5', 'g', { goalLine: proteinGoal });
-      if (waistEntries.length > 1) {
-        const wsLabels = waistEntries.map(([d]) => { const dt = new Date(d + 'T00:00:00'); return `${dt.getMonth() + 1}/${dt.getDate()}`; });
-        makeChart('chart-waist', wsLabels, waistEntries.map(([, v]) => v), '#ffd166', 'cm',
-          { trendData: movingAvg(waistEntries.map(([, v]) => v), 5) });
-      }
       if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg', { trendData: wTrend, goalLine: targetWeight ?? undefined, expectedData: expectedAligned ?? undefined });
       else {
         const c = document.getElementById('chart-wt');
