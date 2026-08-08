@@ -646,9 +646,9 @@ export function renderTrends(container) {
           <div style="font-family:var(--font-display);font-size:24px;font-weight:800;text-transform:uppercase;letter-spacing:.02em;color:${verdictGood ? 'var(--success)' : FLAG}">${verdictGood ? 'On track ✓' : 'Off track ⚠'}</div>
           <div style="font-size:13px;color:var(--text-muted);margin:2px 0 12px">${verdictSub}</div>
           <div class="stat-grid">
-            <div class="stat-cell"><div class="stat-num">${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(2)}</div><div class="stat-lbl">kg / week</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">your real pace</div></div>
-            <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">what you burn</div></div>
-            <div class="stat-cell${!targetWeight ? ' set-target-cell' : ''}"${!targetWeight ? ' style="cursor:pointer"' : ''}><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl"${!targetWeight ? ' style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px"' : ''}>${targetWeight ? 'to ' + targetWeight + ' kg' : 'set target'}</div><div style="font-size:9px;color:var(--text-faint);margin-top:1px">${weeksToTarget ? 'at this pace' : (targetWeight ? 'not at this pace' : '&nbsp;')}</div></div>
+            <div class="stat-cell"><div class="stat-num">${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(2)}</div><div class="stat-lbl">kg / week</div><div class="stat-sub">your real pace</div></div>
+            <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div><div class="stat-sub">what you burn</div></div>
+            <div class="stat-cell${!targetWeight ? ' set-target-cell' : ''}"${!targetWeight ? ' style="cursor:pointer"' : ''}><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl"${!targetWeight ? ' style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px"' : ''}>${targetWeight ? 'to ' + targetWeight + ' kg' : 'set target'}</div><div class="stat-sub">${weeksToTarget ? 'at this pace' : (targetWeight ? 'not at this pace' : '&nbsp;')}</div></div>
           </div>
           ${staleDays >= 4 ? `<div style="font-size:11px;color:var(--warning);margin-top:10px">Newest weigh-in is ${staleDays} days old — nothing since then counts toward this.</div>` : ''}
           ${shortfall ? `<div style="font-size:11px;color:var(--warning);margin-top:10px">Your size and training predict about ${fmtE(shortfall.predicted)} ${ul} — measured maintenance is ${fmtE(shortfall.gap)} lower. That's usually under-logging, sometimes an over-stated activity level. Weigh your food for two weeks before cutting any lower.</div>` : ''}
@@ -656,7 +656,7 @@ export function renderTrends(container) {
             : `<details class="nl-details" style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
                 <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">
                   <span class="label">See the breakdown</span>
-                  ${gapSummary ? `<span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);margin-left:auto">${gapSummary}</span>` : ''}
+                  ${gapSummary ? `<span class="gap-summary">${gapSummary}</span>` : ''}
                   <span class="nl-chev" style="font-size:9px;color:var(--text-faint);${gapSummary ? '' : 'margin-left:auto'}">▾</span>
                 </summary>
                 <div style="margin-top:12px">

@@ -898,6 +898,23 @@ img { display: block; max-width: 100%; }
 .nl-chev { display: inline-block; transition: transform 0.15s; }
 .nl-details:not([open]) .nl-chev { transform: rotate(-90deg); }
 
+.gap-summary {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-left: auto;
+  text-align: right;
+}
+/* "SEE THE BREAKDOWN" (~131px) plus "−22 vs real maint · −658 vs TDEE" (~186px
+   of monospace) plus gaps overruns a 390px phone by ~15px, and a 375px one by
+   more. Drop the figures onto their own right-aligned line and leave the
+   chevron with the heading. */
+@media (max-width: 430px) {
+  .nl-details > summary { flex-wrap: wrap; }
+  .nl-details > summary .nl-chev { order: 2; margin-left: auto; }
+  .gap-summary { order: 3; flex: 1 1 100%; margin-left: 0; font-size: 9px; }
+}
+
 /* ─── Summary Cards Row ──────────────────────────────────── */
 .macro-totals-row {
   display: grid;
@@ -908,6 +925,14 @@ img { display: block; max-width: 100%; }
 .macro-total { text-align: center; }
 .macro-total-val { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .macro-total-lbl { font-size: 11px; margin-top: 2px; }
+/* Five columns share ~298px on a 390px phone and ~267px on a 375px one, so a
+   column is 53-60px. "PROTEIN" at 11px with 0.08em tracking is ~54px of that.
+   Tighten both a step so the widest label can't touch its neighbour. */
+@media (max-width: 430px) {
+  .macro-totals-row { gap: 4px; }
+  .macro-total-val  { font-size: 14px; }
+  .macro-total-lbl  { font-size: 9px; letter-spacing: 0.04em; }
+}
 
 /* ─── IronLog callout banner inside Today ────────────────── */
 
@@ -1119,9 +1144,14 @@ img { display: block; max-width: 100%; }
 }
 
 /* ─── Trends: consistency stats + goal progress + review ─── */
-.stat-grid { display: flex; gap: 8px; }
+.stat-grid { display: flex; gap: 8px; align-items: stretch; }
 .stat-cell {
   flex: 1;
+  /* Without this a flex item refuses to shrink below its content, so a long
+     label ("real maint. kcal") pushes the row wider than the card on a phone. */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   text-align: center;
   background: var(--surface-2);
   border-radius: var(--radius-sm);
@@ -1129,6 +1159,27 @@ img { display: block; max-width: 100%; }
 }
 .stat-num { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .stat-lbl { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+/* Pinned to the bottom of the cell. The three labels aren't the same length, so
+   on a narrow screen one wraps to two lines and the others don't — pushing that
+   cell's sub-label a line lower than its neighbours. margin-top:auto lands all
+   three on one baseline however the labels break. */
+.stat-sub {
+  font-size: 9px;
+  color: var(--text-faint);
+  margin-top: auto;
+  padding-top: 1px;
+}
+
+/* Phones: three cells share ~330px, so ~93px of text each. "real maint. kcal"
+   at 11px is right on that limit. Shrink the type a step rather than let every
+   verdict card wrap. */
+@media (max-width: 430px) {
+  .stat-grid { gap: 6px; }
+  .stat-cell { padding: 10px 4px; }
+  .stat-num  { font-size: 18px; }
+  .stat-lbl  { font-size: 10px; }
+  .stat-sub  { font-size: 8px; }
+}
 
 .review-row {
   display: flex; align-items: center; justify-content: space-between;
