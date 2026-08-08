@@ -224,7 +224,13 @@ export function renderToday(container) {
     const weightsAsc  = Object.keys(weightByDate).sort().map(d => weightByDate[d]);
     const trendSeries = weightsAsc.length >= 2 ? movingAvg(weightsAsc, 7) : null;
     const trendWeight = trendSeries ? trendSeries[trendSeries.length - 1] : null;
-    const weightDisplay = settings.weight_display === 'trend' && trendWeight != null ? 'trend' : 'raw';
+    // Trend leads by default now; 'raw' only when explicitly chosen. A single
+    // weigh-in swings ~2kg on water — this user went 77.2 → 75.25 in two days —
+    // and the headline number is what gets reacted to. The trend is the one
+    // worth reacting to, so it's the one shown big.
+    const weightDisplay = settings.weight_display === 'raw' || trendWeight == null ? 'raw' : 'trend';
+    const rawToday = todayWeight?.weight_kg
+      ?? (isToday && ironlog?.bodyweight?.is_today ? ironlog.bodyweight.weight_kg : null);
     const weightBigHtml = weightDisplay === 'trend'
       ? `${trendWeight.toFixed(1)} <span style="font-size:11px;color:var(--accent);font-weight:400">kg · 7d trend</span>`
       : todayWeight
@@ -328,6 +334,12 @@ export function renderToday(container) {
             <span class="num" style="margin-left:auto;font-size:15px;font-weight:700">${weightBigHtml}</span>
             <span class="nl-chev" style="font-size:9px;color:var(--text-faint)">▾</span>
           </summary>
+          ${weightDisplay === 'trend' && rawToday != null
+            ? `<div style="font-size:11px;color:var(--text-muted);margin-top:8px">Today's reading ${rawToday} kg${
+                Math.abs(rawToday - trendWeight) >= 0.6
+                  ? ` · <span style="color:var(--text-faint)">${(rawToday - trendWeight > 0 ? '+' : '')}${(rawToday - trendWeight).toFixed(1)} vs trend, mostly water</span>`
+                  : ''}</div>`
+            : ''}
           ${weightToggleHtml}
           <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:12px">
             ${!todayWeight ? `<span style="font-size:11px;color:var(--warning);margin-right:auto;font-weight:600">Not weighed today — log it here</span>` : ''}

@@ -290,7 +290,7 @@ export function renderTrends(container) {
       // weigh-ins merge into the very series the chart and the verdict are
       // computed from — rendering without them and refining after would visibly
       // rewrite the verdict a beat later.
-      const [summary, weights, settings, ironlogWeights] = await Promise.all([
+      const [summary, weights, settings, ironlogWeights, waistRows] = await Promise.all([
         // Always fetch at least 90d regardless of chart range so the consistency
         // streak isn't capped short — the streak walks the full summary, while
         // the charts slice it down to `days`.
@@ -303,11 +303,12 @@ export function renderTrends(container) {
         api.get('/api/ironlog/bodyweight')
           .then(d => d.entries || (Array.isArray(d) ? d : []))
           .catch(() => []),
-        ensureChartLib(),   // 5th, result unused — just has to be here before render
+        api.get('/api/measurements?limit=400').catch(() => []),   // waist — never fails the view
+        ensureChartLib(),   // last, result unused — just has to be here before render
       ]);
 
       if (!document.getElementById('trends-body')) return;  // left the view during fetch
-      render(summary, weights, ironlogWeights, settings);
+      render(summary, weights, ironlogWeights, settings, waistRows);
     } catch (err) {
       const el = document.getElementById('trends-body');
       if (el) el.innerHTML =
@@ -315,7 +316,7 @@ export function renderTrends(container) {
     }
   }
 
-  function render(summary, localWeights, ironlogWeights, settings) {
+  function render(summary, localWeights, ironlogWeights, settings, waistRows = []) {
     const goal        = parseFloat(settings.calorie_goal) || 2000;
     const proteinGoal = parseFloat(settings.protein_goal) || 150;
     const carbGoal    = parseFloat(settings.carb_goal) || 250;
@@ -368,6 +369,16 @@ export function renderTrends(container) {
     };
     ironlogWeights.forEach(w => addWeight(w.date, w.weight_kg ?? w.weight ?? w.bodyweight_kg));
     localWeights.forEach(w   => addWeight(w.date, w.weight_kg));
+    // Waist series — oldest-first, sliced to the chart range like weight is.
+    const waistAll     = (waistRows || [])
+      .filter(w => /^\d{4}-\d{2}-\d{2}$/.test(w.date) && Number.isFinite(Number(w.waist_cm)))
+      .map(w => [w.date, Number(w.waist_cm)])
+      .sort((a, b) => a[0].localeCompare(b[0]));
+    const waistLatest  = waistAll.length ? waistAll[waistAll.length - 1] : null;
+    const waistEntries = waistAll.slice(-days);
+    const waistChange  = waistEntries.length >= 2
+      ? waistEntries[waistEntries.length - 1][1] - waistEntries[0][1] : null;
+
     const weightSorted  = Object.entries(weightMap).sort((a, b) => a[0].localeCompare(b[0]));
     const weightEntries = weightSorted.slice(-days);   // charts reflect the range
     const wLabels = weightEntries.map(([d]) => { const dt = new Date(d + 'T00:00:00'); return `${dt.getMonth()+1}/${dt.getDate()}`; });
@@ -732,6 +743,33 @@ export function renderTrends(container) {
         </details>
       </div>
 
+      <!-- Waist. Separate card, not a second line on the weight chart: cm and
+           kg share no axis, and this is meant to be read on its own — it's the
+           number that tracks a cut when the scale is busy swinging on water. -->
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+          <div class="label">Waist <span class="range-chip">· ${rangeLabel()}</span></div>
+          ${waistChange != null ? `<span class="num" style="font-size:12px;font-weight:700;color:${waistChange < 0 ? 'var(--success)' : waistChange > 0 ? 'var(--warning)' : 'var(--text-muted)'}">
+            ${waistChange > 0 ? '+' : ''}${waistChange.toFixed(1)} cm
+          </span>` : ''}
+        </div>
+        ${waistEntries.length >= 2
+          ? `<div style="height:150px;position:relative"><canvas id="chart-waist"></canvas></div>`
+          : `<div style="font-size:12px;color:var(--text-muted);line-height:1.55">
+               ${waistEntries.length === 1
+                 ? `First measurement logged: <b style="color:var(--text)">${waistEntries[0][1]} cm</b>. One more and this charts.`
+                 : `Measure at the navel, standing relaxed, same time of day — first thing works best.
+                    Waist ignores the water swings the scale doesn't, so it's the honest read on a cut.`}
+             </div>`}
+        <div style="display:flex;gap:6px;align-items:center;margin-top:${waistEntries.length >= 2 ? '12px' : '10px'}">
+          <input class="input" id="waist-date" type="date" max="${todayISO}" value="${todayISO}" style="flex:1;height:38px;min-width:0"/>
+          <input class="input" id="waist-cm" type="text" inputmode="decimal" placeholder="cm"
+            style="width:72px;height:38px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums"/>
+          <button class="btn btn-primary" id="waist-save" style="height:38px;padding:0 14px;font-size:13px;flex-shrink:0">Log</button>
+        </div>
+        ${waistLatest ? `<div style="font-size:11px;color:var(--text-faint);margin-top:8px">Last measured ${waistLatest[1]} cm on ${waistLatest[0]}</div>` : ''}
+      </div>
+
       <!-- Calories chart (the verdict's intake evidence) -->
       <div class="card" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -859,6 +897,21 @@ export function renderTrends(container) {
     const wtDetails = document.getElementById('wt-log-details');
     wtDetails?.addEventListener('toggle', () => { weighInsOpen = wtDetails.open; });
 
+    document.getElementById('waist-save')?.addEventListener('click', async () => {
+      const el = document.getElementById('waist-cm');
+      const cm = parseFloat(el.value);
+      if (!(cm >= 40 && cm <= 200)) {
+        // Catches inches typed into a cm box — a 32in waist reads as 32.
+        showToast(cm > 0 && cm < 40 ? 'That looks like inches — this field is cm' : 'Enter a waist in cm', 'error');
+        return;
+      }
+      try {
+        await api.post('/api/measurements', { waist_cm: cm, date: document.getElementById('waist-date').value || undefined });
+        showToast('Waist logged', 'success');
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+
     document.getElementById('wt-add-save')?.addEventListener('click', async () => {
       const date = document.getElementById('wt-add-date').value;
       const kg   = parseFloat(document.getElementById('wt-add-kg').value);
@@ -984,6 +1037,11 @@ export function renderTrends(container) {
         pointColors, pointRadii, trendData: calTrend,
       });
       makeChart('chart-pro',  labels, proteins, '#1E88E5', 'g', { goalLine: proteinGoal });
+      if (waistEntries.length > 1) {
+        const wsLabels = waistEntries.map(([d]) => { const dt = new Date(d + 'T00:00:00'); return `${dt.getMonth() + 1}/${dt.getDate()}`; });
+        makeChart('chart-waist', wsLabels, waistEntries.map(([, v]) => v), '#ffd166', 'cm',
+          { trendData: movingAvg(waistEntries.map(([, v]) => v), 5) });
+      }
       if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg', { trendData: wTrend, goalLine: targetWeight ?? undefined, expectedData: expectedAligned ?? undefined });
       else {
         const c = document.getElementById('chart-wt');

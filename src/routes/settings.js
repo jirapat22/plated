@@ -82,8 +82,21 @@ router.patch('/', (req, res) => {
     const stmt = db.prepare(
       'INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)'
     );
+    // Read before writing: we need the OLD tdee to tell a real change from a
+    // re-save of the same number.
+    const prevTdee = db.prepare(
+      "SELECT value FROM profile_settings WHERE profile_id = $pid AND key = 'tdee'"
+    ).get({ pid: req.profileId })?.value;
+
     for (const [key, value] of Object.entries(req.body)) {
       if (ALLOWED.has(key)) stmt.run({ pid: req.profileId, key, value: String(value) });
+    }
+
+    // Stamp when TDEE actually moves, so the UI can say how many days of data
+    // sit behind the current figure. Deliberately not in ALLOWED — it records
+    // what happened, so the client must not be able to set it.
+    if ('tdee' in req.body && String(prevTdee ?? '') !== String(req.body.tdee)) {
+      stmt.run({ pid: req.profileId, key: 'tdee_set_at', value: todayLocal() });
     }
     // Re-derive the gram goals if an input to the g/kg formula just changed.
     // Skipped when the request itself set protein/carb/fat directly (the %

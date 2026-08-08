@@ -73,6 +73,17 @@ function initDb() {
       logged_at  TEXT    DEFAULT (datetime('now'))
     );
 
+    -- Waist beats the scale for a cut: it tracks the thing you actually want to
+    -- change and ignores the 2 kg of water the scale swings on. One row per day
+    -- per profile, so re-measuring the same day overwrites rather than stacks.
+    CREATE TABLE IF NOT EXISTS measurements (
+      profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      date       TEXT NOT NULL,
+      waist_cm   REAL NOT NULL,
+      logged_at  TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (profile_id, date)
+    );
+
     CREATE TABLE IF NOT EXISTS daily_overrides (
       profile_id INTEGER NOT NULL DEFAULT 0,
       date  TEXT NOT NULL,

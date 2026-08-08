@@ -106,6 +106,14 @@ export function renderSettings(container) {
             <span style="font-size:12px;color:var(--text-muted)">${unitLabel()}</span>
             <button class="btn btn-secondary" id="manual-tdee-apply" style="height:40px;padding:0 14px;font-size:13px">Apply</button>
           </div>
+          ${(() => {
+            const held = daysHoldingTdee(s);
+            if (held == null) return '';
+            const thin = held < 28;
+            return `<div style="font-size:11px;margin:-2px 0 8px;color:${thin ? 'var(--warning)' : 'var(--text-faint)'}">
+              ${held} day${held === 1 ? '' : 's'} of data behind this figure${thin ? ` — Trends needs ~28 before its rate means anything` : ''}
+            </div>`;
+          })()}
           <div style="display:flex;gap:8px;margin-bottom:4px">
             <button class="btn btn-secondary" id="tdee-estimate" style="height:36px;font-size:12px;flex:1">🧮 Not sure? Estimate it</button>
             <button class="btn btn-secondary" id="ironlog-sync" style="height:36px;font-size:12px;flex:1">⟳ Sync from IronLog</button>
@@ -611,6 +619,19 @@ export function renderSettings(container) {
         showToast(`Enter a valid TDEE (e.g. ${unitLabel() === 'kJ' ? '10000' : '2400'})`, 'error');
         return;
       }
+      // A 4-week trend is the shortest window Trends can read a real rate from,
+      // and these figures swing ~100 kcal on a single weigh-in crossing a window
+      // edge. Changing TDEE again before that much data exists is reacting to
+      // noise. Confirm rather than block — sometimes the number is just wrong.
+      const held = daysHoldingTdee(s);
+      if (held != null && held < 28 && String(tdee) !== String(parseFloat(s.tdee) || '')) {
+        const ok = confirm(
+          `Your current TDEE has only ${held} day${held === 1 ? '' : 's'} of data behind it.\n\n` +
+          `Trends needs about 4 weeks before its rate means anything — one weigh-in ` +
+          `crossing a window edge moves the estimate ~100 kcal.\n\nChange it anyway?`
+        );
+        if (!ok) return;
+      }
       const { phase, deficit, surplus } = parsePhaseSettings(s);
       const calGoal = phaseCalorieGoal(tdee, phase, deficit, surplus);
       try {
@@ -1089,6 +1110,16 @@ function openReportSheet() {
       }
     });
   });
+}
+
+// Days since TDEE last changed VALUE (the server stamps tdee_set_at on a real
+// change, not on a re-save). null when never stamped — older profiles have no
+// record, and no claim beats a wrong one.
+function daysHoldingTdee(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s.tdee_set_at || '')) return null;
+  const then = new Date(s.tdee_set_at + 'T00:00:00');
+  const now  = new Date(localDate() + 'T00:00:00');
+  return Math.max(0, Math.round((now - then) / 86400000));
 }
 
 function goalRow(key, label, value, unit, compact = false) {
