@@ -1,4 +1,4 @@
-const CACHE_NAME = 'plated-v163';
+const CACHE_NAME = 'plated-v164';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -13,6 +13,7 @@ const STATIC_ASSETS = [
   '/js/views/settings.js',
   '/js/views/log.js',
   '/js/components/barcode.js',
+  '/js/components/onboarding.js',
   '/js/components/foodSearch.js',
   '/js/components/macroBar.js',
   '/js/utils/energy.js',

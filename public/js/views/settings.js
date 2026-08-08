@@ -4,7 +4,7 @@ import { setEnergyUnit, fmtE, unitLabel, toKcal } from '../utils/energy.js';
 import { submitReport }              from '../utils/bugReport.js';
 import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
 import { localDate }                 from '../utils/date.js';
-import { estimateTdee }              from '../utils/stats.js';
+import { estimateTdee, ACTIVITY }    from '../utils/stats.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -879,14 +879,6 @@ function downloadBlob(text, filename, mime) {
 // derive it short of connecting IronLog. This gives a defensible starting
 // point; Trends' measured "real maintenance" corrects it from your own data
 // once there's enough of it, so it only has to be roughly right.
-const ACTIVITY = [
-  { k: '1.2',   label: 'Sedentary',    hint: 'desk job, little exercise' },
-  { k: '1.375', label: 'Light',        hint: 'training 1–3×/week' },
-  { k: '1.55',  label: 'Moderate',     hint: 'training 3–5×/week' },
-  { k: '1.725', label: 'Very active',  hint: 'training 6–7×/week' },
-  { k: '1.9',   label: 'Athlete',      hint: 'twice a day, or physical job' },
-];
-
 function openTdeeEstimator(s, onUse) {
   showSheet(content => {
     // Trend weight if we have one — it's the same number the g/kg macro targets

@@ -284,6 +284,15 @@ function migrateSchema(db) {
   // `parseFloat(undefined) || 0`, i.e. a fat target of 0 g with no hint why.
   // INSERT OR IGNORE means this only fills gaps and never overwrites a value
   // you've set, so it's safe to re-run on every boot.
+  // Anyone who already has a profile has already set themselves up, one way or
+  // another — they must not be handed a first-run wizard on the next deploy.
+  // Stamped BEFORE seedProfileDefaults so its INSERT OR IGNORE can't write the
+  // '0' that PROFILE_DEFAULTS gives genuinely new profiles.
+  db.exec(`
+    INSERT OR IGNORE INTO profile_settings (profile_id, key, value)
+    SELECT id, 'onboarded', '1' FROM profiles
+  `);
+
   for (const { id } of db.prepare('SELECT id FROM profiles').all()) {
     seedProfileDefaults(db, id);
   }
@@ -336,6 +345,9 @@ const PROFILE_DEFAULTS = [
   ['macro_mode', 'pct'], ['protein_multiplier', '2.2'], ['fat_multiplier', '0.8'],
   ['energy_unit', 'kcal'], ['phase', 'maintain'],
   ['tdee', ''], ['cut_deficit', '500'], ['bulk_surplus', '300'],
+  // '0' only ever reaches a profile created from here on — migrateSchema stamps
+  // every pre-existing profile '1' first.
+  ['onboarded', '0'],
 ];
 
 function seedProfileDefaults(db, profileId) {

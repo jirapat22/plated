@@ -18,6 +18,10 @@ const ALLOWED = new Set([
   // reopened pre-filled and re-run; birth_year rather than age so it doesn't go
   // stale. They feed the estimate only — nothing reads them to change a goal.
   'height_cm', 'birth_year', 'sex', 'activity_level',
+  'bodyweight_kg',
+  // '1' once the first-run flow has been completed OR skipped — either way the
+  // wizard has had its turn and must not reappear.
+  'onboarded',
 ]);
 
 // Settings that feed the g/kg macro formula — changing any of them has to

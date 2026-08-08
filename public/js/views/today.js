@@ -7,6 +7,7 @@ import { localDate }                       from '../utils/date.js';
 import { classifyDay, isFlagged, LOG_STRONG } from '../utils/logCheck.js';
 import { assert } from '../utils/bugReport.js';
 import { movingAvg } from '../utils/stats.js';
+import { openOnboarding } from '../components/onboarding.js';
 
 const CIRC = 2 * Math.PI * 60;
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -86,6 +87,7 @@ export function renderToday(container) {
   let viewDate      = localDate();
   let ironlogExpanded = false;
   let loadGen = 0;             // increments on each load; stale responses discarded
+  let onboardingShown = false; // first-run sheet fires at most once per mount
 
   async function load() {
     viewDate = localDate();
@@ -111,6 +113,14 @@ export function renderToday(container) {
       // panel — one extra paint on the slow path. Make it surgical if it ever
       // interrupts a scroll.
       render(mealData, settings, ironlog, todayWeight, weightHistory);
+
+      // First run. Fired after the first paint so the app is visibly there
+      // behind the sheet rather than a wizard over a blank screen. Once only —
+      // the flow writes onboarded='1' whether it's completed or skipped.
+      if (settings.onboarded === '0' && !onboardingShown) {
+        onboardingShown = true;
+        openOnboarding(() => load());
+      }
     } catch (err) {
       if (myGen !== loadGen) return;
       container.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;

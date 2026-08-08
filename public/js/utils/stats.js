@@ -56,6 +56,17 @@ function trendAsOf(entries, iso, windowStart, win) {
 // previously exported from a view nothing imports, which meant the tests
 // exercised a copy of the formula instead of the shipped one.
 // Null until every input it needs is present, which is what disables the button.
+// Activity multipliers for Mifflin-St Jeor. Lives here beside estimateTdee
+// rather than in a view, so the Settings estimator and the first-run flow can
+// both use one copy.
+export const ACTIVITY = [
+  { k: '1.2',   label: 'Sedentary',    hint: 'desk job, little exercise' },
+  { k: '1.375', label: 'Light',        hint: 'training 1–3×/week' },
+  { k: '1.55',  label: 'Moderate',     hint: 'training 3–5×/week' },
+  { k: '1.725', label: 'Very active',  hint: 'training 6–7×/week' },
+  { k: '1.9',   label: 'Athlete',      hint: 'twice a day, or physical job' },
+];
+
 // Mifflin-St Jeor resting burn — what you'd spend doing nothing at all.
 function bmr({ weightKg, heightCm, age, sex }) {
   if (!(weightKg > 0) || !(heightCm > 0) || !(age > 0)) return null;
