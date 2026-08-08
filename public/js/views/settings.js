@@ -185,6 +185,9 @@ export function renderSettings(container) {
         <div class="sec-head">⚡ IronLog Integration<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;line-height:1.5">
+            Connecting IronLog pulls your workout burn, bodyweight and goals into Plated.
+            Burn is added <em>on top</em> of your daily target, so a training day lets you eat
+            more without changing any setting. Optional — everything else works without it.<br><br>
             <strong>How to connect:</strong> in IronLog, go to <em>Settings → API Key</em>, tap Copy, then paste it below.
             The URL is your IronLog web address (e.g. https://ironlog-production-….up.railway.app). Each person uses their own IronLog key.
           </div>
@@ -202,6 +205,35 @@ export function renderSettings(container) {
           </button>
           <div id="ironlog-status" style="margin-top:10px;font-size:12px;color:var(--text-muted);user-select:text;-webkit-user-select:text"></div>
           <pre id="ironlog-raw-box" style="display:none;margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;user-select:text;-webkit-user-select:text;max-height:300px;overflow-y:auto"></pre>
+        </div>
+      </div>
+
+      <!-- How it works. A collapsed section costs one line of heading and
+           nothing else, which is why the explanations live here rather than as
+           tooltips scattered over features that mostly explain themselves at
+           the point you use them. -->
+      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
+        <div class="sec-head">❓ How Plated works<span class="sec-chevron">▾</span></div>
+        <div style="padding:4px 16px 16px;font-size:12px;color:var(--text-muted);line-height:1.6">
+          ${[
+            ['🍽️', 'Logging a meal',
+             'Today → <b>Add Food</b>. Search, pick, set the grams. Portions remember themselves: log rice at 150 g once and it offers 150 g next time.'],
+            ['⚡', 'Quick Log',
+             "For food you can't weigh — a restaurant plate, someone else's cooking. Type a description and a rough calorie figure and it goes straight into the day. It never enters your food database, so it can't clutter search."],
+            ['🍱', 'Batches',
+             'For cooking once and eating five times. Enter the ingredients and the finished cooked weight; Plated works out the calories per gram. Then weigh your bowl and log a portion, and the batch counts down. Delete a portion and the grams go back.'],
+            ['⚡', 'IronLog',
+             'If you use IronLog for training, connecting it pulls your workout burn, your bodyweight, and your goals across. Burn is added <i>on top</i> of your daily target, so a training day lets you eat more without touching your settings.'],
+            ['📈', 'Trends',
+             "The verdict card answers one question: is this actually working? It compares what you ate against what the scale did and works out your <i>real</i> maintenance — which is usually not the estimate you started with. It needs about four weeks of weigh-ins before it means anything."],
+          ].map(([icon, title, body]) => `
+            <div style="display:flex;gap:10px;padding:10px 0;border-top:1px solid var(--border)">
+              <span style="font-size:15px;flex-shrink:0;line-height:1.3">${icon}</span>
+              <div style="min-width:0">
+                <div style="font-weight:700;color:var(--text);font-size:12px;margin-bottom:2px">${title}</div>
+                <div>${body}</div>
+              </div>
+            </div>`).join('')}
         </div>
       </div>
 
@@ -376,8 +408,12 @@ export function renderSettings(container) {
               <span style="font-size:14px">${esc(p.name)}</span>
               ${p.is_admin ? '<span class="food-tag tag-custom">Admin</span>' : ''}
             </span>
-            <button class="btn btn-secondary admin-toggle" data-id="${p.id}" data-next="${p.is_admin ? 0 : 1}"
-              style="height:32px;padding:0 12px;font-size:12px">${p.is_admin ? 'Revoke' : 'Make admin'}</button>
+            <span style="display:flex;gap:6px;flex-shrink:0">
+              <button class="btn btn-secondary admin-code" data-id="${p.id}" data-name="${esc(p.name)}"
+                style="height:32px;padding:0 10px;font-size:12px" title="Reset this profile's passcode">Reset code</button>
+              <button class="btn btn-secondary admin-toggle" data-id="${p.id}" data-next="${p.is_admin ? 0 : 1}"
+                style="height:32px;padding:0 12px;font-size:12px">${p.is_admin ? 'Revoke' : 'Make admin'}</button>
+            </span>
           </div>
         `).join('');
         box.querySelectorAll('.admin-toggle').forEach(btn => {
@@ -386,6 +422,30 @@ export function renderSettings(container) {
               await api.post('/api/auth/admin/set', { profileId: parseInt(btn.dataset.id), is_admin: btn.dataset.next === '1' });
               loadAdminList();
             } catch (err) { showToast(err.message, 'error'); }
+          });
+        });
+        // Acts on the reset requests that arrive in Orbit from the lock screen.
+        box.querySelectorAll('.admin-code').forEach(btn => {
+          btn.addEventListener('click', () => {
+            showPrompt({
+              title: `New passcode for ${btn.dataset.name}`,
+              label: 'Four digits. Tell them separately — it is not sent anywhere.',
+              placeholder: '••••',
+              cta: 'Reset',
+              inputMode: 'numeric',
+              maxLength: 4,
+            }, async code => {
+              if (!/^\d{4}$/.test(String(code || '').trim())) {
+                showToast('Passcode must be 4 digits', 'error');
+                return;
+              }
+              try {
+                await api.post('/api/auth/admin/passcode', {
+                  profileId: parseInt(btn.dataset.id), passcode: String(code).trim(),
+                });
+                showToast(`${btn.dataset.name} can log in with that code now`, 'success', { duration: 6000 });
+              } catch (err) { showToast(err.message, 'error'); }
+            });
           });
         });
       } catch (err) {

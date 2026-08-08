@@ -200,6 +200,44 @@ router.post('/me/passcode', requireProfile, async (req, res) => {
   }
 });
 
+// POST /api/auth/admin/passcode { profileId, passcode } — admin resets someone
+// else's code. Without this a forgotten 4-digit passcode meant permanently lost
+// data: /me/passcode needs you already logged in, and nothing else could touch
+// pass_hash. The lock screen's "Forgot passcode?" raises a request in Orbit;
+// this is the half that lets the admin act on it.
+router.post('/admin/passcode', requireProfile, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!isAdmin(db, req.profileId)) return res.status(403).json({ error: 'Admin only' });
+
+    const { profileId, passcode } = req.body;
+    if (!isValidCode(passcode)) return res.status(400).json({ error: 'Passcode must be 4 digits' });
+    const target = db.prepare('SELECT id, name FROM profiles WHERE id = $id').get({ id: profileId });
+    if (!target) return res.status(404).json({ error: 'Profile not found' });
+
+    // Codes are globally unique (login scans every profile), so the same lock
+    // and the same collision check as /me/passcode apply here.
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = await hashCode(passcode, salt);
+    const taken = await withPasscodeLock(async () => {
+      for (const p of db.prepare('SELECT * FROM profiles WHERE id != $id').all({ id: target.id })) {
+        if (await verifyCode(passcode, p.pass_salt, p.pass_hash)) return true;
+      }
+      db.prepare('UPDATE profiles SET pass_hash = $h, pass_salt = $s WHERE id = $id')
+        .run({ h: hash, s: salt, id: target.id });
+      return false;
+    });
+    if (taken) return res.status(409).json({ error: 'That code is already taken' });
+
+    // Every session for that profile dies with the old code — otherwise a reset
+    // done because a device was lost would leave that device logged in.
+    db.prepare('DELETE FROM sessions WHERE profile_id = $id').run({ id: target.id });
+    res.json({ success: true, name: target.name });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/auth/logout — ends the current session on this device
 router.post('/logout', requireProfile, (req, res) => {
   try {

@@ -1,6 +1,6 @@
 import { api, setToken, onUnauthorized } from './api.js';
 import { setEnergyUnit } from './utils/energy.js';
-import { installErrorCapture } from './utils/bugReport.js';
+import { installErrorCapture, submitReport } from './utils/bugReport.js';
 import { renderToday }    from './views/today.js';
 import { renderHistory }  from './views/history.js';
 import { renderTrends }   from './views/trends.js';
@@ -302,6 +302,35 @@ function showLock() {
   showScreen('lock');
 }
 
+// A forgotten 4-digit code used to mean the data was gone: nothing could reach
+// pass_hash without already being logged in. This raises a reset request on the
+// admin's Orbit dashboard, which is the same pipeline bug reports already use —
+// public (it has to work from the lock screen), rate limited, and it queues
+// offline. Deliberately does NOT confirm whether the name exists: an unlocked
+// lock screen should not become a way to enumerate who has an account.
+function openForgotPasscode() {
+  showPrompt({
+    title: 'Request a reset',
+    label: 'Your profile name, and anything that identifies you',
+    placeholder: 'e.g. Sam — the account I set up last Tuesday',
+    cta: 'Send request',
+    maxLength: 300,
+  }, async text => {
+    const detail = String(text || '').trim();
+    if (!detail) return;
+    try {
+      await submitReport({
+        type: 'passcode_reset',
+        message: `Passcode reset requested — ${detail}`,
+        context: { kind: 'passcode_reset', stated_name: detail, requested_at: new Date().toISOString() },
+      });
+      showToast("Sent. The admin will get in touch — they can reset it for you.", 'success', { duration: 6000 });
+    } catch {
+      showToast("Saved — it'll send once you're back online.", 'info', { duration: 6000 });
+    }
+  });
+}
+
 async function submitLogin() {
   const code = passcode;
   try {
@@ -340,6 +369,7 @@ function setupNumpad() {
     setDots(passcode.length);
   });
   document.getElementById('lock-create-link').addEventListener('click', () => showCreate(''));
+  document.getElementById('lock-forgot-link').addEventListener('click', openForgotPasscode);
 
   window.addEventListener('keydown', e => {
     if (document.getElementById('lock-screen').classList.contains('hidden')) return;

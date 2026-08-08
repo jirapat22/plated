@@ -59,12 +59,22 @@ function trendAsOf(entries, iso, windowStart, win) {
 // Activity multipliers for Mifflin-St Jeor. Lives here beside estimateTdee
 // rather than in a view, so the Settings estimator and the first-run flow can
 // both use one copy.
+// `hint` is the compact version Settings shows; `long` anchors the same level to
+// things you can actually check — steps and the shape of your day — because
+// almost everyone reads their own training as more than it is. Overshooting here
+// is the expensive direction: it inflates TDEE, inflates the goal, and the
+// deficit you think you have never arrives.
 export const ACTIVITY = [
-  { k: '1.2',   label: 'Sedentary',    hint: 'desk job, little exercise' },
-  { k: '1.375', label: 'Light',        hint: 'training 1–3×/week' },
-  { k: '1.55',  label: 'Moderate',     hint: 'training 3–5×/week' },
-  { k: '1.725', label: 'Very active',  hint: 'training 6–7×/week' },
-  { k: '1.9',   label: 'Athlete',      hint: 'twice a day, or physical job' },
+  { k: '1.2',   label: 'Sedentary',   hint: 'desk job, little exercise',
+    long: 'Desk or study most of the day, car or bus, evenings sitting. Under ~5,000 steps. Pick this even if you train a few times a week — the training is the exception, not the day.' },
+  { k: '1.375', label: 'Light',       hint: 'training 1–3×/week',
+    long: 'On your feet a fair bit, or 1–3 real sessions a week. Roughly 5–8,000 steps. This is where most desk workers who go to the gym actually land.' },
+  { k: '1.55',  label: 'Moderate',    hint: 'training 3–5×/week',
+    long: '3–5 sessions a week AND a day that keeps moving — walking commute, stairs, rarely sitting for hours. Roughly 8–12,000 steps.' },
+  { k: '1.725', label: 'Very active', hint: 'training 6–7×/week',
+    long: 'Hard training 6–7 days a week, or a job on your feet all day plus regular sessions. 12,000+ steps.' },
+  { k: '1.9',   label: 'Athlete',     hint: 'twice a day, or physical job',
+    long: 'Two sessions most days, or manual labour on top of training. Genuinely rare — if you are choosing between this and the one below, choose below.' },
 ];
 
 // Mifflin-St Jeor resting burn — what you'd spend doing nothing at all.

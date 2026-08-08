@@ -98,14 +98,22 @@ export function openOnboarding(onDone) {
             </div>
             <div style="font-size:11px;color:var(--text-faint);margin-bottom:14px">Used for the Mifflin-St Jeor estimate. Stored on your device's profile only.</div>
           ` : step === 2 ? `
-            <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">
-              Outside of deliberate training as well — a job on your feet counts.
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
+              Your whole day, not just the gym. Judge it by the hours you're
+              <i>not</i> training — that's most of them.
             </div>
-            <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+            <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
               ${ACTIVITY.map(a =>
-                `<button type="button" class="fs-chip ob-act${d.act === a.k ? ' active' : ''}" data-v="${a.k}" style="text-align:left;padding:10px 12px;height:auto">
-                   ${chip(d.act === a.k, a.label, a.hint)}
+                `<button type="button" class="fs-chip ob-act${d.act === a.k ? ' active' : ''}" data-v="${a.k}" style="text-align:left;padding:11px 12px;height:auto;white-space:normal">
+                   <span style="display:block;font-weight:700;font-size:13px">${a.label}</span>
+                   <span style="display:block;font-size:11px;opacity:.8;margin-top:3px;line-height:1.45">${a.long}</span>
                  </button>`).join('')}
+            </div>
+            <div style="font-size:11px;color:var(--warning);line-height:1.5;margin-bottom:14px">
+              Most people pick one level too high. <b>If you're between two, take the lower one.</b>
+              Guess low and you lose slightly faster than planned; guess high and your goal is too
+              generous, the deficit never shows up, and it looks like nothing is working.
+              Trends measures the real figure from your own logs within a few weeks either way.
             </div>
           ` : `
             <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:${d.phase === 'maintain' ? '16' : '12'}px">
