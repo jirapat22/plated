@@ -140,11 +140,12 @@
 <!-- ─── Toast Container ───────────────────────────────────── -->
 <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-<!-- CDN: html5-qrcode for barcode scanning (crossorigin = real error details, not "Script error.") -->
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" crossorigin="anonymous"></script>
-<!-- CDN: Chart.js for trends -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" crossorigin="anonymous"></script>
-
+<!-- html5-qrcode (375kb) and Chart.js (205kb) used to load here as blocking
+     classic scripts, so 580kb from two CDNs had to arrive and execute before
+     app.js ran. The service worker precaches every local file but neither of
+     these, so the one thing gating boot was the one thing always hitting the
+     network. Both now load on demand: the scanner from barcode.js when you open
+     it, Chart.js from trends.js alongside that view's own fetches. -->
 <script type="module" src="/js/app.js"></script>
 </body>
 </html>

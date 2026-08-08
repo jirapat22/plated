@@ -36,6 +36,23 @@ const CHART_DEFAULTS = {
 // ponytail: guarding beats vendoring ~550kb of Chart.js + html5-qrcode into the
 // repo; self-host if offline charts ever actually matter.
 const haveChart = () => typeof Chart !== 'undefined';
+
+// 205kb fetched when you open Trends, not on every cold start. It rides in the
+// same Promise.all as this view's own data, so it costs no extra wall time, and
+// haveChart() already copes with it never arriving — a failed load just leaves
+// the "Chart needs a connection" placeholders.
+let chartLibPromise = null;
+function ensureChartLib() {
+  if (haveChart()) return Promise.resolve();
+  return chartLibPromise ??= new Promise(resolve => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+    s.crossOrigin = 'anonymous';
+    s.onload = () => resolve();
+    s.onerror = () => { chartLibPromise = null; resolve(); };
+    document.head.appendChild(s);
+  });
+}
 function destroyChart(id) { if (haveChart()) Chart.getChart(id)?.destroy(); }
 
 // "set target" in the verdict card was inert text with no way to act on it —
@@ -286,6 +303,7 @@ export function renderTrends(container) {
         api.get('/api/ironlog/bodyweight')
           .then(d => d.entries || (Array.isArray(d) ? d : []))
           .catch(() => []),
+        ensureChartLib(),   // 5th, result unused — just has to be here before render
       ]);
 
       if (!document.getElementById('trends-body')) return;  // left the view during fetch

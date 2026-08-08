@@ -29,9 +29,27 @@ function supportedFormats() {
  * Opens the barcode scanner in a bottom sheet.
  * Calls onScan(barcode) on a successful read.
  */
-export function openBarcodeScanner(onScan) {
-  if (typeof Html5Qrcode === 'undefined') {
-    showToast('Barcode library not loaded', 'error');
+// 375kb fetched the first time you actually open the scanner, instead of on
+// every cold start for a button most launches never touch.
+// ponytail: a <script> tag, not a module import — the library ships as a UMD
+// global. A failed load resets the promise so the next tap retries.
+let libPromise = null;
+function ensureScannerLib() {
+  if (typeof Html5Qrcode !== 'undefined') return Promise.resolve(true);
+  return libPromise ??= new Promise(resolve => {
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+    s.crossOrigin = 'anonymous';   // real error details, not "Script error."
+    s.onload  = () => resolve(true);
+    s.onerror = () => { libPromise = null; resolve(false); };
+    document.head.appendChild(s);
+  });
+}
+
+export async function openBarcodeScanner(onScan) {
+  showToast('Starting camera…', 'info');
+  if (!await ensureScannerLib()) {
+    showToast("Couldn't load the scanner — check your connection", 'error');
     return;
   }
 
