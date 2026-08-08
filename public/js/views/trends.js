@@ -268,20 +268,25 @@ export function renderTrends(container) {
     bodyEl.innerHTML =
       '<div class="skeleton skel-line" style="height:180px;border-radius:14px"></div>';
     try {
-      const [summary, weights, settings] = await Promise.all([
+      // IronLog rides in the same batch instead of a second round trip after it.
+      // Unlike Today, where IronLog is its own panel and can arrive late, these
+      // weigh-ins merge into the very series the chart and the verdict are
+      // computed from — rendering without them and refining after would visibly
+      // rewrite the verdict a beat later.
+      const [summary, weights, settings, ironlogWeights] = await Promise.all([
         // Always fetch at least 90d regardless of chart range so the consistency
         // streak isn't capped short — the streak walks the full summary, while
         // the charts slice it down to `days`.
         api.get(`/api/meals/summary?days=${days === Infinity ? 'all' : Math.max(days, 90)}`),
         api.get(`/api/weight?limit=${days === Infinity ? 5000 : Math.max(days, 90)}`),
         api.get('/api/settings'),
+        // ponytail: non-fatal — degrades to no IronLog weigh-ins rather than
+        // failing the view. Still bounded by the route's 6s timeout; give it its
+        // own shorter budget if that ever bites.
+        api.get('/api/ironlog/bodyweight')
+          .then(d => d.entries || (Array.isArray(d) ? d : []))
+          .catch(() => []),
       ]);
-
-      let ironlogWeights = [];
-      try {
-        const d = await api.get('/api/ironlog/bodyweight');
-        ironlogWeights = d.entries || (Array.isArray(d) ? d : []);
-      } catch { /* non-fatal */ }
 
       if (!document.getElementById('trends-body')) return;  // left the view during fetch
       render(summary, weights, ironlogWeights, settings);
