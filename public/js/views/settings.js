@@ -111,8 +111,12 @@ export function renderSettings(container) {
             const held = daysHoldingTdee(s);
             if (held == null) return '';
             const thin = held < 28;
+            // "N days of data behind this figure" read as "you have no data",
+            // which isn't the claim — the weight history can be years deep. What
+            // is thin is how much of Trends' 28-day window was spent eating at
+            // THIS goal. Say that instead.
             return `<div style="font-size:11px;margin:-2px 0 8px;color:${thin ? 'var(--warning)' : 'var(--text-faint)'}">
-              ${held} day${held === 1 ? '' : 's'} of data behind this figure${thin ? ` — Trends needs ~28 before its rate means anything` : ''}
+              Set ${held === 0 ? 'today' : `${held} day${held === 1 ? '' : 's'} ago`}${thin ? ` — Trends' 28-day window is still mostly your previous goal` : ''}
             </div>`;
           })()}
           <div style="display:flex;gap:8px;margin-bottom:4px">
@@ -627,9 +631,10 @@ export function renderSettings(container) {
       const held = daysHoldingTdee(s);
       if (held != null && held < 28 && String(tdee) !== String(parseFloat(s.tdee) || '')) {
         const ok = confirm(
-          `Your current TDEE has only ${held} day${held === 1 ? '' : 's'} of data behind it.\n\n` +
-          `Trends needs about 4 weeks before its rate means anything — one weigh-in ` +
-          `crossing a window edge moves the estimate ~100 kcal.\n\nChange it anyway?`
+          `You set this TDEE ${held === 0 ? 'today' : `${held} day${held === 1 ? '' : 's'} ago`}.\n\n` +
+          `Your weight history isn't the issue — Trends fits its rate over the last 28 days, ` +
+          `so most of that window is still you eating at the OLD goal. It can't tell you ` +
+          `whether this one works yet.\n\nChange it anyway?`
         );
         if (!ok) return;
       }
