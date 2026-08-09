@@ -60,6 +60,7 @@ export function showSheet(renderFn) {
   content.innerHTML = '';
   renderFn(content);
 
+  hideUpdateBanner();          // it would sit on top of this sheet's buttons
   overlay.classList.remove('hidden');
   sheet.classList.remove('hidden');
   // Force reflow
@@ -80,6 +81,7 @@ export function hideSheet() {
     overlay.classList.add('hidden');
     sheet.classList.add('hidden');
     document.getElementById('sheet-content').innerHTML = '';
+    renderUpdateBanner();      // deferred while the sheet was up
   }, 300);
 }
 
@@ -187,8 +189,24 @@ if ('serviceWorker' in navigator) {
   }).catch(console.warn);
 }
 
+// The waiting worker, held from the moment one is found until the user either
+// accepts it or reloads for some other reason.
+let updateWorker = null;
+
 function showUpdateBanner(worker) {
-  if (document.getElementById('update-banner')) return;
+  updateWorker = worker;
+  renderUpdateBanner();
+}
+
+// Never render over a bottom sheet. The banner is position:fixed at z-index
+// 1100 and the sheet is 201, so it landed squarely on top of whatever button
+// you were reaching for — mid Quick Log, that's the Log button. The only way
+// past it was Refresh, which reloads the page and throws away everything you
+// had typed, so you got to enter the meal twice. Held until the sheet closes.
+function renderUpdateBanner() {
+  if (!updateWorker || document.getElementById('update-banner')) return;
+  if (!document.getElementById('sheet').classList.contains('hidden')) return;
+
   const banner = document.createElement('div');
   banner.id = 'update-banner';
   banner.className = 'update-banner';
@@ -199,9 +217,16 @@ function showUpdateBanner(worker) {
   requestAnimationFrame(() => banner.classList.add('visible'));
   banner.querySelector('#update-refresh').onclick = () => {
     updateAccepted = true;
-    worker.postMessage({ type: 'skip-waiting' });
+    updateWorker.postMessage({ type: 'skip-waiting' });
     banner.remove();
   };
+}
+
+// The other order of the same collision: banner already up, then you open a
+// sheet. Pulled off screen, not forgotten — updateWorker still holds it, so it
+// comes back when the sheet closes.
+function hideUpdateBanner() {
+  document.getElementById('update-banner')?.remove();
 }
 
 // ─── Offline indicator ───────────────────────────────────────

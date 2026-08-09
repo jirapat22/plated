@@ -879,7 +879,10 @@ img { display: block; max-width: 100%; }
 .update-banner {
   position: fixed;
   left: 16px; right: 16px;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  /* Above the bottom nav, not on top of it. At bottom:16px this covered the
+     nav's middle tabs as well as anything else down there. Same anchoring the
+     FAB uses, so the two stack predictably. */
+  bottom: calc(var(--nav-h) * var(--ui-scale) + var(--safe-bottom) + 12px);
   z-index: 1100;
   display: flex;
   align-items: center;
