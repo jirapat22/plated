@@ -73,7 +73,23 @@ function ensureChartLib() {
     document.head.appendChild(s);
   });
 }
-function destroyChart(id) { if (haveChart()) Chart.getChart(id)?.destroy(); }
+// Chart instances we created, by canvas id. Chart.getChart(id) used to be the
+// whole of this, and it leaked: it resolves the id through
+// document.getElementById, so once navigateTo has done innerHTML='' and the
+// view re-rendered, that id points at a BRAND NEW canvas with no instance
+// attached. It returned undefined and the previous Chart — plus its resize
+// listener and its detached canvas — was never destroyed. One more every time
+// you opened Trends. Holding our own references means destroy() always has
+// something to destroy.
+const charts = new Map();
+function destroyChart(id) {
+  charts.get(id)?.destroy();
+  charts.delete(id);
+}
+function destroyAllCharts() {
+  for (const c of charts.values()) c.destroy();
+  charts.clear();
+}
 
 // "set target" in the verdict card was inert text with no way to act on it —
 // jump to Settings and land right on the field instead of leaving the user
@@ -193,7 +209,7 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
   }
 
   const CD = chartDefaults();
-  new Chart(ctx, {
+  charts.set(id, new Chart(ctx, {
     type: 'line',
     data: { labels, datasets },
     options: {
@@ -221,7 +237,7 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
         },
       },
     },
-  });
+  }));
 }
 
 // Consecutive fully-logged days (a consistency streak — not a hit-your-calorie-
@@ -1108,4 +1124,8 @@ export function renderTrends(container) {
   }
 
   load();
+  // navigateTo calls this before swapping views. Without it the canvases go out
+  // with innerHTML='' but their Chart instances stay alive, holding a resize
+  // listener each — one more per visit, for as long as the app stays open.
+  return () => destroyAllCharts();
 }
