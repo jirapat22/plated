@@ -71,10 +71,41 @@ function publicProfile(p) {
 function isAdmin(db, profileId) {
   return !!db.prepare('SELECT is_admin FROM profiles WHERE id = $id').get({ id: profileId })?.is_admin;
 }
-function createSession(db, profileId) {
+// req is optional so older callers still work, but every caller passes it —
+// without the device and address captured here, the session list can only ever
+// say "some other device", which is exactly the answer that isn't useful.
+function createSession(db, profileId, req) {
   const token = newToken();
-  db.prepare('INSERT INTO sessions (token, profile_id) VALUES ($t, $p)').run({ t: token, p: profileId });
+  db.prepare(`INSERT INTO sessions (token, profile_id, user_agent, ip, last_seen)
+              VALUES ($t, $p, $ua, $ip, datetime('now'))`).run({
+    t: token, p: profileId,
+    ua: String(req?.headers?.['user-agent'] || '').slice(0, 300) || null,
+    ip: req?.ip || null,
+  });
   return token;
+}
+
+// A short human label from a user-agent string. Deliberately crude: this is to
+// help you recognise your own phone in a list of two or three, not to
+// fingerprint anything. Order matters — Chrome's UA contains "Safari", and
+// Edge's contains "Chrome".
+function deviceLabel(ua) {
+  const s = String(ua || '');
+  if (!s) return 'Unknown device';
+  const device =
+    /iPhone/i.test(s) ? 'iPhone' :
+    /iPad/i.test(s) ? 'iPad' :
+    /Android/i.test(s) ? 'Android' :
+    /Macintosh|Mac OS X/i.test(s) ? 'Mac' :
+    /Windows/i.test(s) ? 'Windows' :
+    /Linux/i.test(s) ? 'Linux' : 'Unknown device';
+  const browser =
+    /Edg\//i.test(s) ? 'Edge' :
+    /OPR\/|Opera/i.test(s) ? 'Opera' :
+    /Firefox\//i.test(s) ? 'Firefox' :
+    /Chrome\//i.test(s) ? 'Chrome' :
+    /Safari\//i.test(s) ? 'Safari' : null;
+  return browser ? `${device} · ${browser}` : device;
 }
 const isValidCode = c => /^\d{4}$/.test(String(c ?? ''));
 // Accent color is rendered unescaped into inline `style` attributes in several
@@ -104,7 +135,7 @@ router.post('/login', loginLimiter, async (req, res) => {
       return res.status(404).json({ error: 'No profile for this code' });
     }
 
-    res.json({ token: createSession(db, profile.id), profile: publicProfile(profile) });
+    res.json({ token: createSession(db, profile.id, req), profile: publicProfile(profile) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -150,7 +181,7 @@ router.post('/profiles', loginLimiter, createLimiter, async (req, res) => {
     }
 
     const profile = db.prepare('SELECT * FROM profiles WHERE id = $id').get({ id });
-    res.status(201).json({ token: createSession(db, id), profile: publicProfile(profile) });
+    res.status(201).json({ token: createSession(db, id, req), profile: publicProfile(profile) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -218,6 +249,52 @@ router.post('/me/passcode', requireProfile, async (req, res) => {
     const gone = db.prepare('DELETE FROM sessions WHERE profile_id = $id AND token != $t')
       .run({ id: req.profileId, t: req.sessionToken }).changes;
     res.json({ success: true, signed_out: gone });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/auth/sessions — every device currently signed in as you.
+// The token itself is never returned; rows are addressed by rowid, so the list
+// can offer "sign this one out" without handing back a working credential.
+router.get('/sessions', requireProfile, (req, res) => {
+  try {
+    const rows = getDb().prepare(`
+      SELECT rowid AS id, token, user_agent, ip, created_at, last_seen
+      FROM sessions WHERE profile_id = $pid
+      ORDER BY COALESCE(last_seen, created_at) DESC
+    `).all({ pid: req.profileId });
+    res.json(rows.map(r => ({
+      id: r.id,
+      device: deviceLabel(r.user_agent),
+      ip: r.ip || null,
+      created_at: r.created_at,
+      // Rows that predate this feature have no last_seen; created_at is the
+      // only thing known to be true about them, so say that rather than null.
+      last_seen: r.last_seen || r.created_at,
+      current: r.token === req.sessionToken,
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/auth/sessions/:id — sign out one specific device.
+router.delete('/sessions/:id', requireProfile, (req, res) => {
+  try {
+    const db = getDb();
+    const row = db.prepare('SELECT token FROM sessions WHERE rowid = $id AND profile_id = $pid')
+      .get({ id: req.params.id, pid: req.profileId });
+    if (!row) return res.status(404).json({ error: 'Session not found' });
+    // Refused rather than handled: signing yourself out from a list of devices
+    // is a different intent from tapping Log out, and doing it silently would
+    // leave the screen showing a session list it can no longer load.
+    if (row.token === req.sessionToken) {
+      return res.status(400).json({ error: "That's this device — use Log out instead" });
+    }
+    db.prepare('DELETE FROM sessions WHERE rowid = $id AND profile_id = $pid')
+      .run({ id: req.params.id, pid: req.profileId });
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

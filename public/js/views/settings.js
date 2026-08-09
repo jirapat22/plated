@@ -65,6 +65,8 @@ export function renderSettings(container) {
             A login lasts 30 days. If someone learned your code, changing it now also
             ends every other session — or use this to drop them without changing it.
           </div>
+          <div class="label" style="margin-top:14px">Signed in on</div>
+          <div id="pf-sessions" style="margin-top:6px"></div>
           <div style="font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.5">
             Your days start and end in <strong>${esc(s.timezone || 'Pacific/Auckland')}</strong>,
             detected from this device. Shown because a wrong zone here is invisible
@@ -368,8 +370,11 @@ export function renderSettings(container) {
         showToast(r.signed_out
           ? `${r.signed_out} other device${r.signed_out === 1 ? '' : 's'} signed out`
           : 'No other devices were signed in', 'success', { duration: 5000 });
+        loadSessions();
       } catch (err) { showToast(err.message, 'error'); }
     });
+
+    loadSessions();
 
     document.getElementById('pf-logout').addEventListener('click', async () => {
       try { await api.post('/api/auth/logout'); } catch { /* ignore */ }
@@ -1316,6 +1321,64 @@ function daysHoldingTdee(s) {
   const then = new Date(s.tdee_set_at + 'T00:00:00');
   const now  = new Date(localDate() + 'T00:00:00');
   return Math.max(0, Math.round((now - then) / 86400000));
+}
+
+// "active now" / "3 days ago". SQLite's datetime('now') is UTC and space-
+// separated, so it needs normalising before Date will read it correctly —
+// parsed raw it's treated as local time and every session looks hours old.
+// The 6-minute floor matches the middleware's 5-minute write interval: a
+// session in active use can still show a last_seen up to 5 minutes stale.
+function relTime(ts) {
+  if (!ts) return 'unknown';
+  const s = String(ts);
+  const t = Date.parse(s.replace(' ', 'T') + (/[Zz]|[+-]\d{2}:?\d{2}$/.test(s) ? '' : 'Z'));
+  if (Number.isNaN(t)) return 'unknown';
+  const mins = Math.max(0, Math.floor((Date.now() - t) / 60000));
+  if (mins < 6)  return 'active now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+// The devices currently holding a session for this profile. This is the half
+// that was missing: you could already END other sessions, but nothing ever told
+// you one existed — so someone using your code was something you could respond
+// to and never notice.
+async function loadSessions() {
+  const box = document.getElementById('pf-sessions');
+  if (!box) return;
+  box.innerHTML = '<div class="skeleton skel-line"></div>';
+  let rows;
+  try {
+    rows = await api.get('/api/auth/sessions');
+  } catch (err) {
+    const el = document.getElementById('pf-sessions');
+    if (el) el.innerHTML = `<div style="font-size:11px;color:var(--text-faint)">${esc(err.message)}</div>`;
+    return;
+  }
+  const el = document.getElementById('pf-sessions');
+  if (!el) return;                       // tab switched while the fetch was out
+  el.innerHTML = rows.map(s => `
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+      <span style="flex:1;min-width:0">
+        <span style="display:block;font-size:13px;font-weight:600">${esc(s.device)}${
+          s.current ? ' <span style="color:var(--accent)">· this device</span>' : ''}</span>
+        <span style="display:block;font-size:11px;color:var(--text-faint);margin-top:2px">${
+          relTime(s.last_seen)}${s.ip ? ` · ${esc(s.ip)}` : ''}</span>
+      </span>
+      ${s.current ? '' : `<button class="btn btn-secondary sess-out" data-id="${s.id}"
+        style="flex-shrink:0;height:32px;padding:0 12px;font-size:12px">Sign out</button>`}
+    </div>`).join('');
+  el.querySelectorAll('.sess-out').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      await api.delete(`/api/auth/sessions/${b.dataset.id}`);
+      showToast('Device signed out', 'success');
+      loadSessions();
+    } catch (err) { b.disabled = false; showToast(err.message, 'error'); }
+  }));
 }
 
 const themeBtn = (mode, label) =>

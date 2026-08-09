@@ -258,6 +258,16 @@ function migrateSchema(db) {
     db.exec('ALTER TABLE profiles ADD COLUMN connect_code TEXT');
   }
 
+  // Sessions recorded a token, a profile and a creation time — nothing about
+  // WHO was holding them. You could end other sessions but never see one, so
+  // "somebody knows my code" was a thing you could respond to and never notice.
+  // Existing rows keep NULLs: unknown device, and last_seen falls back to
+  // created_at on read.
+  for (const col of ['user_agent TEXT', 'ip TEXT', 'last_seen TEXT']) {
+    const name = col.split(' ')[0];
+    if (!tableHasColumn(db, 'sessions', name)) db.exec(`ALTER TABLE sessions ADD COLUMN ${col}`);
+  }
+
   // Ensure exactly one admin exists — the first profile (e.g. the migrated one).
   const profileCount = db.prepare('SELECT COUNT(*) AS c FROM profiles').get().c;
   if (profileCount > 0) {
