@@ -67,6 +67,14 @@ function ensureChartLib() {
   return chartLibPromise ??= new Promise(resolve => {
     const s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+    // Subresource Integrity: the browser refuses the file unless it hashes to
+    // exactly this. Without it, a compromised or hijacked CDN could serve
+    // arbitrary JS into the app with full access to the session token, and
+    // nothing here would notice. The URL is version-pinned, so the bytes are
+    // immutable and this hash can't go stale on its own. A mismatch lands on
+    // the existing onerror path — charts show "Chart needs a connection",
+    // which is the same thing that happens offline, rather than a broken tab.
+    s.integrity = 'sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g';
     s.crossOrigin = 'anonymous';
     s.onload = () => resolve();
     s.onerror = () => { chartLibPromise = null; resolve(); };

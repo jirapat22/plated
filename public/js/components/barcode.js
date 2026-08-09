@@ -39,6 +39,11 @@ function ensureScannerLib() {
   return libPromise ??= new Promise(resolve => {
     const s = document.createElement('script');
     s.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+    // See the note in trends.js: without SRI a hijacked CDN gets to run
+    // arbitrary JS here with full access to the session token. Version-pinned
+    // URL, so the bytes are immutable. A mismatch falls through onerror to
+    // "Couldn't load the scanner", and the next tap retries.
+    s.integrity = 'sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+';
     s.crossOrigin = 'anonymous';   // real error details, not "Script error."
     s.onload  = () => resolve(true);
     s.onerror = () => { libPromise = null; resolve(false); };
