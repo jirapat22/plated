@@ -1,5 +1,5 @@
 import { api }                        from '../api.js';
-import { showToast, showSheet, hideSheet, showPrompt, getProfile, applyProfile, logoutToLock, ACCENTS, getTheme, setTheme } from '../app.js';
+import { showToast, showSheet, hideSheet, showPrompt, getProfile, applyProfile, logoutToLock, ACCENTS, getTheme, setTheme, applyA11y } from '../app.js';
 import { setEnergyUnit, fmtE, unitLabel, toKcal } from '../utils/energy.js';
 import { submitReport }              from '../utils/bugReport.js';
 import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
@@ -69,9 +69,9 @@ export function renderSettings(container) {
         </div>
       </div>
 
-      <!-- Appearance — device-local, so it isn't in the settings object below
-           and doesn't go through saveSetting. Same segmented control as the
-           kcal/kJ switch. -->
+      <!-- Appearance. Theme is device-local and never saved to the profile;
+           size and the three switches below are per profile, so a shared phone
+           can be large for one person and normal for the other. -->
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
         <div class="sec-head">🎨 Appearance<span class="sec-chevron">▾</span></div>
         <div class="settings-row">
@@ -81,10 +81,28 @@ export function renderSettings(container) {
             ${themeBtn('light', '☀️ Light')}
           </div>
         </div>
-        <div style="padding:0 16px 14px;font-size:11px;color:var(--text-faint);line-height:1.5">
-          Saved on this device, not to your profile — so your phone can be dark
-          while a shared screen is light, and it survives logging out.
+        <div style="padding:0 16px 12px;font-size:11px;color:var(--text-faint);line-height:1.5">
+          Theme is saved on this device and survives logging out. Everything below
+          follows your profile instead.
         </div>
+
+        <div style="padding:0 16px 14px">
+          <label class="form-label">Text &amp; button size</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center" id="scale-switch">
+            ${scaleBtn('100', 'Normal',  s)}
+            ${scaleBtn('115', 'Large',   s)}
+            ${scaleBtn('130', 'Larger',  s)}
+            ${scaleBtn('150', 'Largest', s)}
+          </div>
+          <div style="font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.5">
+            Grows text, buttons and rows together, so nothing crowds or clips.
+            Bigger sizes fit less on screen — you'll scroll more.
+          </div>
+        </div>
+
+        ${a11yRow('bold_text',     'Bolder text',        'Thickens the lighter text.', s)}
+        ${a11yRow('high_contrast', 'Stronger contrast',  'Brightens the dimmed grey text.', s)}
+        ${a11yRow('big_targets',   'Bigger tap targets', 'Pads small buttons out to a fingertip. Helps unsteady hands too.', s)}
       </div>
 
       <!-- Connections -->
@@ -502,6 +520,42 @@ export function renderSettings(container) {
       btn.addEventListener('click', () => {
         setTheme(btn.dataset.theme);
         body.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b === btn));
+      });
+    });
+
+    // Size + the three accessibility switches. Applied to the page before the
+    // save round-trips, so the effect lands while you're still looking at the
+    // button that caused it — and rolled back if the save fails, rather than
+    // leaving the screen showing a setting the server never took (which is what
+    // happens offline, where PATCH returns 503).
+    const setA11y = async (patch, revert) => {
+      Object.assign(s, patch);
+      applyA11y(s);
+      try {
+        await api.patch('/api/settings', patch);
+      } catch (err) {
+        Object.assign(s, revert);
+        applyA11y(s);
+        showToast(err.message, 'error');
+        load();
+      }
+    };
+
+    body.querySelectorAll('.scale-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const prev = s.ui_scale;
+        body.querySelectorAll('.scale-btn').forEach(b => b.classList.toggle('active', b === btn));
+        setA11y({ ui_scale: btn.dataset.scale }, { ui_scale: prev });
+      });
+    });
+
+    body.querySelectorAll('.a11y-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.a11y;
+        const next = s[key] === '1' ? '0' : '1';
+        btn.classList.toggle('active', next === '1');
+        btn.textContent = next === '1' ? 'On' : 'Off';
+        setA11y({ [key]: next }, { [key]: s[key] });
       });
     });
 
@@ -1255,7 +1309,21 @@ function daysHoldingTdee(s) {
 }
 
 const themeBtn = (mode, label) =>
-  `<button class="theme-btn${getTheme() === mode ? ' active' : ''}" data-theme="${mode}">${label}</button>`;
+  `<button class="seg-btn theme-btn${getTheme() === mode ? ' active' : ''}" data-theme="${mode}">${label}</button>`;
+
+// Each size button is rendered at the size it sets, so the choice previews
+// itself — reading "130%" tells you nothing when 130% is what you can't read.
+const scaleBtn = (v, label, s) =>
+  `<button class="seg-btn scale-btn${String(s.ui_scale ?? '100') === v ? ' active' : ''}" data-scale="${v}">${label}</button>`;
+
+const a11yRow = (key, label, hint, s) => `
+  <div class="settings-row" style="align-items:flex-start;gap:12px">
+    <span class="settings-row-label" style="display:block">${label}
+      <span style="display:block;font-size:11px;font-weight:400;color:var(--text-faint);margin-top:2px;line-height:1.4">${hint}</span>
+    </span>
+    <button class="seg-btn a11y-btn${s[key] === '1' ? ' active' : ''}" data-a11y="${key}"
+      style="flex-shrink:0">${s[key] === '1' ? 'On' : 'Off'}</button>
+  </div>`;
 
 function goalRow(key, label, value, unit, compact = false) {
   if (compact) {

@@ -18,6 +18,14 @@
         document.documentElement.setAttribute('data-theme', 'light');
         document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f6f5f9');
       }
+      // Text scale lives on the profile, so the real value only arrives after
+      // login. This mirror just means someone running at 150% doesn't watch the
+      // whole app start small and jump — the profile value overwrites it a
+      // moment later either way.
+      var z = localStorage.getItem('plated_ui_scale');
+      if (['115', '130', '150'].indexOf(z) > -1) {
+        document.documentElement.style.setProperty('--ui-scale', String(z / 100));
+      }
     } catch (e) {}
   </script>
   <link rel="manifest" href="/manifest.json" />

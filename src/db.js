@@ -348,6 +348,10 @@ const PROFILE_DEFAULTS = [
   // '0' only ever reaches a profile created from here on — migrateSchema stamps
   // every pre-existing profile '1' first.
   ['onboarded', '0'],
+  // Accessibility, off by default. seedProfileDefaults re-runs for every
+  // profile on boot with INSERT OR IGNORE, so existing profiles pick these up
+  // without a separate migration.
+  ['ui_scale', '100'], ['bold_text', '0'], ['high_contrast', '0'], ['big_targets', '0'],
 ];
 
 function seedProfileDefaults(db, profileId) {

@@ -33,6 +33,9 @@
      color-mix() with this: 100% leaves it untouched in dark, 52% pulls it
      toward black in light. Keeps one accent per profile instead of two. */
   --ink-mix:      100%;
+  /* 1 = 100%. Set per profile from Settings → Appearance. See the zoom block
+     under App Shell for why this isn't just a root font-size. */
+  --ui-scale:     1;
   --radius-sm:    8px;
   --radius-md:    14px;
   --radius-lg:    20px;
@@ -77,6 +80,40 @@
   --ink-mix:      52%;
 }
 
+/* ─── Accessibility overrides ────────────────────────────── */
+/* All three are per-profile toggles in Settings → Appearance, applied as
+   attributes on <html> by applyA11y() in app.js. */
+
+/* Bolder text. Body is the only declaration needed: almost nothing in the app
+   sets its own font-weight, so raising the inherited value carries everywhere,
+   while headings and numbers that DO set 700 stay exactly as they are. */
+:root[data-bold="1"] body { font-weight: 600; }
+
+/* Stronger contrast. The muted greys are deliberately dim to build hierarchy,
+   which makes them the first thing to vanish with poor eyesight. Must sit
+   AFTER the light block — same specificity, so source order decides. */
+:root[data-contrast="1"] {
+  --text-muted: #c6c4d2;
+  --text-faint: #9c99ab;
+  --border:     #45454f;
+}
+:root[data-theme="light"][data-contrast="1"] {
+  --text-muted: #3b3949;
+  --text-faint: #55526a;
+  --border:     #b3aec3;
+}
+
+/* Bigger tap targets — independent of text size, for unsteady hands. 44px is
+   Apple's minimum. The exclusions are elements that are already large
+   (numpad, nav) or deliberately small and square (colour swatches), where a
+   min-height would only make them lopsided. */
+:root[data-targets="1"] button:not(.numpad-key):not(.nav-item):not(.accent-swatch) {
+  min-height: 44px;
+}
+:root[data-targets="1"] .sheet-close,
+:root[data-targets="1"] .fav-toggle,
+:root[data-targets="1"] .fav-btn { min-width: 44px; }
+
 /* ─── Reset ──────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 14px; -webkit-tap-highlight-color: transparent; }
@@ -113,6 +150,22 @@ img { display: block; max-width: 100%; }
   display: flex;
   flex-direction: column;
 }
+/* UI scale. Every size in this app is px — 88 declarations in here and 234
+   more in inline styles — so scaling the root font-size does nothing at all.
+   zoom is a real layout scale: text, padding, buttons and icons grow together,
+   which is what "make it bigger" has to mean if a fixed-height row isn't going
+   to clip the label inside it.
+   Applied to the two scrolling content areas rather than <body> on purpose. A
+   position:fixed element inside a zoomed subtree resolves its percentage width
+   against the UNzoomed viewport and then paints scaled, so anything shaped like
+   `left:0; right:0` ends up wider than the screen. .bottom-nav and
+   .toast-container are exactly that shape — they scale by calc() below instead.
+   ponytail: the thorough fix is px→rem everywhere, which is 322 edits and a
+   re-test of every screen. Do that if zoom ever fights a browser update. */
+   The nav, toasts and profile pill therefore carry * var(--ui-scale) inline in
+   their own rules below rather than being overridden from here. */
+.view-container, .sheet-content { zoom: var(--ui-scale); }
+
 .view-container {
   flex: 1;
   overflow-y: auto;
@@ -127,7 +180,7 @@ img { display: block; max-width: 100%; }
 .bottom-nav {
   position: fixed;
   bottom: 0; left: 0; right: 0;
-  height: calc(var(--nav-h) + var(--safe-bottom));
+  height: calc(var(--nav-h) * var(--ui-scale) + var(--safe-bottom));
   padding-bottom: var(--safe-bottom);
   background: var(--surface);
   border-top: 1px solid var(--border);
@@ -142,14 +195,14 @@ img { display: block; max-width: 100%; }
   justify-content: center;
   gap: 4px;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ui-scale));
   font-weight: 600;
   letter-spacing: 0.03em;
   padding: 8px 4px;
   transition: color 0.15s;
 }
 .nav-item.active { color: var(--accent); }
-.nav-icon { width: 22px; height: 22px; }
+.nav-icon { width: calc(22px * var(--ui-scale)); height: calc(22px * var(--ui-scale)); }
 
 /* ─── View transition ────────────────────────────────────── */
 /* opacity:1 is the resting state and the animation only decorates it. With
@@ -763,7 +816,7 @@ img { display: block; max-width: 100%; }
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 12px 16px;
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
   font-weight: 500;
   display: flex;
   align-items: center;
@@ -857,9 +910,10 @@ img { display: block; max-width: 100%; }
 }
 .update-banner button:hover { background: var(--accent-hover); }
 
-/* Theme switch (Settings → Appearance) — same shape as the kcal/kJ pair, but
-   as a class rather than inline styles so toggling is one classList call. */
-.theme-btn {
+/* Segmented pills in Settings → Appearance (theme, size, and the on/off
+   accessibility switches) — same shape as the kcal/kJ pair, but as a class
+   rather than inline styles so toggling is one classList call. */
+.seg-btn {
   height: 34px;
   padding: 0 14px;
   border-radius: var(--radius-full);
@@ -869,7 +923,11 @@ img { display: block; max-width: 100%; }
   background: var(--surface-2);
   color: var(--text-muted);
 }
-.theme-btn.active { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+.seg-btn.active { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+/* The size buttons carry their own scale so each one previews what it does. */
+.scale-btn[data-scale="115"] { font-size: 14px; }
+.scale-btn[data-scale="130"] { font-size: 16px; }
+.scale-btn[data-scale="150"] { font-size: 18px; height: 40px; }
 
 /* ─── Forms ──────────────────────────────────────────────── */
 .form-group { margin-bottom: 16px; }
@@ -1107,7 +1165,7 @@ img { display: block; max-width: 100%; }
   padding: calc(var(--safe-top, 0px) + 8px) 16px 6px;
 }
 .profile-pill {
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
   font-weight: 700;
   letter-spacing: 0.02em;
   padding: 5px 16px;

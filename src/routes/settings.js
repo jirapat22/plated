@@ -22,6 +22,10 @@ const ALLOWED = new Set([
   // '1' once the first-run flow has been completed OR skipped — either way the
   // wizard has had its turn and must not reappear.
   'onboarded',
+  // Accessibility. Per profile rather than per device so a shared phone can run
+  // at 150% for one person and 100% for the other. ui_scale is a percentage
+  // ('100'|'115'|'130'|'150'); the rest are '0'/'1'.
+  'ui_scale', 'bold_text', 'high_contrast', 'big_targets',
 ]);
 
 // Settings that feed the g/kg macro formula — changing any of them has to

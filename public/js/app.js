@@ -238,6 +238,33 @@ export function setTheme(mode) {
   try { localStorage.setItem(THEME_KEY, light ? 'light' : 'dark'); } catch {}
 }
 
+// ─── Accessibility (text size, weight, contrast, tap targets) ─
+// Per profile, not per device: on a shared phone one person can run everything
+// at 150% while the other stays at 100%. The scale is ALSO mirrored to
+// localStorage — not as a second setting, but so the first paint after launch
+// is already the right size instead of snapping from 100% a moment later. That
+// flash is worst for exactly the person who needs the scale. Cleared on logout
+// so the next person at the lock screen doesn't inherit it.
+const SCALE_CACHE = 'plated_ui_scale';
+const SCALES = ['100', '115', '130', '150'];
+
+export function applyA11y(s = {}) {
+  const r = document.documentElement;
+  const scale = SCALES.includes(String(s.ui_scale)) ? String(s.ui_scale) : '100';
+  r.style.setProperty('--ui-scale', String(Number(scale) / 100));
+  r.setAttribute('data-bold',     s.bold_text     === '1' ? '1' : '0');
+  r.setAttribute('data-contrast', s.high_contrast === '1' ? '1' : '0');
+  r.setAttribute('data-targets',  s.big_targets   === '1' ? '1' : '0');
+  try { localStorage.setItem(SCALE_CACHE, scale); } catch {}
+}
+
+function clearA11y() {
+  const r = document.documentElement;
+  r.style.removeProperty('--ui-scale');
+  for (const a of ['data-bold', 'data-contrast', 'data-targets']) r.setAttribute(a, '0');
+  try { localStorage.removeItem(SCALE_CACHE); } catch {}
+}
+
 // ─── Profiles / Auth ─────────────────────────────────────────
 const TOKEN_KEY = 'plated_token';
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -289,7 +316,7 @@ async function enterApp(profile) {
   currentProfile = profile;
   renderProfileBar();
   showScreen('app');
-  await reloadEnergyUnit();
+  await reloadProfilePrefs();
   currentView = null;
   navigateTo('today');
 }
@@ -297,6 +324,7 @@ async function enterApp(profile) {
 // Exported for Settings: end session / after deleting profile → back to lock
 export function logoutToLock() {
   clearToken();
+  clearA11y();
   currentProfile = null;
   renderProfileBar();
   showLock();
@@ -481,11 +509,15 @@ setupCreate();
 })();
 
 // Load energy unit preference once logged in (called by settings view on save too)
-export async function reloadEnergyUnit() {
+// One settings fetch at login, feeding both the energy unit and the
+// accessibility attributes. Settings re-applies these itself on change, so this
+// only has to be right at entry.
+export async function reloadProfilePrefs() {
   try {
     const s = await api.get('/api/settings');
     setEnergyUnit(s.energy_unit || 'kcal');
-  } catch { /* use default */ }
+    applyA11y(s);
+  } catch { /* use defaults */ }
 }
 
 // Shake animation for the passcode dots
