@@ -411,7 +411,19 @@ export function renderFoods(container) {
           showToast('Food saved', 'success');
           loadList();
         } catch (err) {
-          showToast(err.message, 'error');
+          // 409 + a food = one with this name (or barcode) already exists.
+          // Foods are shared, so this is the common case once more than one
+          // person is typing in the same staples. Close and point at the
+          // existing one rather than making them retype or invent a variant.
+          if (err.status === 409 && err.data?.food) {
+            hideSheet();
+            showToast(err.message, 'info', { duration: 5000 });
+            query = err.data.food.name;
+            document.getElementById('foods-search').value = query;
+            loadList();
+          } else {
+            showToast(err.message, 'error');
+          }
         }
       });
     });

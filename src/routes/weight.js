@@ -5,6 +5,19 @@ const { recalcMacroGoals } = require('../utils/macros');
 
 const router = express.Router();
 
+// 20–400 kg. The measurements route already guards its input this way ("catch
+// inches typed into a cm field"); weight never got the same treatment despite
+// being the more expensive mistake — it feeds recalcMacroGoals, so entering 700
+// for 70.0 silently rewrote the protein goal to ~1540 g and nothing on screen
+// explained where that came from. Can't catch lb-typed-as-kg (300 lb reads as a
+// legitimate 300) — only the decimal slips, which are the common ones.
+function badWeight(v) {
+  const w = parseFloat(v);
+  return Number.isFinite(w) && w >= 20 && w <= 400
+    ? null
+    : 'Weight must be between 20 and 400 kg — check the decimal point';
+}
+
 // Fire-and-forget push of a manual weigh-in to IronLog (two-way sync).
 // IronLog must expose POST /api/plated/bodyweight; until then this no-ops.
 async function pushBodyweight(db, pid, date, weight_kg) {
@@ -55,8 +68,13 @@ router.get('/day/:date', (req, res) => {
 router.post('/', (req, res) => {
   try {
     const { weight_kg, note, date } = req.body;
-    if (!weight_kg || weight_kg <= 0) {
-      return res.status(400).json({ error: 'weight_kg must be > 0' });
+    const bad = badWeight(weight_kg);
+    if (bad) return res.status(400).json({ error: bad });
+    // Every other write route format-checks its date; this one took whatever it
+    // was given, so a junk string became a weight_log row that no date-keyed
+    // read could ever match again.
+    if (date != null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
     }
     const db = getDb();
     const logDate = date || todayLocal();
@@ -92,9 +110,8 @@ router.delete('/:id', (req, res) => {
 router.patch('/:id', (req, res) => {
   try {
     const weight_kg = parseFloat(req.body.weight_kg);
-    if (!weight_kg || weight_kg <= 0) {
-      return res.status(400).json({ error: 'weight_kg must be > 0' });
-    }
+    const bad = badWeight(weight_kg);
+    if (bad) return res.status(400).json({ error: bad });
     const db = getDb();
     const result = db.prepare(
       'UPDATE weight_log SET weight_kg = $w WHERE id = $id AND profile_id = $pid'

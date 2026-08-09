@@ -29,6 +29,36 @@ function mapOFFProduct(p) {
   };
 }
 
+// Nutrition fields are per 100 g, so anything above 900 kcal is impossible
+// (pure fat is 900) and any macro above 100 g is more than the 100 g it
+// describes. PATCH used to write req.body values straight into the column, so
+// a stray letter landed in a REAL field and every future log of that food
+// silently came out as 0 — the entry looked fine, the day's total didn't.
+const NUM_LIMITS = {
+  calories_per_100g: 900,
+  protein_per_100g:  100,
+  carbs_per_100g:    100,
+  fat_per_100g:      100,
+  fiber_per_100g:    100,
+  serving_size_g:    5000,
+};
+// Returns an error string, or null when every supplied field is usable.
+// Absent fields are fine; null/'' clears a value, which is a legitimate edit.
+function badNutrition(body) {
+  if (body.name !== undefined && !String(body.name ?? '').trim()) {
+    return 'Name cannot be empty';
+  }
+  for (const [key, max] of Object.entries(NUM_LIMITS)) {
+    const raw = body[key];
+    if (raw === undefined || raw === null || raw === '') continue;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return `${key.replace(/_/g, ' ')} must be a number`;
+    if (n < 0) return `${key.replace(/_/g, ' ')} cannot be negative`;
+    if (n > max) return `${key.replace(/_/g, ' ')} looks wrong — max ${max} per 100g`;
+  }
+  return null;
+}
+
 function parseServingG(s) {
   if (!s) return null;
   const m = String(s).match(/(\d+\.?\d*)\s*g/i);
@@ -283,6 +313,32 @@ router.post('/', (req, res) => {
     if (!food.name?.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
+    const badNum = badNutrition(food);
+    if (badNum) return res.status(400).json({ error: badNum });
+
+    // Foods are shared across every profile, and only a barcode collision was
+    // ever detected — so each person who typed "Chicken breast" by hand got
+    // their own row. Invisible at two users, a list of near-duplicates at ten.
+    // Same 409-with-the-food shape as the barcode case below, which the client
+    // already knows how to fall back on.
+    // Quick-log and batch foods are exempt: they're per-entry throwaways hidden
+    // from search, and they collide by design (every "Quick log" shares a name).
+    const src = food.source || 'custom';
+    if (!food.barcode && src !== 'quick' && src !== 'batch') {
+      const twin = getDb().prepare(`
+        SELECT ${FCOLS} FROM foods f
+        WHERE LOWER(TRIM(f.name)) = LOWER(TRIM($n))
+          AND LOWER(TRIM(COALESCE(f.brand, ''))) = LOWER(TRIM(COALESCE($b, '')))
+          AND f.hidden = 0 AND f.source NOT IN ('quick', 'batch')
+        ORDER BY f.id ASC LIMIT 1
+      `).get({ n: food.name, b: food.brand || '' });
+      if (twin) {
+        return res.status(409).json({
+          error: `"${twin.name}" already exists — using that one`,
+          food: twin,
+        });
+      }
+    }
     // upsertFood does INSERT ... ON CONFLICT(barcode) DO UPDATE, which never
     // throws a UNIQUE error — it just silently overwrites the existing food's
     // name/macros instead (the catch below for that error was unreachable
@@ -318,6 +374,9 @@ router.patch('/:id', (req, res) => {
     if (!admin && food.created_by_profile !== req.profileId) {
       return res.status(403).json({ error: 'You can only edit foods you created' });
     }
+
+    const badNum = badNutrition(req.body);
+    if (badNum) return res.status(400).json({ error: badNum });
 
     const allowed = [
       'name', 'brand', 'calories_per_100g', 'protein_per_100g',

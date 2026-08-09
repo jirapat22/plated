@@ -359,7 +359,16 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
         pendingBarcode = null;
         onSelect(saved);
       } catch (err) {
-        showToast(err.message, 'error');
+        // Same fallback handleSelect already uses for barcode collisions, now
+        // reached by name collisions too: carry on with the food that exists
+        // instead of dead-ending someone mid-log.
+        if (err.status === 409 && err.data?.food) {
+          pendingBarcode = null;
+          showToast(err.message, 'info', { duration: 5000 });
+          onSelect(err.data.food);
+        } else {
+          showToast(err.message, 'error');
+        }
       }
     });
   }
