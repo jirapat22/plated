@@ -12,7 +12,9 @@ const APP_NAME = 'plated';
 // the client, and the dedupe deliberately exempts 'manual', so anything
 // claiming to be manual bypassed it. Generous enough that a genuine error burst
 // still gets through — the client already caps itself at 25 per page load.
-const reportLimiter = rateLimit({ windowMs: 10 * 60_000, max: 40, blockMs: 10 * 60_000 });
+// count:'requests' stated explicitly rather than leaned on as the default —
+// every accepted call is the cost here, not just the rejected ones.
+const reportLimiter = rateLimit({ windowMs: 10 * 60_000, max: 40, blockMs: 10 * 60_000, count: 'requests' });
 
 // Forward a report to the shared Orbit dashboard. Best-effort/fire-and-forget:
 // never throws, never blocks. No-ops if ORBIT_URL isn't configured.

@@ -77,15 +77,42 @@ export const ACTIVITY = [
     long: 'Two sessions most days, or manual labour on top of training. Genuinely rare — if you are choosing between this and the one below, choose below.' },
 ];
 
+// Plausible human ranges. Anything outside is a typo, not a person: a decimal
+// slip (765 for 76.5), height in millimetres, an age with a stray digit. The
+// bounds match the weigh-in route's 20-400 kg so the two can't disagree about
+// what counts as a weight.
+// Not caught, and not catchable here: pounds typed as kilos. 165 lb reads as a
+// perfectly legitimate 165 kg.
+export const LIMITS = {
+  weightKg: [20, 400],
+  heightCm: [100, 250],
+  age:      [13, 100],
+};
+export function outOfRange({ weightKg, heightCm, age }) {
+  const bad = ([lo, hi], v) => !(Number.isFinite(v) && v >= lo && v <= hi);
+  if (bad(LIMITS.weightKg, weightKg)) return 'Weight should be between 20 and 400 kg';
+  if (bad(LIMITS.heightCm, heightCm)) return 'Height should be between 100 and 250 cm';
+  if (bad(LIMITS.age,      age))      return 'Age should be between 13 and 100';
+  return null;
+}
+
 // Mifflin-St Jeor resting burn — what you'd spend doing nothing at all.
 function bmr({ weightKg, heightCm, age, sex }) {
   if (!(weightKg > 0) || !(heightCm > 0) || !(age > 0)) return null;
   return 10 * weightKg + 6.25 * heightCm - 5 * age + (sex === 'female' ? -161 : 5);
 }
 
+// Null rather than a number whenever the inputs aren't a plausible person.
+// The formula is linear and unbounded, so it answered anything asked of it:
+// age 500 returned a NEGATIVE 899, which onboarding wrote out as a calorie
+// goal of -1149, and a height typed in millimetres returned 15,740. Both were
+// stored and displayed as ordinary targets.
 export function estimateTdee({ weightKg, heightCm, age, sex, activity }) {
+  if (outOfRange({ weightKg, heightCm, age })) return null;
   const rest = bmr({ weightKg, heightCm, age, sex });
-  return rest != null && activity > 0 ? Math.round(rest * activity) : null;
+  if (rest == null || !(activity > 0)) return null;
+  const tdee = Math.round(rest * activity);
+  return tdee > 0 ? tdee : null;
 }
 
 // Measured maintenance is derived from logged intake, so it inherits that

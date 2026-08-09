@@ -4,7 +4,7 @@ import { setEnergyUnit, fmtE, unitLabel, toKcal } from '../utils/energy.js';
 import { submitReport }              from '../utils/bugReport.js';
 import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
 import { localDate }                 from '../utils/date.js';
-import { estimateTdee, ACTIVITY }    from '../utils/stats.js';
+import { estimateTdee, ACTIVITY, outOfRange } from '../utils/stats.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -1138,7 +1138,12 @@ function openTdeeEstimator(s, onUse) {
       current = read();
       const box = $('te-result');
       if (current == null) {
-        box.innerHTML = `<div class="phase-goal-empty">Fill in weight, height, age and activity.</div>`;
+        // estimateTdee also returns null for out-of-range inputs now, and
+        // "fill this in" is the wrong thing to say to someone who filled it in
+        // and mistyped. Name the actual problem when there is one.
+        const w = parseFloat($('te-kg').value), h = parseFloat($('te-cm').value), a = parseFloat($('te-age').value);
+        const bad = (w > 0 && h > 0 && a > 0) ? outOfRange({ weightKg: w, heightCm: h, age: a }) : null;
+        box.innerHTML = `<div class="phase-goal-empty">${bad || 'Fill in weight, height, age and activity.'}</div>`;
         $('te-use').disabled = true;
         return;
       }

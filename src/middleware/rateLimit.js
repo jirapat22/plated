@@ -11,18 +11,25 @@
 //
 // `count` picks what accrues toward the limit:
 //
-//   'failures'  the route calls res.locals.recordFailure() on a bad attempt.
-//               Nothing else counts, and NOTHING clears the window early.
-//               This replaces a clearRateLimit() that deleted the IP's entry
-//               outright on any success — which made the limiter decorative,
-//               because anyone holding a single valid code (including a
-//               throwaway profile they had just created) could reset the
-//               window every ten guesses and walk the whole 10,000-code space.
-//               Measured before the fix: 36 guesses where the cap was 10.
+//   'requests'  every request through the middleware counts. The DEFAULT, and
+//               deliberately so: it is the mode that still protects when a
+//               caller forgets to choose. 'failures' was briefly the default,
+//               and bugReports.js — public, unauthenticated, writes a row and
+//               fires an outbound request to Orbit — passes no mode and never
+//               calls recordFailure, so it silently counted nothing and the cap
+//               stopped existing. A limiter that fails open on a forgotten
+//               argument is worse than none, because it looks present.
 //
-//   'requests'  every request through the middleware counts. For capping an
-//               action that succeeds by design, like profile creation.
-function rateLimit({ windowMs, max, blockMs, count = 'failures' }) {
+//   'failures'  opt-in. The route calls res.locals.recordFailure() on a bad
+//               attempt; nothing else counts, and NOTHING clears the window
+//               early. Replaces a clearRateLimit() that deleted the IP's entry
+//               outright on any success — which made the login limiter
+//               decorative, because anyone holding a single valid code
+//               (including a throwaway profile they had just created) could
+//               reset the window every ten guesses and walk the whole
+//               10,000-code space. Measured before that fix: 36 where the cap
+//               was 10.
+function rateLimit({ windowMs, max, blockMs, count = 'requests' }) {
   const hits = new Map();          // ip -> { count, resetAt, blockedUntil }
   const MAX_KEYS = 5000;           // bound the map so an IP spray can't grow it forever
 

@@ -1,6 +1,6 @@
 import { api }                      from '../api.js';
 import { showSheet, hideSheet, showToast } from '../app.js';
-import { estimateTdee, ACTIVITY }   from '../utils/stats.js';
+import { estimateTdee, ACTIVITY, outOfRange } from '../utils/stats.js';
 import { fmtE, unitLabel }          from '../utils/energy.js';
 import { localDate }                from '../utils/date.js';
 
@@ -177,10 +177,19 @@ export function openOnboarding(onDone) {
       document.getElementById('ob-next').addEventListener('click', async () => {
         read();
         if (step === 1) {
-          if (tdee() == null) {
+          const w = parseFloat(d.kg), h = parseFloat(d.cm), a = parseFloat(d.age);
+          if (!(w > 0) || !(h > 0) || !(a > 0)) {
             showToast('Fill in weight, height and age to continue', 'error');
             return;
           }
+          // Separate message from the one above: "fill this in" is wrong and
+          // confusing when they did fill it in and simply fat-fingered it.
+          // Caught here, at the field, rather than downstream — the weigh-in
+          // this flow writes is best-effort, so a rejected weight failed
+          // silently and left a profile whose stored bodyweight had no weigh-in
+          // behind it and a TDEE computed from the typo.
+          const bad = outOfRange({ weightKg: w, heightCm: h, age: a });
+          if (bad) { showToast(bad, 'error'); return; }
           step = 2; draw(); return;
         }
         if (step === 2) { step = 3; draw(); return; }
