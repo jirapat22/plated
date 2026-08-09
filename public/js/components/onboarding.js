@@ -1,6 +1,7 @@
 import { api }                      from '../api.js';
 import { showSheet, hideSheet, showToast } from '../app.js';
 import { estimateTdee, ACTIVITY }   from '../utils/stats.js';
+import { lowGoalNote, LOW_GOAL_KCAL } from '../utils/phase.js';
 import { fmtE, unitLabel }          from '../utils/energy.js';
 import { localDate }                from '../utils/date.js';
 
@@ -142,6 +143,23 @@ export function openOnboarding(onDone) {
                 maintenance from what you actually log, and you can change any of this later.
               </div>
             </div>
+            ${(() => {
+              // Shown here, before "Start tracking", rather than only in
+              // Settings afterwards — the first number a new profile is handed
+              // is the one they're most likely to just accept.
+              const low = lowGoalNote(goal(), t, d.phase);
+              if (!low) return '';
+              return `<div style="background:rgba(255,179,71,.10);border:1px solid rgba(255,179,71,.28);border-radius:var(--radius-sm);padding:11px 13px;margin-bottom:14px;font-size:11px;line-height:1.5;color:var(--text-muted)">
+                <strong style="color:var(--warning)">That's a low target.</strong>
+                Under ${fmtE(LOW_GOAL_KCAL)} ${unitLabel()} it gets hard to hit your protein goal,
+                and harder to keep muscle while the weight comes off.
+                ${low.reachable
+                  ? `Going back and picking a slower rate would keep you above it.`
+                  : `Your maintenance is low enough that no rate here clears it — so the
+                     lever is movement rather than a smaller plate. Worth choosing
+                     <strong>Maintain</strong> for now and letting Trends measure you first.`}
+              </div>`;
+            })()}
           `}
 
           <div style="display:flex;gap:8px;margin-bottom:16px">
