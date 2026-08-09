@@ -44,17 +44,27 @@ const NUM_LIMITS = {
 };
 // Returns an error string, or null when every supplied field is usable.
 // Absent fields are fine; null/'' clears a value, which is a legitimate edit.
-function badNutrition(body) {
+//
+// `source` matters. For a QUICK LOG the per-100g columns don't hold per-100g
+// values at all: log.js posts the meal's whole calorie count as
+// calories_per_100g with serving_size_g 100, then logs exactly 100g, so the
+// numbers cancel and the total comes out right. Production has ten of these
+// above 900 (a 1800 kcal Mookata, a 1620 kcal Musashi meal), so applying the
+// per-100g ceiling to them rejects perfectly ordinary meals. Ranges are skipped
+// for that source; type and sign are still enforced, since those are what
+// actually corrupt the column.
+function badNutrition(body, source) {
   if (body.name !== undefined && !String(body.name ?? '').trim()) {
     return 'Name cannot be empty';
   }
+  const perHundred = source !== 'quick' && source !== 'batch';
   for (const [key, max] of Object.entries(NUM_LIMITS)) {
     const raw = body[key];
     if (raw === undefined || raw === null || raw === '') continue;
     const n = Number(raw);
     if (!Number.isFinite(n)) return `${key.replace(/_/g, ' ')} must be a number`;
     if (n < 0) return `${key.replace(/_/g, ' ')} cannot be negative`;
-    if (n > max) return `${key.replace(/_/g, ' ')} looks wrong — max ${max} per 100g`;
+    if (perHundred && n > max) return `${key.replace(/_/g, ' ')} looks wrong — max ${max} per 100g`;
   }
   return null;
 }
@@ -313,7 +323,7 @@ router.post('/', (req, res) => {
     if (!food.name?.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
-    const badNum = badNutrition(food);
+    const badNum = badNutrition(food, food.source || 'custom');
     if (badNum) return res.status(400).json({ error: badNum });
 
     // Foods are shared across every profile, and only a barcode collision was
@@ -375,7 +385,9 @@ router.patch('/:id', (req, res) => {
       return res.status(403).json({ error: 'You can only edit foods you created' });
     }
 
-    const badNum = badNutrition(req.body);
+    // The stored source, not one the caller can claim — otherwise the ceiling
+    // is opt-out by sending source:'quick' with an edit.
+    const badNum = badNutrition(req.body, food.source);
     if (badNum) return res.status(400).json({ error: badNum });
 
     const allowed = [
