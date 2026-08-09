@@ -2,7 +2,7 @@ import { api }                        from '../api.js';
 import { showToast, showSheet, hideSheet, showPrompt, getProfile, applyProfile, logoutToLock, ACCENTS, getTheme, setTheme, applyA11y } from '../app.js';
 import { setEnergyUnit, fmtE, unitLabel, toKcal } from '../utils/energy.js';
 import { submitReport }              from '../utils/bugReport.js';
-import { parsePhaseSettings, phaseCalorieGoal, lowGoalNote, LOW_GOAL_KCAL } from '../utils/phase.js';
+import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
 import { localDate }                 from '../utils/date.js';
 import { estimateTdee, ACTIVITY }    from '../utils/stats.js';
 
@@ -1472,20 +1472,9 @@ function goalResult(s) {
      : phase === 'bulk' ? `${fmtE(tdee)} TDEE + ${fmtE(surplus)} surplus`
      : `at maintenance · ${fmtE(tdee)} TDEE`)
     : 'from your synced goal';
-  const low = lowGoalNote(goal, tdee, phase);
   return `
     <div class="phase-goal-label">Your daily energy goal</div>
     <div class="phase-goal-num">${fmtE(goal)}<span> ${ul}</span></div>
     <div class="phase-goal-sub">${math}</div>
-    ${off ? `<div class="phase-goal-warn">Your phase math above works out to <strong>${fmtE(computed)} ${ul}</strong> — IronLog set ${fmtE(saved)} directly. Tap <strong>Apply</strong> next to Maintenance to switch to ${fmtE(computed)}.</div>` : ''}
-    ${low ? `<div class="phase-goal-warn">
-      <strong>That's a low target.</strong> Under ${fmtE(LOW_GOAL_KCAL)} ${ul} it gets hard to hit
-      your protein goal, and harder to keep muscle while the weight comes off.
-      ${low.reachable
-        ? `A deficit of <strong>${fmtE(low.suggestDeficit)} ${ul}</strong> or less would keep you at
-           ${fmtE(LOW_GOAL_KCAL)}. Slower, but you finish it.`
-        : `Your maintenance is low enough that no useful deficit clears ${fmtE(LOW_GOAL_KCAL)} —
-           so the lever here is the burn side, not a smaller plate. A daily walk moves
-           maintenance up without taking food away.`}
-    </div>` : ''}`;
+    ${off ? `<div class="phase-goal-warn">Your phase math above works out to <strong>${fmtE(computed)} ${ul}</strong> — IronLog set ${fmtE(saved)} directly. Tap <strong>Apply</strong> next to Maintenance to switch to ${fmtE(computed)}.</div>` : ''}`;
 }
