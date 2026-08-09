@@ -107,20 +107,27 @@ export function renderToday(container) {
       // isn't about a slow service: it's the extra serialised leg over mobile
       // data, bounded only by the route's 6s timeout when the other end stalls.
       render(mealData, settings, null, todayWeight, weightHistory);
+
+      // First run. Fired after the first paint so the app is visibly there
+      // behind the sheet rather than a wizard over a blank screen. Once only —
+      // the flow writes onboarded='1' whether it's completed or skipped.
+      //
+      // This MUST stay above the IronLog await. It used to sit below, after the
+      // `!ironlog` guard — and fetchIronLog returns null whenever IronLog isn't
+      // configured, which is true of every brand-new profile by definition. So
+      // the guard returned first and the first-run flow never ran for a single
+      // one of the users it exists for.
+      if (settings.onboarded === '0' && !onboardingShown) {
+        onboardingShown = true;
+        openOnboarding(() => load());
+      }
+
       const ironlog = await fetchIronLog(viewDate);   // always today — fetch fresh
       if (myGen !== loadGen || !ironlog) return;      // superseded, or nothing to add
       // ponytail: a second full render rather than patching just the IronLog
       // panel — one extra paint on the slow path. Make it surgical if it ever
       // interrupts a scroll.
       render(mealData, settings, ironlog, todayWeight, weightHistory);
-
-      // First run. Fired after the first paint so the app is visibly there
-      // behind the sheet rather than a wizard over a blank screen. Once only —
-      // the flow writes onboarded='1' whether it's completed or skipped.
-      if (settings.onboarded === '0' && !onboardingShown) {
-        onboardingShown = true;
-        openOnboarding(() => load());
-      }
     } catch (err) {
       if (myGen !== loadGen) return;
       container.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;

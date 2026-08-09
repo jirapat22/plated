@@ -43,28 +43,31 @@ app.set('trust proxy', 1);
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '256kb' }));
 
-// Public — registered before express.static and all /api routers
-app.get('/api/orbit-summary', (req, res) => {
+// Dashboard tile for Orbit. Two things were wrong with this: it was public, and
+// it SUMMED every profile's intake into one figure — so it leaked what people
+// ate to anyone who found the URL, and the number it showed stopped meaning
+// anything the moment a second person logged a meal. Now behind the same key as
+// /api/orbit (fails closed when unset), and it reports participation rather
+// than anyone's food. Same {label, stat, status, updatedAt} shape as before.
+app.get('/api/orbit-summary', orbitRoutes.requireOrbitKey, (req, res) => {
   try {
     const { getDb } = require('./src/db');
     const { todayLocal } = require('./src/utils/tz');
     // ms.date is a LOCAL calendar day (the client sends its own localDate()).
     // date('now') is UTC, so this compared a local day against a UTC one and
     // served yesterday's totals as "Today" for the whole NZ morning.
-    const row = getDb().prepare(`
-      SELECT COALESCE(SUM(me.calories), 0) AS calories,
-             COALESCE(SUM(me.protein),  0) AS protein
-      FROM meal_entries me
-      JOIN meal_sessions ms ON ms.id = me.meal_session_id
+    const db = getDb();
+    const total = db.prepare('SELECT COUNT(*) AS c FROM profiles').get().c;
+    const active = db.prepare(`
+      SELECT COUNT(DISTINCT ms.profile_id) AS c
+      FROM meal_sessions ms
+      JOIN meal_entries me ON me.meal_session_id = ms.id
       WHERE ms.date = $today
-    `).get({ today: todayLocal() });
-    const logged = row.calories > 0 || row.protein > 0;
+    `).get({ today: todayLocal() }).c;
     res.json({
-      label:     'Today',
-      stat:      logged
-        ? `${Math.round(row.calories)} kcal · ${Math.round(row.protein)}g protein`
-        : 'Nothing logged today',
-      status:    logged ? 'active' : 'warning',
+      label:     'Logged today',
+      stat:      total === 0 ? 'No profiles yet' : `${active} of ${total} profile${total === 1 ? '' : 's'}`,
+      status:    total > 0 && active > 0 ? 'active' : 'warning',
       updatedAt: new Date().toISOString(),
     });
   } catch (err) {

@@ -53,9 +53,18 @@ function withPasscodeLock(fn) {
 
 // Passcodes are 4 digits and globally unique, so the whole space is 10,000 and
 // a handful of those are live — brute force was purely a matter of patience.
-// Ten tries per IP per 15 minutes, then a 15-minute cooling-off; a successful
-// login clears the counter, so normal use never trips it.
-const loginLimiter = rateLimit({ windowMs: 15 * 60_000, max: 10, blockMs: 15 * 60_000 });
+// Ten WRONG codes per IP per 15 minutes, then a 15-minute cooling-off. Only
+// failures count, and a success no longer clears the window: it used to, which
+// meant one valid code (your own, or a profile you had just created) reset the
+// counter on demand and the cap never bound. Getting your own code right never
+// accrues anything, so normal use still can't trip it.
+const loginLimiter = rateLimit({ windowMs: 15 * 60_000, max: 10, blockMs: 15 * 60_000, count: 'failures' });
+
+// Profile creation is public and was uncapped. Every attempt runs the same
+// per-profile scrypt scan as a login, so it is both a DoS lever and — now that
+// failures alone gate /login — the remaining way to burn through the 10,000
+// codes. Five per IP per hour is far more than a household ever needs.
+const createLimiter = rateLimit({ windowMs: 60 * 60_000, max: 5, blockMs: 60 * 60_000, count: 'requests' });
 function publicProfile(p) {
   return { id: p.id, name: p.name, accent_color: p.accent_color, is_admin: !!p.is_admin };
 }
@@ -90,9 +99,11 @@ router.post('/login', loginLimiter, async (req, res) => {
 
     const db = getDb();
     const profile = await findProfileByCode(db, passcode);
-    if (!profile) return res.status(404).json({ error: 'No profile for this code' });
+    if (!profile) {
+      res.locals.recordFailure?.();
+      return res.status(404).json({ error: 'No profile for this code' });
+    }
 
-    res.locals.clearRateLimit?.();   // a real login shouldn't count toward a lockout
     res.json({ token: createSession(db, profile.id), profile: publicProfile(profile) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -102,7 +113,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 // POST /api/auth/profiles { name, passcode, accent_color } — public (create)
 // Rate-limited too: it runs the same per-profile scrypt scan to reject a
 // taken code, so it's the same DoS lever as /login if left open.
-router.post('/profiles', loginLimiter, async (req, res) => {
+router.post('/profiles', loginLimiter, createLimiter, async (req, res) => {
   try {
     const { name, passcode, accent_color } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
@@ -131,10 +142,14 @@ router.post('/profiles', loginLimiter, async (req, res) => {
       }
       return newId;
     });
-    if (id == null) return res.status(409).json({ error: 'That code is already taken — pick another' });
+    // A rejected code here is the same probe as a failed login — it tells you
+    // that code is in use — so it accrues toward the same limit.
+    if (id == null) {
+      res.locals.recordFailure?.();
+      return res.status(409).json({ error: 'That code is already taken — pick another' });
+    }
 
     const profile = db.prepare('SELECT * FROM profiles WHERE id = $id').get({ id });
-    res.locals.clearRateLimit?.();
     res.status(201).json({ token: createSession(db, id), profile: publicProfile(profile) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -317,6 +332,23 @@ router.post('/logout', requireProfile, (req, res) => {
 router.delete('/me', requireProfile, (req, res) => {
   const db = getDb();
   const id = req.profileId;
+
+  // /admin/set already refuses to demote the last admin. Deleting that same
+  // profile reached the identical end state — no admins — and there is no way
+  // back: promoting someone requires an admin, so /admin/passcode becomes
+  // permanently unreachable and no forgotten code can ever be reset again.
+  // Deleting the LAST profile is fine; there is nothing left to administer, and
+  // the next profile created becomes admin automatically.
+  if (isAdmin(db, id)) {
+    const admins = db.prepare('SELECT COUNT(*) AS c FROM profiles WHERE is_admin = 1').get().c;
+    const others = db.prepare('SELECT COUNT(*) AS c FROM profiles WHERE id != $id').get({ id }).c;
+    if (admins <= 1 && others > 0) {
+      return res.status(400).json({
+        error: 'You are the only admin. Make someone else an admin first — otherwise nobody could ever reset a forgotten passcode.',
+      });
+    }
+  }
+
   db.exec('BEGIN');
   try {
     db.prepare('DELETE FROM meal_sessions  WHERE profile_id = $id').run({ id }); // cascades entries

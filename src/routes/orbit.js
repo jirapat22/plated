@@ -18,7 +18,10 @@ const isoInTz = (date, tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz })
 // Fails CLOSED when the variable is missing. It used to `return next()` in that
 // case, so a deploy that forgot the variable published all of the above to
 // anyone who found the URL, silently and with nothing to notice.
-router.use((req, res, next) => {
+// Exported so /api/orbit-summary in server.js uses this exact function rather
+// than a second copy that can drift. It shipped with no gate at all and served
+// every profile's calories and protein, summed, to anyone who found the URL.
+function requireOrbitKey(req, res, next) {
   const required = process.env.ORBIT_API_KEY?.trim();
   if (!required) {
     return res.status(503).json({ error: 'Orbit feed is not configured (ORBIT_API_KEY unset)' });
@@ -28,7 +31,8 @@ router.use((req, res, next) => {
     || (auth?.startsWith('Bearer ') ? auth.slice(7) : null);
   if (key?.trim() === required) return next();
   return res.status(401).json({ error: 'invalid or missing Orbit key' });
-});
+}
+router.use(requireOrbitKey);
 
 function dayTotals(db, pid, date) {
   const t = db.prepare(`
@@ -110,3 +114,4 @@ router.get('/', (req, res) => {
 });
 
 module.exports = router;
+module.exports.requireOrbitKey = requireOrbitKey;

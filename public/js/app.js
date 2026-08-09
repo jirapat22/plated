@@ -390,18 +390,23 @@ async function submitLogin() {
     saveToken(token);
     enterApp(profile);
   } catch (err) {
-    if (String(err.message).toLowerCase().includes('no profile')) {
-      showCreate(code);          // offer to create a profile with this code
-    } else {
-      // A lockout (429) looks identical to a wrong code otherwise — same shake,
-      // no explanation — so say what happened rather than letting someone keep
-      // retrying a code that's actually correct.
-      if (err.status === 429) {
-        document.getElementById('lock-subtitle').textContent = err.message;
-      }
-      setDots(code.length, 'error');
-      shakeDots();
-    }
+    // An unrecognised code used to drop you straight onto the "New profile"
+    // screen with your typo already filled in. That reads as "your account is
+    // gone, make another" — and tapping through it hands you a second, empty
+    // profile while your real data sits behind the code you fat-fingered.
+    // Wrong code now says so, and creating a profile stays a deliberate act via
+    // the "+ New profile" button that is already right there on this screen.
+    const sub = document.getElementById('lock-subtitle');
+    // A lockout (429) looks identical to a wrong code otherwise — same shake,
+    // no explanation — so say what happened rather than letting someone keep
+    // retrying a code that's actually correct.
+    sub.textContent = err.status === 429
+      ? err.message
+      : String(err.message).toLowerCase().includes('no profile')
+        ? "That code isn't recognised — try again"
+        : err.message;
+    setDots(code.length, 'error');
+    shakeDots();
     setTimeout(() => { passcode = ''; setDots(0); }, 500);
   }
 }
@@ -420,7 +425,7 @@ function setupNumpad() {
     passcode = passcode.slice(0, -1);
     setDots(passcode.length);
   });
-  document.getElementById('lock-create-link').addEventListener('click', () => showCreate(''));
+  document.getElementById('lock-create-link').addEventListener('click', () => showCreate());
   document.getElementById('lock-forgot-link').addEventListener('click', openForgotPasscode);
 
   window.addEventListener('keydown', e => {
@@ -442,11 +447,13 @@ function renderAccentPicker() {
     b.addEventListener('click', () => { chosenAccent = b.dataset.color; renderAccentPicker(); }));
 }
 
-function showCreate(prefillCode = '') {
+// No prefill parameter any more: its only caller was the failed-login handler,
+// which used to seed this screen with the code you just got wrong.
+function showCreate() {
   chosenAccent = ACCENTS[0];
   showScreen('create');
   document.getElementById('create-name').value = '';
-  document.getElementById('create-code').value = prefillCode;
+  document.getElementById('create-code').value = '';
   renderAccentPicker();
   setTimeout(() => document.getElementById('create-name').focus(), 150);
 }
@@ -502,7 +509,7 @@ setupCreate();
   try {
     const { hasProfiles } = await api.get('/api/auth/status');
     if (hasProfiles) showLock();
-    else showCreate('');          // first run — go straight to create
+    else showCreate();            // first run — go straight to create
   } catch {
     showLock();
   }
