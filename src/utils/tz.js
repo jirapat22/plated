@@ -25,4 +25,37 @@ function localDayOf(value, tz = APP_TZ) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(t));
 }
 
-module.exports = { todayLocal, localDayOf, APP_TZ };
+// Is this a zone Intl actually knows? Guards the setting at the trust boundary
+// — an unknown name makes DateTimeFormat throw, and it would throw from
+// whichever route next asked what day it was, not from the write that stored it.
+function isValidTz(name) {
+  const s = String(name ?? '').trim();
+  if (!s) return false;
+  try { new Intl.DateTimeFormat('en-CA', { timeZone: s }); return true; }
+  catch { return false; }
+}
+
+// The zone to reckon THIS profile's days in. APP_TZ was a single global, which
+// is right up until the second person lives somewhere else: their "today"
+// started hours before or after the server's, so a day boundary landed in the
+// middle of their afternoon and IronLog weigh-ins were filed onto the wrong
+// calendar day — the same defect already fixed once for UTC-vs-NZ, reappearing
+// as NZ-vs-everyone.
+//
+// db is passed in rather than required, so this file stays a leaf and can't
+// form a cycle with db.js.
+// ponytail: a per-request lookup, not cached. It's one indexed read on a
+// primary key; cache it if a profile-settings hot path ever shows up in a
+// profile.
+function tzFor(db, profileId) {
+  try {
+    const v = db.prepare(
+      "SELECT value FROM profile_settings WHERE profile_id = $p AND key = 'timezone'"
+    ).get({ p: profileId })?.value;
+    return isValidTz(v) ? String(v).trim() : APP_TZ;
+  } catch {
+    return APP_TZ;
+  }
+}
+
+module.exports = { todayLocal, localDayOf, isValidTz, tzFor, APP_TZ };

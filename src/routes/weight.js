@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
-const { todayLocal } = require('../utils/tz');
+const { todayLocal, tzFor } = require('../utils/tz');
 const { recalcMacroGoals } = require('../utils/macros');
 
 const router = express.Router();
@@ -77,7 +77,7 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
     }
     const db = getDb();
-    const logDate = date || todayLocal();
+    const logDate = date || todayLocal(tzFor(db, req.profileId));
     const result = db.prepare(
       "INSERT INTO weight_log (date, weight_kg, note, profile_id, source) VALUES ($date, $weight_kg, $note, $pid, 'manual')"
     ).run({ date: logDate, weight_kg, note: note || null, pid: req.profileId });

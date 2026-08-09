@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
-const { todayLocal, localDayOf } = require('../utils/tz');
+const { todayLocal, localDayOf, tzFor } = require('../utils/tz');
 const { recalcMacroGoals } = require('../utils/macros');
 
 // Extract all goals from IronLog profile data
@@ -100,7 +100,7 @@ router.get('/today', async (req, res) => {
     // be the user's yesterday and pull the wrong day's workout.
     const today = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '')
       ? req.query.date
-      : todayLocal();
+      : todayLocal(tzFor(getDb(), pid));
     const tzOff = Number.isFinite(parseInt(req.query.tz)) ? parseInt(req.query.tz) : 0;
 
     // Pull the calories endpoint AND recent workouts. The endpoint can miss the
@@ -191,7 +191,7 @@ router.get('/bodyweight', async (req, res) => {
 router.get('/raw', async (req, res) => {
   try {
     const pid = req.profileId;
-    const today = todayLocal();
+    const today = todayLocal(tzFor(getDb(), pid));
     const [profileRes, calsRes, bwRes, recentRes] = await Promise.allSettled([
       getProfile(pid),
       getWorkoutCalories(pid, today),
@@ -260,7 +260,7 @@ router.post('/sync', async (req, res) => {
           // localDayOf, not split('T')[0] — see the note there. Weighing at 7am
           // NZ timestamps at ~19:00 UTC the previous day, so the UTC day filed
           // most weigh-ins a day early, and this loop WRITES those dates.
-          const date = localDayOf(w.date);
+          const date = localDayOf(w.date, tzFor(db, pid));
           const kg   = w.weight_kg ?? w.weight;
           if (!date || kg == null) continue;
           if (!exists.get({ pid, date })) { insert.run({ date, kg, pid }); weightsImported++; }

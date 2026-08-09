@@ -524,7 +524,22 @@ export async function reloadProfilePrefs() {
     const s = await api.get('/api/settings');
     setEnergyUnit(s.energy_unit || 'kcal');
     applyA11y(s);
+    syncTimezone(s.timezone);
   } catch { /* use defaults */ }
+}
+
+// The server derives "today" for a few things it can't get from the client:
+// the Trends window anchor, the IronLog import's calendar day. That used to be
+// one hardcoded zone for everybody, which is fine until the second person lives
+// somewhere else — then their day rolls over hours early or late, and IronLog
+// weigh-ins land on the wrong date. This tells the server where this profile
+// actually is. Fire-and-forget: a failure just means the server keeps using the
+// zone it already had.
+function syncTimezone(stored) {
+  let tz;
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return; }
+  if (!tz || tz === stored) return;
+  api.patch('/api/settings', { timezone: tz }).catch(() => {});
 }
 
 // Shake animation for the passcode dots

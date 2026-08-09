@@ -52,18 +52,23 @@ app.use(express.json({ limit: '256kb' }));
 app.get('/api/orbit-summary', orbitRoutes.requireOrbitKey, (req, res) => {
   try {
     const { getDb } = require('./src/db');
-    const { todayLocal } = require('./src/utils/tz');
+    const { todayLocal, tzFor } = require('./src/utils/tz');
     // ms.date is a LOCAL calendar day (the client sends its own localDate()).
     // date('now') is UTC, so this compared a local day against a UTC one and
     // served yesterday's totals as "Today" for the whole NZ morning.
+    // And "today" is now per profile: with people in different countries there
+    // is no single date that means today for all of them, so ask each profile
+    // about its own.
     const db = getDb();
-    const total = db.prepare('SELECT COUNT(*) AS c FROM profiles').get().c;
-    const active = db.prepare(`
-      SELECT COUNT(DISTINCT ms.profile_id) AS c
-      FROM meal_sessions ms
+    const profiles = db.prepare('SELECT id FROM profiles').all();
+    const loggedToday = db.prepare(`
+      SELECT 1 FROM meal_sessions ms
       JOIN meal_entries me ON me.meal_session_id = ms.id
-      WHERE ms.date = $today
-    `).get({ today: todayLocal() }).c;
+      WHERE ms.profile_id = $pid AND ms.date = $today LIMIT 1
+    `);
+    const total = profiles.length;
+    const active = profiles.filter(p =>
+      loggedToday.get({ pid: p.id, today: todayLocal(tzFor(db, p.id)) })).length;
     res.json({
       label:     'Logged today',
       stat:      total === 0 ? 'No profiles yet' : `${active} of ${total} profile${total === 1 ? '' : 's'}`,

@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb, canView } = require('../db');
-const { todayLocal } = require('../utils/tz');
+const { todayLocal, tzFor } = require('../utils/tz');
 
 const router = express.Router();
 
@@ -164,7 +164,7 @@ router.get('/summary', (req, res) => {
       WHERE ms.profile_id = $pid ${all ? '' : 'AND ms.date >= date($today, $offset)'}
       GROUP BY ms.date
       ORDER BY ms.date ASC
-    `).all(all ? { pid } : { offset: `-${days} days`, today: todayLocal(), pid });
+    `).all(all ? { pid } : { offset: `-${days} days`, today: todayLocal(tzFor(getDb(), pid)), pid });
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -208,7 +208,7 @@ router.post('/sessions', (req, res) => {
   try {
     const db = getDb();
     const pid = req.profileId;
-    const date = req.body.date || todayLocal();
+    const date = req.body.date || todayLocal(tzFor(db, pid));
 
     const { max_idx } = db.prepare(`
       SELECT COALESCE(MAX(meal_index), 0) AS max_idx
@@ -247,7 +247,7 @@ router.post('/sessions/:id/copy', (req, res) => {
       const own = db.prepare('SELECT 1 FROM meal_sessions WHERE id = $s AND profile_id = $p').get({ s: targetId, p: pid });
       if (!own) return res.status(404).json({ error: 'Target meal not found' });
     } else {
-      const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body.date || '') ? req.body.date : todayLocal();
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body.date || '') ? req.body.date : todayLocal(tzFor(db, pid));
       const idx = db.prepare('SELECT COALESCE(MAX(meal_index), 0) + 1 AS i FROM meal_sessions WHERE date = $d AND profile_id = $p').get({ d: date, p: pid }).i;
       targetId = db.prepare('INSERT INTO meal_sessions (date, name, meal_index, profile_id) VALUES ($d, $n, $i, $p)')
         .run({ d: date, n: src.name, i: idx, p: pid }).lastInsertRowid;

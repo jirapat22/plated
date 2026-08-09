@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
-const { todayLocal } = require('../utils/tz');
+const { todayLocal, tzFor } = require('../utils/tz');
 
 const router = express.Router();
 
@@ -28,7 +28,7 @@ router.post('/', (req, res) => {
     if (!(waist >= 40 && waist <= 200)) {
       return res.status(400).json({ error: 'Waist must be between 40 and 200 cm' });
     }
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.date || '') ? req.body.date : todayLocal();
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.date || '') ? req.body.date : todayLocal(tzFor(getDb(), req.profileId));
     getDb().prepare(`
       INSERT INTO measurements (profile_id, date, waist_cm) VALUES ($pid, $d, $w)
       ON CONFLICT(profile_id, date) DO UPDATE SET waist_cm = excluded.waist_cm,

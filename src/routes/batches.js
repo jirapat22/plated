@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
-const { todayLocal } = require('../utils/tz');
+const { todayLocal, tzFor } = require('../utils/tz');
 
 const router = express.Router();
 const round1 = n => Math.round(n * 10) / 10;
@@ -122,7 +122,7 @@ router.post('/:id/portion', (req, res) => {
     grams = Math.min(grams, b.remaining_g);   // can't take more than is left
 
     const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body.date || '')
-      ? req.body.date : todayLocal();
+      ? req.body.date : todayLocal(tzFor(db, req.profileId));
 
     // Resolve (or create) the meal session this portion goes into.
     let sid = parseInt(req.body.meal_session_id) || null;

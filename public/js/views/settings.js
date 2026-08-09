@@ -65,6 +65,11 @@ export function renderSettings(container) {
             A login lasts 30 days. If someone learned your code, changing it now also
             ends every other session — or use this to drop them without changing it.
           </div>
+          <div style="font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.5">
+            Your days start and end in <strong>${esc(s.timezone || 'Pacific/Auckland')}</strong>,
+            detected from this device. Shown because a wrong zone here is invisible
+            until a meal lands on the wrong date.
+          </div>
           <button class="btn btn-danger btn-full" id="pf-delete" style="margin-top:8px;font-size:13px">Delete this profile</button>
         </div>
       </div>

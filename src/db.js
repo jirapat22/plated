@@ -352,6 +352,11 @@ const PROFILE_DEFAULTS = [
   // profile on boot with INSERT OR IGNORE, so existing profiles pick these up
   // without a separate migration.
   ['ui_scale', '100'], ['bold_text', '0'], ['high_contrast', '0'], ['big_targets', '0'],
+  // IANA zone this profile's calendar days are reckoned in. Empty means "not
+  // detected yet" and falls back to APP_TZ — which is correct for the profiles
+  // that existed when everyone was in one country. The client PATCHes its real
+  // zone on entry, so it self-corrects the first time someone opens the app.
+  ['timezone', ''],
 ];
 
 function seedProfileDefaults(db, profileId) {

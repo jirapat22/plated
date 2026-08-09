@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
-const { todayLocal } = require('../utils/tz');
+const { todayLocal, isValidTz, tzFor } = require('../utils/tz');
 const { recalcMacroGoals, trendWeight } = require('../utils/macros');
 
 const router = express.Router();
@@ -26,6 +26,10 @@ const ALLOWED = new Set([
   // at 150% for one person and 100% for the other. ui_scale is a percentage
   // ('100'|'115'|'130'|'150'); the rest are '0'/'1'.
   'ui_scale', 'bold_text', 'high_contrast', 'big_targets',
+  // IANA zone, auto-detected by the client. Validated in the PATCH handler —
+  // an unknown name would throw from whichever route next asked for the date,
+  // not from the write that stored it.
+  'timezone',
 ]);
 
 // Settings that feed the g/kg macro formula — changing any of them has to
@@ -86,6 +90,13 @@ router.patch('/', (req, res) => {
         && !isSafeExternalUrl(req.body.ironlog_api_url)) {
       return res.status(400).json({ error: 'IronLog URL must be a public http(s) address' });
     }
+    // Reject an unknown zone here rather than storing it: every date the server
+    // derives for this profile would then throw from a route that looks
+    // unrelated to the write that caused it. '' is allowed — it means
+    // "not detected", and falls back to APP_TZ.
+    if (req.body.timezone !== undefined && req.body.timezone !== '' && !isValidTz(req.body.timezone)) {
+      return res.status(400).json({ error: 'Unknown timezone' });
+    }
     const db = getDb();
     const stmt = db.prepare(
       'INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)'
@@ -104,7 +115,7 @@ router.patch('/', (req, res) => {
     // sit behind the current figure. Deliberately not in ALLOWED — it records
     // what happened, so the client must not be able to set it.
     if ('tdee' in req.body && String(prevTdee ?? '') !== String(req.body.tdee)) {
-      stmt.run({ pid: req.profileId, key: 'tdee_set_at', value: todayLocal() });
+      stmt.run({ pid: req.profileId, key: 'tdee_set_at', value: todayLocal(tzFor(db, req.profileId)) });
     }
     // Re-derive the gram goals if an input to the g/kg formula just changed.
     // Skipped when the request itself set protein/carb/fat directly (the %
@@ -580,7 +591,7 @@ router.get('/export-report', (req, res) => {
     const db = getDb();
     const pid = req.profileId;
     const format = ['html', 'md', 'csv'].includes(req.query.format) ? req.query.format : 'html';
-    const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : todayLocal();
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : todayLocal(tzFor(db, pid));
     let from = req.query.from;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from || '')) {
       from = db.prepare('SELECT MIN(date) AS d FROM meal_sessions WHERE profile_id = $pid').get({ pid })?.d || to;
