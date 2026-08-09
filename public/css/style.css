@@ -524,9 +524,17 @@ img { display: block; max-width: 100%; }
   gap: 7px;
   box-shadow: 0 6px 22px var(--shadow);
   z-index: 90;
-  transition: transform .12s ease;
+  transition: transform .12s ease, opacity .18s ease;
 }
 .fab-log:active { transform: scale(.94); }
+/* Tucked away while the New Meal / Quick Log row is on screen — down there the
+   FAB sat right on top of Quick Log. After :active on purpose: equal
+   specificity, so source order decides which transform wins. */
+.fab-log.tucked {
+  opacity: 0;
+  transform: scale(.85);
+  pointer-events: none;
+}
 
 /* Stand-in where a chart would be when Chart.js hasn't loaded (offline). */
 .chart-offline {

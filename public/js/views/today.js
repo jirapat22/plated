@@ -526,14 +526,35 @@ export function renderToday(container) {
         load();
       } catch (err) { showToast(err.message, 'error'); }
     });
+
+    // The FAB is right-aligned and fixed, and the New Meal / Quick Log row is
+    // the last thing on the page — so scrolling to the bottom parked "+ Log"
+    // directly on top of "Quick Log", covering a button with a button that
+    // does nearly the same thing. The FAB earns its place while you're scrolled
+    // up, past the rings and cards; down here that row already is the answer.
+    // So it tucks away while the row is on screen and comes back when it isn't.
+    fabObserver?.disconnect();
+    const row = document.getElementById('new-meal-btn')?.parentElement;
+    const fab = document.getElementById('fab-log');
+    if (row && fab && 'IntersectionObserver' in window) {
+      fabObserver = new IntersectionObserver(
+        ([e]) => fab.classList.toggle('tucked', e.isIntersecting),
+        { root: document.getElementById('view-container'), threshold: 0.15 },
+      );
+      fabObserver.observe(row);
+    }
   }
 
+  let fabObserver = null;
   const onSettingsChanged = () => load();
   window.addEventListener('plated:settings-changed', onSettingsChanged);
   container.innerHTML = buildSkeleton();
   load();
 
-  return () => window.removeEventListener('plated:settings-changed', onSettingsChanged);
+  return () => {
+    window.removeEventListener('plated:settings-changed', onSettingsChanged);
+    fabObserver?.disconnect();   // it holds a node from a view that's being torn down
+  };
 }
 
 function phaseBadge(phase) {
