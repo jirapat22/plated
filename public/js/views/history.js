@@ -26,6 +26,9 @@ function fmtWeekday(d) {
 // non-hex on write, but this is the last line of defense at render time)
 // rather than trusting it's still a plain hex string.
 const safeColor = c => /^#[0-9a-fA-F]{6}$/.test(c) ? c : '#c8b8ff';
+// Same treatment as the profile pill: these accents are text on a light ground
+// in light mode, where the raw hex is unreadable. See accentInk in app.js.
+const inkColor = c => `color-mix(in srgb, ${safeColor(c)} var(--ink-mix), #000)`;
 
 function hexToRgba(hex, alpha) {
   const h = safeColor(hex).replace('#', '');
@@ -71,7 +74,7 @@ export function renderHistory(container) {
         <button class="cal-day-name conn-pill${!viewed ? ' active' : ''}" data-id="" style="flex-shrink:0;padding:6px 14px;border-radius:999px;border:1px solid var(--border);background:${!viewed ? 'var(--accent-dim)' : 'transparent'};color:${!viewed ? 'var(--accent)' : 'var(--text-muted)'};font-size:12px;font-weight:700;white-space:nowrap">Me</button>
         ${connections.map(p => `
           <button class="conn-pill" data-id="${p.id}" data-name="${esc(p.name)}" data-color="${safeColor(p.accent_color)}"
-            style="flex-shrink:0;padding:6px 14px;border-radius:999px;border:1px solid ${viewed?.id === p.id ? safeColor(p.accent_color) : 'var(--border)'};background:${viewed?.id === p.id ? hexToRgba(p.accent_color, .18) : 'transparent'};color:${viewed?.id === p.id ? safeColor(p.accent_color) : 'var(--text-muted)'};font-size:12px;font-weight:700;white-space:nowrap">${esc(p.name)}</button>
+            style="flex-shrink:0;padding:6px 14px;border-radius:999px;border:1px solid ${viewed?.id === p.id ? safeColor(p.accent_color) : 'var(--border)'};background:${viewed?.id === p.id ? hexToRgba(p.accent_color, .18) : 'transparent'};color:${viewed?.id === p.id ? inkColor(p.accent_color) : 'var(--text-muted)'};font-size:12px;font-weight:700;white-space:nowrap">${esc(p.name)}</button>
         `).join('')}
       </div>
     `;
@@ -94,7 +97,7 @@ export function renderHistory(container) {
       container.style.borderRadius = '14px';
       banner.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;margin:0 16px 10px;padding:8px 12px;border-radius:10px;background:${hexToRgba(viewed.accent_color, .15)};border:1px solid ${hexToRgba(viewed.accent_color, .4)}">
-          <span style="font-size:12px;font-weight:700;color:${safeColor(viewed.accent_color)}">Viewing ${esc(viewed.name)}'s day</span>
+          <span style="font-size:12px;font-weight:700;color:${inkColor(viewed.accent_color)}">Viewing ${esc(viewed.name)}'s day</span>
           <button id="viewing-back" class="btn btn-secondary" style="height:26px;padding:0 10px;font-size:11px">Back to me</button>
         </div>
       `;

@@ -23,6 +23,16 @@
   --warning:      #ffb347;
   --over:         #c2410c;   /* burnt orange — calories exceeded */
   --error:        #ff6b6b;
+  --on-accent:    #0d0d0f;   /* ink that sits on top of an --accent fill */
+  --gold:         #ffd166;   /* favourite star / favourited row edge */
+  --alert:        #f9a35c;   /* "this needs your attention" text, softer than --error */
+  --mint:         #7ee7c7;   /* scanned-food tag */
+  --shadow:       rgba(0,0,0,.5);
+  /* Profile accents are chosen to glow on near-black, so on a light ground the
+     same hex is pale text on white. Every inline `color: <accent>` runs through
+     color-mix() with this: 100% leaves it untouched in dark, 52% pulls it
+     toward black in light. Keeps one accent per profile instead of two. */
+  --ink-mix:      100%;
   --radius-sm:    8px;
   --radius-md:    14px;
   --radius-lg:    20px;
@@ -32,6 +42,39 @@
   --safe-top:     env(safe-area-inset-top, 0px);
   --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono:    'Space Mono', ui-monospace, 'SF Mono', monospace;
+}
+
+/* ─── Light theme ────────────────────────────────────────── */
+/* Set by the inline boot script in index.html (so the page never flashes dark
+   before app.js parses) and toggled in Settings → Appearance. Only tokens move
+   here — every rule below already reads through them, which is why this block
+   is the whole theme. Deliberately NOT following prefers-color-scheme: the
+   choice is explicit, and an app that flips itself at sunset is a surprise. */
+:root[data-theme="light"] {
+  --bg:           #f6f5f9;
+  --surface:      #ffffff;
+  --surface-2:    #efedf4;
+  --border:       #e0dde8;
+  --text:         #1a1922;
+  --text-muted:   #6a6779;
+  --text-faint:   #9b97a9;
+  --accent:       #6b4fd6;   /* the dark-mode lavender is unreadable on white */
+  --accent-hover: #5a3fc0;
+  --accent-dim:   #ece7fb;
+  --protein:      #1565C0;
+  --carbs:        #D97706;
+  --fat:          #A98200;   /* #FFCA28 vanishes on white */
+  --fiber:        #388E3C;
+  --success:      #2f9e63;
+  --warning:      #b26a00;
+  --over:         #c2410c;
+  --error:        #d64545;
+  --on-accent:    #ffffff;
+  --gold:         #a97900;
+  --alert:        #c2410c;
+  --mint:         #0f8f70;
+  --shadow:       rgba(24,20,40,.16);
+  --ink-mix:      52%;
 }
 
 /* ─── Reset ──────────────────────────────────────────────── */
@@ -179,7 +222,7 @@ img { display: block; max-width: 100%; }
   transition: opacity 0.15s, transform 0.1s;
 }
 .btn:active { transform: scale(0.97); }
-.btn-primary { background: var(--accent); color: #0d0d0f; }
+.btn-primary { background: var(--accent); color: var(--on-accent); }
 .btn-secondary {
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -420,13 +463,13 @@ img { display: block; max-width: 100%; }
   padding: 0 22px;
   border-radius: var(--radius-full);
   background: var(--accent);
-  color: #17161d;
+  color: var(--on-accent);
   font-size: 15px;
   font-weight: 700;
   display: flex;
   align-items: center;
   gap: 7px;
-  box-shadow: 0 6px 22px rgba(0,0,0,.5);
+  box-shadow: 0 6px 22px var(--shadow);
   z-index: 90;
   transition: transform .12s ease;
 }
@@ -578,7 +621,7 @@ img { display: block; max-width: 100%; }
    edge + tinted tile makes the state louder while every icon stays put. */
 .food-list-item.is-fav {
   background: linear-gradient(90deg, rgba(255,209,102,.09), rgba(255,209,102,0) 55%);
-  box-shadow: inset 3px 0 0 #ffd166;
+  box-shadow: inset 3px 0 0 var(--gold);
 }
 .food-list-item.is-fav .food-list-icon {
   background: rgba(255,209,102,.16);
@@ -725,7 +768,7 @@ img { display: block; max-width: 100%; }
   display: flex;
   align-items: center;
   gap: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  box-shadow: 0 8px 24px var(--shadow);
   animation: toastIn 250ms ease-out forwards;
 }
 .toast.out { animation: toastOut 200ms ease-in forwards; }
@@ -763,7 +806,9 @@ img { display: block; max-width: 100%; }
 
 /* ─── Offline Banner ─────────────────────────────────────── */
 .offline-banner {
-  background: var(--warning);
+  /* Fixed amber + dark ink in both themes: --warning is tuned to be readable
+     AS text on each background, which makes it too dark to be a fill in light. */
+  background: #ffb347;
   color: #0d0d0f;
   text-align: center;
   padding: 6px 16px;
@@ -794,7 +839,7 @@ img { display: block; max-width: 100%; }
   color: var(--text);
   font-size: 14px;
   font-weight: 600;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  box-shadow: 0 8px 24px var(--shadow);
   transform: translateY(140%);
   transition: transform 0.3s ease;
 }
@@ -805,12 +850,26 @@ img { display: block; max-width: 100%; }
   border: none;
   border-radius: var(--radius-full);
   background: var(--accent);
-  color: #0d0d0f;
+  color: var(--on-accent);
   font-weight: 700;
   font-size: 13px;
   cursor: pointer;
 }
 .update-banner button:hover { background: var(--accent-hover); }
+
+/* Theme switch (Settings → Appearance) — same shape as the kcal/kJ pair, but
+   as a class rather than inline styles so toggling is one classList call. */
+.theme-btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 700;
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.theme-btn.active { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
 
 /* ─── Forms ──────────────────────────────────────────────── */
 .form-group { margin-bottom: 16px; }
@@ -1037,7 +1096,7 @@ img { display: block; max-width: 100%; }
 
 /* ─── Favourite star ─────────────────────────────────────── */
 .fav-btn { color: var(--text-faint); padding: 6px; transition: color 0.15s; }
-.fav-btn.active { color: #ffd166; filter: drop-shadow(0 0 4px rgba(255,209,102,.45)); }
+.fav-btn.active { color: var(--gold); filter: drop-shadow(0 0 4px rgba(255,209,102,.45)); }
 
 /* ─── Profile top bar ────────────────────────────────────── */
 .profile-bar {
@@ -1145,7 +1204,7 @@ img { display: block; max-width: 100%; }
   margin-left: 4px;
 }
 .tag-custom  { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(200,184,255,.25); }
-.tag-scanned { background: rgba(126,231,199,.12); color: #7ee7c7; border: 1px solid rgba(126,231,199,.25); }
+.tag-scanned { background: rgba(126,231,199,.12); color: var(--mint); border: 1px solid rgba(126,231,199,.25); }
 
 /* ─── Concern chips (Today at-a-glance status) ───────────── */
 .concern-chip {
@@ -1169,7 +1228,7 @@ img { display: block; max-width: 100%; }
   gap: 12px;
   flex-wrap: wrap;
 }
-.logcheck-title { font-size: 13px; font-weight: 700; color: #f9a35c; }
+.logcheck-title { font-size: 13px; font-weight: 700; color: var(--alert); }
 .logcheck-sub   { font-size: 12px; color: var(--text-muted); margin-top: 2px; line-height: 1.4; }
 .logcheck-text  { min-width: 0; flex: 1; }
 .logcheck-actions { display: flex; gap: 8px; flex-shrink: 0; }
@@ -1242,7 +1301,7 @@ img { display: block; max-width: 100%; }
   display: inline-block; margin-left: 6px; font-size: 9px; font-weight: 700;
   letter-spacing: 0.03em; text-transform: uppercase; padding: 1px 6px;
   border-radius: 999px; vertical-align: middle;
-  background: rgba(249,115,22,.12); color: #f9a35c; border: 1px solid rgba(249,115,22,.3);
+  background: rgba(249,115,22,.12); color: var(--alert); border: 1px solid rgba(249,115,22,.3);
 }
 
 /* ─── Collapsible settings sections ──────────────────────── */

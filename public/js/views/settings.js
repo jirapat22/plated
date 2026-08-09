@@ -1,5 +1,5 @@
 import { api }                        from '../api.js';
-import { showToast, showSheet, hideSheet, showPrompt, getProfile, applyProfile, logoutToLock, ACCENTS } from '../app.js';
+import { showToast, showSheet, hideSheet, showPrompt, getProfile, applyProfile, logoutToLock, ACCENTS, getTheme, setTheme } from '../app.js';
 import { setEnergyUnit, fmtE, unitLabel, toKcal } from '../utils/energy.js';
 import { submitReport }              from '../utils/bugReport.js';
 import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
@@ -66,6 +66,24 @@ export function renderSettings(container) {
             ends every other session — or use this to drop them without changing it.
           </div>
           <button class="btn btn-danger btn-full" id="pf-delete" style="margin-top:8px;font-size:13px">Delete this profile</button>
+        </div>
+      </div>
+
+      <!-- Appearance — device-local, so it isn't in the settings object below
+           and doesn't go through saveSetting. Same segmented control as the
+           kcal/kJ switch. -->
+      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
+        <div class="sec-head">🎨 Appearance<span class="sec-chevron">▾</span></div>
+        <div class="settings-row">
+          <span class="settings-row-label">Theme</span>
+          <div style="display:flex;gap:6px" id="theme-switch">
+            ${themeBtn('dark',  '🌙 Dark')}
+            ${themeBtn('light', '☀️ Light')}
+          </div>
+        </div>
+        <div style="padding:0 16px 14px;font-size:11px;color:var(--text-faint);line-height:1.5">
+          Saved on this device, not to your profile — so your phone can be dark
+          while a shared screen is light, and it survives logging out.
         </div>
       </div>
 
@@ -476,6 +494,16 @@ export function renderSettings(container) {
         box.innerHTML = `<div style="font-size:12px;color:var(--error)">${esc(err.message)}</div>`;
       }
     }
+
+    // Theme toggle. No save call and no reload: setTheme flips one attribute on
+    // <html>, and every colour in the app resolves through a token that reads
+    // off it, so the repaint is the browser's job.
+    body.querySelectorAll('.theme-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setTheme(btn.dataset.theme);
+        body.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b === btn));
+      });
+    });
 
     // Energy unit toggle
     body.querySelectorAll('.unit-btn').forEach(btn => {
@@ -1225,6 +1253,9 @@ function daysHoldingTdee(s) {
   const now  = new Date(localDate() + 'T00:00:00');
   return Math.max(0, Math.round((now - then) / 86400000));
 }
+
+const themeBtn = (mode, label) =>
+  `<button class="theme-btn${getTheme() === mode ? ' active' : ''}" data-theme="${mode}">${label}</button>`;
 
 function goalRow(key, label, value, unit, compact = false) {
   if (compact) {

@@ -184,7 +184,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
         </div>
       </div>
       ${food.id ? `<button class="fav-toggle"
-        style="padding:6px 8px;font-size:16px;flex-shrink:0;color:${food.is_favourite ? '#ffd700' : 'var(--text-faint)'}">
+        style="padding:6px 8px;font-size:16px;flex-shrink:0;color:${food.is_favourite ? 'var(--gold)' : 'var(--text-faint)'}">
         ${food.is_favourite ? '⭐' : '☆'}
       </button>` : ''}
       <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style="color:var(--text-faint);flex-shrink:0">
@@ -200,7 +200,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
           const res = await api.patch(`/api/foods/${food.id}/favourite`);
           food.is_favourite = res.is_favourite;
           favBtn.textContent = res.is_favourite ? '⭐' : '☆';
-          favBtn.style.color = res.is_favourite ? '#ffd700' : 'var(--text-faint)';
+          favBtn.style.color = res.is_favourite ? 'var(--gold)' : 'var(--text-faint)';
           el.classList.toggle('is-fav', !!res.is_favourite);
         } catch (err) {
           showToast(err.message, 'error');

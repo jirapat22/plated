@@ -8,24 +8,44 @@ import { movingAvg, weeklyTrendChange, etaWeeks, maintenanceShortfall } from '..
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-const CHART_DEFAULTS = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: { legend: { display: false } },
-  scales: {
-    x: {
-      grid: { color: '#2c2c35' },
-      ticks: { color: '#8b8a96', font: { size: 10 }, maxTicksLimit: 7 },
+// Chart.js paints to a canvas, so it needs real colour strings — var(--border)
+// means nothing to it. These read the live token values instead of hardcoding
+// the dark palette, which is what makes the charts follow the theme. Read at
+// call time, not module load: the theme can change between the two.
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// Series colours are chosen to glow on a near-black plot area, and pale lavender
+// or cyan on white is barely a line at all. CSS solves this elsewhere with
+// color-mix(), but a canvas needs a resolved string, so do the same darkening in
+// JS. Legend swatches call this too, so the dot always matches its line.
+const isLight = () => document.documentElement.getAttribute('data-theme') === 'light';
+const ink = hex => {
+  if (!isLight() || !/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
+  const n = parseInt(hex.slice(1), 16);
+  const d = v => Math.round(v * 0.62).toString(16).padStart(2, '0');
+  return '#' + d((n >> 16) & 255) + d((n >> 8) & 255) + d(n & 255);
+};
+const chartDefaults = () => {
+  const grid = cssVar('--border'), tick = cssVar('--text-muted');
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: {
+        grid: { color: grid },
+        ticks: { color: tick, font: { size: 10 }, maxTicksLimit: 7 },
+      },
+      y: {
+        grid: { color: grid },
+        ticks: { color: tick, font: { size: 10 } },
+      },
     },
-    y: {
-      grid: { color: '#2c2c35' },
-      ticks: { color: '#8b8a96', font: { size: 10 } },
+    elements: {
+      point: { radius: 2, hoverRadius: 5 },
+      line:  { tension: 0.3 },
     },
-  },
-  elements: {
-    point: { radius: 2, hoverRadius: 5 },
-    line:  { tension: 0.3 },
-  },
+  };
 };
 
 // Chart.js comes from a CDN and the service worker deliberately doesn't cache
@@ -131,7 +151,7 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
     datasets.push({
       label: 'goal',
       data: labels.map(() => opts.goalLine),
-      borderColor: '#5dca8a99',
+      borderColor: ink('#5dca8a') + '99',
       backgroundColor: 'transparent',
       borderWidth: 1.5,
       borderDash: [6, 4],
@@ -145,7 +165,7 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
     datasets.push({
       label: '7d avg',
       data: labels.map(() => opts.avgLine),
-      borderColor: '#c8b8ff88',
+      borderColor: ink('#c8b8ff') + '88',
       backgroundColor: 'transparent',
       borderWidth: 1.5,
       borderDash: [3, 3],
@@ -161,7 +181,7 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
     datasets.push({
       label: 'expected',
       data: opts.expectedData,
-      borderColor: '#c8b8ff',
+      borderColor: ink('#c8b8ff'),
       backgroundColor: 'transparent',
       borderWidth: 2,
       borderDash: [5, 4],
@@ -172,13 +192,14 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
     });
   }
 
+  const CD = chartDefaults();
   new Chart(ctx, {
     type: 'line',
     data: { labels, datasets },
     options: {
-      ...CHART_DEFAULTS,
+      ...CD,
       plugins: {
-        ...CHART_DEFAULTS.plugins,
+        ...CD.plugins,
         tooltip: {
           callbacks: {
             label: c => {
@@ -192,11 +213,11 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
         },
       },
       scales: {
-        ...CHART_DEFAULTS.scales,
+        ...CD.scales,
         y: {
-          ...CHART_DEFAULTS.scales.y,
-          title: { display: true, text: yLabel, color: '#8b8a96', font: { size: 10 } },
-          ticks: { ...CHART_DEFAULTS.scales.y.ticks, callback: v => `${Math.round(v)}` },
+          ...CD.scales.y,
+          title: { display: true, text: yLabel, color: cssVar('--text-muted'), font: { size: 10 } },
+          ticks: { ...CD.scales.y.ticks, callback: v => `${Math.round(v)}` },
         },
       },
     },
@@ -349,8 +370,8 @@ export function renderTrends(container) {
     const fats     = rows.map(r => r.fat ?? 0);
 
     // Flagged (likely-incomplete) days get an orange dot so the gap is visible.
-    const FLAG = '#f97316';
-    const pointColors = rows.map(r => isFlagged(r.status) ? FLAG : '#c8b8ff');
+    const FLAG = ink('#f97316');
+    const pointColors = rows.map(r => isFlagged(r.status) ? FLAG : ink('#c8b8ff'));
     const pointRadii  = rows.map(r => isFlagged(r.status) ? 5 : 2);
     const calTrend    = movingAvg(cals, 7);
 
@@ -633,18 +654,18 @@ export function renderTrends(container) {
       const planDef = cfgTdee ? Math.round(cfgTdee - intake) : null;
       return `
         <svg viewBox="0 0 320 78" width="100%" preserveAspectRatio="xMidYMid meet" style="display:block;width:100%;max-width:440px;margin:0 auto;overflow:visible;font-family:var(--font-mono)">
-          <line x1="16" y1="43" x2="304" y2="43" stroke="#2c2c35" stroke-width="2" stroke-linecap="round"/>
-          ${showTdee ? `<line x1="${xM.toFixed(1)}" y1="43" x2="${xT.toFixed(1)}" y2="43" stroke="#4a4a55" stroke-width="2" stroke-dasharray="3 3"/>` : ''}
-          <line x1="${xI.toFixed(1)}" y1="43" x2="${xM.toFixed(1)}" y2="43" stroke="#c8b8ff" stroke-width="4" stroke-linecap="round"/>
-          <circle cx="${xI.toFixed(1)}" cy="43" r="5.5" fill="#c8b8ff" stroke="#16161a" stroke-width="3"/>
-          <line x1="${xM.toFixed(1)}" y1="34" x2="${xM.toFixed(1)}" y2="52" stroke="#f0eff4" stroke-width="2.5" stroke-linecap="round"/>
-          ${showTdee ? `<line x1="${xT.toFixed(1)}" y1="36" x2="${xT.toFixed(1)}" y2="50" stroke="#8b8a96" stroke-width="2" stroke-dasharray="2 2"/>` : ''}
-          <g fill="#f0eff4" font-size="15" font-weight="700">
+          <line x1="16" y1="43" x2="304" y2="43" style="stroke:var(--border)" stroke-width="2" stroke-linecap="round"/>
+          ${showTdee ? `<line x1="${xM.toFixed(1)}" y1="43" x2="${xT.toFixed(1)}" y2="43" style="stroke:var(--text-faint)" stroke-width="2" stroke-dasharray="3 3"/>` : ''}
+          <line x1="${xI.toFixed(1)}" y1="43" x2="${xM.toFixed(1)}" y2="43" style="stroke:var(--accent)" stroke-width="4" stroke-linecap="round"/>
+          <circle cx="${xI.toFixed(1)}" cy="43" r="5.5" style="fill:var(--accent);stroke:var(--surface)" stroke-width="3"/>
+          <line x1="${xM.toFixed(1)}" y1="34" x2="${xM.toFixed(1)}" y2="52" style="stroke:var(--text)" stroke-width="2.5" stroke-linecap="round"/>
+          ${showTdee ? `<line x1="${xT.toFixed(1)}" y1="36" x2="${xT.toFixed(1)}" y2="50" style="stroke:var(--text-muted)" stroke-width="2" stroke-dasharray="2 2"/>` : ''}
+          <g style="fill:var(--text)" font-size="15" font-weight="700">
             ${T(xI, 25, fmtE(intake))}
             ${T(xM, close ? 13 : 25, fmtE(maint))}
             ${showTdee ? T(xT, 25, fmtE(cfgTdee)) : ''}
           </g>
-          <g fill="#8b8a96" font-size="10" letter-spacing="0.5">
+          <g style="fill:var(--text-muted)" font-size="10" letter-spacing="0.5">
             ${T(xI, close ? 73 : 66, 'YOU EAT')}
             ${T(xM, close ? 61 : 66, 'REAL MAINT.')}
             ${showTdee ? T(xT, 66, 'SET TDEE') : ''}
@@ -717,8 +738,8 @@ export function renderTrends(container) {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
           <div class="label">Bodyweight <span class="range-chip">· ${rangeLabel()}</span></div>
           <div style="display:flex;gap:10px;font-size:10px;color:var(--text-faint);flex-wrap:wrap">
-            ${expectedAligned ? `<span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:0;border-top:2px dashed #c8b8ff;display:inline-block"></span>expected from calories</span>` : ''}
-            ${targetWeight ? `<span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>target ${targetWeight} kg</span>` : ''}
+            ${expectedAligned ? `<span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:0;border-top:2px dashed ${ink('#c8b8ff')};display:inline-block"></span>expected from calories</span>` : ''}
+            ${targetWeight ? `<span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:2px;background:${ink('#5dca8a')};display:inline-block;border-radius:1px"></span>target ${targetWeight} kg</span>` : ''}
           </div>
         </div>
         <div style="height:170px;position:relative"><canvas id="chart-wt"></canvas></div>
@@ -788,7 +809,7 @@ export function renderTrends(container) {
           <div class="label">Calories <span class="range-chip">· ${rangeLabel()}</span></div>
           <div style="display:flex;gap:10px;font-size:10px;color:var(--text-faint)">
             <span style="display:flex;align-items:center;gap:4px">
-              <span style="width:16px;height:2px;background:#5dca8a;display:inline-block;border-radius:1px"></span>goal
+              <span style="width:16px;height:2px;background:${ink('#5dca8a')};display:inline-block;border-radius:1px"></span>goal
             </span>
             <span style="display:flex;align-items:center;gap:4px">
               <span style="width:7px;height:7px;background:${FLAG};display:inline-block;border-radius:50%"></span>under-logged
@@ -843,7 +864,7 @@ export function renderTrends(container) {
         </div>
         <!-- Current streak — an ongoing run, not tied to the range above -->
         <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--surface-2);border-radius:var(--radius-sm);margin-bottom:10px">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M12 2.5c1.2 3.6-3.4 5-3.4 8.7a3.4 3.4 0 0 0 6.8 0c0-1-.5-1.8-.5-1.8s.3 1.6-.8 2c.9-2.6-1.7-3.4-2.1-8.9Z" stroke="#FFA726" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M12 2.5c1.2 3.6-3.4 5-3.4 8.7a3.4 3.4 0 0 0 6.8 0c0-1-.5-1.8-.5-1.8s.3 1.6-.8 2c.9-2.6-1.7-3.4-2.1-8.9Z" style="stroke:var(--carbs)" stroke-width="1.6" stroke-linejoin="round"/></svg>
           <span class="num" style="font-size:22px;line-height:1">${streak || '–'}</span>
           <span style="font-size:12px;color:var(--text-muted);line-height:1.3">day logging streak<br><span style="font-size:10px;color:var(--text-faint)">current run · all-time</span></span>
         </div>
@@ -920,7 +941,7 @@ export function renderTrends(container) {
         const dt = new Date(d + 'T00:00:00');
         return `${dt.getMonth() + 1}/${dt.getDate()}`;
       });
-      makeChart('chart-waist', wsLabels, waistEntries.map(([, v]) => v), '#ffd166', 'cm',
+      makeChart('chart-waist', wsLabels, waistEntries.map(([, v]) => v), ink('#ffd166'), 'cm',
         { trendData: movingAvg(waistEntries.map(([, v]) => v), 5) });
     };
     waistDetails?.addEventListener('toggle', () => { waistOpen = waistDetails.open; drawWaist(); });
@@ -1061,12 +1082,12 @@ export function renderTrends(container) {
     }
 
     requestAnimationFrame(() => {
-      makeChart('chart-cal', labels, cals, '#c8b8ff', ul, {
+      makeChart('chart-cal', labels, cals, ink('#c8b8ff'), ul, {
         goalLine: goalDisplay, avgLine: weeklyAvgDisplay,
         pointColors, pointRadii, trendData: calTrend,
       });
-      makeChart('chart-pro',  labels, proteins, '#1E88E5', 'g', { goalLine: proteinGoal });
-      if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, '#62d8ff', 'kg', { trendData: wTrend, goalLine: targetWeight ?? undefined, expectedData: expectedAligned ?? undefined });
+      makeChart('chart-pro',  labels, proteins, ink('#1E88E5'), 'g', { goalLine: proteinGoal });
+      if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, ink('#62d8ff'), 'kg', { trendData: wTrend, goalLine: targetWeight ?? undefined, expectedData: expectedAligned ?? undefined });
       else {
         const c = document.getElementById('chart-wt');
         if (c) c.closest('.card').querySelector('div[style*="height"]').innerHTML =
@@ -1078,8 +1099,8 @@ export function renderTrends(container) {
       const drawMacros = () => {
         if (!more || drawn || !more.open) return;
         drawn = true;
-        makeChart('chart-carb', labels, carbs, '#f97316', 'g', { goalLine: carbGoal });
-        makeChart('chart-fat',  labels, fats,  '#eab308', 'g', { goalLine: fatGoal  });
+        makeChart('chart-carb', labels, carbs, ink('#f97316'), 'g', { goalLine: carbGoal });
+        makeChart('chart-fat',  labels, fats,  ink('#eab308'), 'g', { goalLine: fatGoal  });
       };
       more?.addEventListener('toggle', drawMacros);
       drawMacros();

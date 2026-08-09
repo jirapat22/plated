@@ -222,11 +222,35 @@ window.addEventListener('online', () => {
   offlineBanner?.classList.remove('visible');
 });
 
+// ─── Theme ───────────────────────────────────────────────────
+// The <head> script in index.html already applied the stored theme before
+// paint; these two only exist so Settings can read and change it. Everything
+// visual hangs off the token block in style.css, so flipping one attribute is
+// the whole switch — no re-render, no reload.
+const THEME_KEY = 'plated_theme';
+export function getTheme() {
+  try { return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
+}
+export function setTheme(mode) {
+  const light = mode === 'light';
+  document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', light ? '#f6f5f9' : '#0d0d0f');
+  try { localStorage.setItem(THEME_KEY, light ? 'light' : 'dark'); } catch {}
+}
+
 // ─── Profiles / Auth ─────────────────────────────────────────
 const TOKEN_KEY = 'plated_token';
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
 export const ACCENTS = ['#c8b8ff', '#7ee7c7', '#ffb8d2', '#ffd98e', '#8ec5ff', '#ff9e7a'];
+
+// Every accent above is picked to glow on near-black, so used as TEXT on a
+// light background they're all but invisible. Wrapping them in color-mix with
+// the --ink-mix token darkens them only in light mode (100% = unchanged in
+// dark), which beats storing a second accent per profile.
+// ponytail: if a profile ever wants a genuinely different colour per theme,
+// that's a second column — this covers the case where it's the same hue.
+export const accentInk = c => `color-mix(in srgb, ${c} var(--ink-mix), #000)`;
 
 let currentProfile = null;
 export function getProfile() { return currentProfile; }
@@ -246,7 +270,7 @@ export function renderProfileBar() {
   if (!bar) return;
   if (!currentProfile) { bar.innerHTML = ''; return; }
   const c = currentProfile.accent_color || '#c8b8ff';
-  bar.innerHTML = `<span class="profile-pill" style="background:${c}1f;color:${c};border-color:${c}66">${esc(currentProfile.name)}</span>`;
+  bar.innerHTML = `<span class="profile-pill" style="background:${c}1f;color:${accentInk(c)};border-color:${c}66">${esc(currentProfile.name)}</span>`;
 }
 
 // Called by Settings after rename / colour change so the pill stays in sync

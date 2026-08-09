@@ -7,6 +7,19 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Plated" />
   <meta name="theme-color" content="#0d0d0f" />
+  <script>
+    // Inline and synchronous on purpose: app.js is a module, so it doesn't run
+    // until after first paint, and a light-mode user would watch the app flash
+    // black on every launch. Device-local (not profile_settings) because the
+    // right theme depends on the screen you're holding, not on who you are —
+    // and it survives logout, when there's no profile to read settings from.
+    try {
+      if (localStorage.getItem('plated_theme') === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f6f5f9');
+      }
+    } catch (e) {}
+  </script>
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" href="/icons/icon-192.png" type="image/png" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />

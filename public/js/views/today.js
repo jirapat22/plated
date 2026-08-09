@@ -1,5 +1,5 @@
 import { api }                            from '../api.js';
-import { showToast }                       from '../app.js';
+import { showToast, accentInk }            from '../app.js';
 import { openFoodEntry, openQuickLog, renderMealCard, lazySession } from './log.js';
 import { renderMacroBar }                  from '../components/macroBar.js';
 import { fmtE, unitLabel } from '../utils/energy.js';
@@ -536,7 +536,9 @@ function phaseBadge(phase) {
     bulk:     { glyph: ICON_TREND_UP,   color: '#c8b8ff' },
   };
   const { glyph, color } = map[phase] || map.maintain;
-  return `<span style="font-size:11px;font-weight:700;color:${color};background:${color}18;padding:3px 10px;border-radius:999px;border:1px solid ${color}44;display:inline-flex;align-items:center;gap:4px">${icon(glyph, 12)} ${(phase||'maintain').toUpperCase()}</span>`;
+  // Tint and border stay at the raw hex (they're 9%/27% washes, fine on either
+  // ground); only the text runs through accentInk so it darkens in light mode.
+  return `<span style="font-size:11px;font-weight:700;color:${accentInk(color)};background:${color}18;padding:3px 10px;border-radius:999px;border:1px solid ${color}44;display:inline-flex;align-items:center;gap:4px">${icon(glyph, 12)} ${(phase||'maintain').toUpperCase()}</span>`;
 }
 
 // phaseProgressCard lived here: net-vs-target with its own progress bar. It was
