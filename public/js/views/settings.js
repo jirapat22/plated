@@ -60,6 +60,11 @@ export function renderSettings(container) {
             <button class="btn btn-secondary" id="pf-passcode" style="flex:1">Change passcode</button>
             <button class="btn btn-secondary" id="pf-logout" style="flex:1">Log out</button>
           </div>
+          <button class="btn btn-secondary btn-full" id="pf-logout-others" style="margin-top:8px;font-size:13px">Sign out other devices</button>
+          <div style="font-size:11px;color:var(--text-faint);margin-top:6px;line-height:1.5">
+            A login lasts 30 days. If someone learned your code, changing it now also
+            ends every other session — or use this to drop them without changing it.
+          </div>
           <button class="btn btn-danger btn-full" id="pf-delete" style="margin-top:8px;font-size:13px">Delete this profile</button>
         </div>
       </div>
@@ -309,9 +314,20 @@ export function renderSettings(container) {
         placeholder: '••••', inputMode: 'numeric', maxLength: 4, cta: 'Update',
       }, async code => {
         if (!/^\d{4}$/.test(code)) throw new Error('Passcode must be 4 digits');
-        await api.post('/api/auth/me/passcode', { newPasscode: code });
-        showToast('Passcode updated', 'success');
+        const r = await api.post('/api/auth/me/passcode', { newPasscode: code });
+        showToast(r.signed_out
+          ? `Passcode updated · ${r.signed_out} other device${r.signed_out === 1 ? '' : 's'} signed out`
+          : 'Passcode updated', 'success', { duration: 5000 });
       });
+    });
+
+    document.getElementById('pf-logout-others').addEventListener('click', async () => {
+      try {
+        const r = await api.post('/api/auth/logout-others', {});
+        showToast(r.signed_out
+          ? `${r.signed_out} other device${r.signed_out === 1 ? '' : 's'} signed out`
+          : 'No other devices were signed in', 'success', { duration: 5000 });
+      } catch (err) { showToast(err.message, 'error'); }
     });
 
     document.getElementById('pf-logout').addEventListener('click', async () => {

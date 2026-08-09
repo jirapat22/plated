@@ -194,7 +194,28 @@ router.post('/me/passcode', requireProfile, async (req, res) => {
       return false;
     });
     if (taken) return res.status(409).json({ error: 'That code is already taken' });
-    res.json({ success: true });
+
+    // Changing the code has to end every OTHER session, or it doesn't do the
+    // job people change a passcode for. Someone who knew the old code and was
+    // already signed in kept a working 30-day token no matter how many times
+    // you changed it — the new code locked nobody out. This device keeps its
+    // session so you aren't bounced to the lock screen by your own action.
+    const gone = db.prepare('DELETE FROM sessions WHERE profile_id = $id AND token != $t')
+      .run({ id: req.profileId, t: req.sessionToken }).changes;
+    res.json({ success: true, signed_out: gone });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/auth/logout-others — end every session except this device's. The
+// answer to "someone knows my code": change it, or if you just want them out
+// now, drop their token. Without this the only lever was waiting 30 days.
+router.post('/logout-others', requireProfile, (req, res) => {
+  try {
+    const gone = getDb().prepare('DELETE FROM sessions WHERE profile_id = $id AND token != $t')
+      .run({ id: req.profileId, t: req.sessionToken }).changes;
+    res.json({ success: true, signed_out: gone });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
