@@ -328,6 +328,16 @@ img { display: block; max-width: 100%; }
 }
 .ring-kcal { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .ring-goal { font-size: 12px; color: var(--text-muted); }
+/* "640 left" — the number you actually act on, and it was the quietest thing
+   on the card: 11px at --text-faint, dimmer than the goal above it. Now the
+   second-loudest thing in the ring, behind the intake figure itself. Colour is
+   set inline because it carries meaning (left / hit / over). */
+.ring-hint {
+  font-size: 14px;
+  font-weight: 700;
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
 
 /* ─── Three-ring calorie layout (goal · burned · eat target) ── */
 .tri-rings {
@@ -360,6 +370,10 @@ img { display: block; max-width: 100%; }
   /* The captions never scaled with the rings, so "nothing yet" broke in two. */
   .tri-rings .ring-goal    { font-size: clamp(9px, 2.8vw, 12px); }
   .tri-rings .ring-goal-sm { font-size: clamp(8px, 2.3vw, 9px); }
+  /* Scales with its siblings so it can't outgrow the arc: .ring-center wraps
+     at the ring's own width, and a wrapped hint is what spilled past the
+     circle last time. Worst realistic string is "12,345 left". */
+  .tri-rings .ring-hint    { font-size: clamp(11px, 3.6vw, 14px); }
 }
 
 /* ─── Macro Bar ──────────────────────────────────────────── */

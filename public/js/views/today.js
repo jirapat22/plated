@@ -200,7 +200,15 @@ export function renderToday(container) {
       : remaining > 50  ? `${fmtE(remaining)} left`
       : remaining < -50 ? `+${fmtE(-remaining)} over`
       : '✓ goal hit';
-    const hintColor = remaining < -50 ? 'var(--over)' : remaining < 50 ? 'var(--success)' : 'var(--text-faint)';
+    // "N left" used to render in --text-faint, the dimmest token there is —
+    // quieter than the goal printed above it, for the one number on the card
+    // you actually act on. Full contrast now; over/hit keep their own colours
+    // because those carry meaning. The empty state stays muted: "nothing yet"
+    // isn't a number to act on, and it shouldn't shout next to a big 0.
+    const hintColor = eaten === 0      ? 'var(--text-muted)'
+                    : remaining < -50  ? 'var(--over)'
+                    : remaining < 50   ? 'var(--success)'
+                    : 'var(--text)';
 
     // ── Concerns: one glanceable row of "what needs attention" ──
     // Protein is a floor you're trying to reach, not a ceiling to stay under —
@@ -320,7 +328,7 @@ export function renderToday(container) {
                 <div class="ring-center">
                   <div class="num ring-kcal">${fmtE(eaten)}</div>
                   <div class="ring-goal muted">/ ${fmtE(baseGoal)} ${ul}</div>
-                  <div style="font-size:11px;margin-top:2px;color:${hintColor};font-weight:600">${hintText}</div>
+                  <div class="ring-hint" style="color:${hintColor}">${hintText}</div>
                 </div>
               </div>
             </div>
