@@ -200,15 +200,20 @@ export function renderToday(container) {
       : remaining > 50  ? `${fmtE(remaining)} left`
       : remaining < -50 ? `+${fmtE(-remaining)} over`
       : '✓ goal hit';
-    // "N left" used to render in --text-faint, the dimmest token there is —
-    // quieter than the goal printed above it, for the one number on the card
-    // you actually act on. Full contrast now; over/hit keep their own colours
-    // because those carry meaning. The empty state stays muted: "nothing yet"
-    // isn't a number to act on, and it shouldn't shout next to a big 0.
+    // Traffic light: the colour says where you stand before you've read the
+    // digits. Green with room, amber once you're into the last quarter of the
+    // budget, orange past it. Proportional rather than a fixed kcal threshold —
+    // 400 left is a comfortable evening on 2,600 and almost nothing on 1,041,
+    // and the app now has profiles at both ends.
+    // "nothing yet" stays muted: it's a placeholder, not a number to act on,
+    // and a bold green one next to a big 0 reads as praise for having eaten
+    // nothing.
+    const leftFrac  = budget > 0 ? remaining / budget : 0;
     const hintColor = eaten === 0      ? 'var(--text-muted)'
-                    : remaining < -50  ? 'var(--over)'
-                    : remaining < 50   ? 'var(--success)'
-                    : 'var(--text)';
+                    : remaining < -50  ? 'var(--over)'      // past the budget
+                    : remaining < 50   ? 'var(--success)'   // landed on it
+                    : leftFrac <= 0.25 ? 'var(--warning)'   // last quarter
+                    : 'var(--success)';                     // room to spare
 
     // ── Concerns: one glanceable row of "what needs attention" ──
     // Protein is a floor you're trying to reach, not a ceiling to stay under —

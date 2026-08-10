@@ -21,7 +21,7 @@
   --fiber:        #66BB6A;   /* green     — plant / health */
   --success:      #5dca8a;
   --warning:      #ffb347;
-  --over:         #c2410c;   /* burnt orange — calories exceeded */
+  --over:         #cf6b41;   /* burnt orange — calories exceeded (5.0:1 on --surface) */
   --error:        #ff6b6b;
   --on-accent:    #0d0d0f;   /* ink that sits on top of an --accent fill */
   --gold:         #ffd166;   /* favourite star / favourited row edge */
@@ -68,8 +68,8 @@
   --carbs:        #D97706;
   --fat:          #A98200;   /* #FFCA28 vanishes on white */
   --fiber:        #388E3C;
-  --success:      #2f9e63;
-  --warning:      #b26a00;
+  --success:      #267e4f;
+  --warning:      #a05f00;
   --over:         #c2410c;
   --error:        #d64545;
   --on-accent:    #ffffff;
@@ -161,7 +161,7 @@ img { display: block; max-width: 100%; }
    `left:0; right:0` ends up wider than the screen. .bottom-nav and
    .toast-container are exactly that shape — they scale by calc() below instead.
    ponytail: the thorough fix is px→rem everywhere, which is 322 edits and a
-   re-test of every screen. Do that if zoom ever fights a browser update. */
+   re-test of every screen. Do that if zoom ever fights a browser update.
    The nav, toasts and profile pill therefore carry * var(--ui-scale) inline in
    their own rules below rather than being overridden from here. */
 .view-container, .sheet-content { zoom: var(--ui-scale); }
