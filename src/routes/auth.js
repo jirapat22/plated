@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { promisify } = require('util');
 const { getDb, seedProfileDefaults, adoptOrphanData, countProfiles } = require('../db');
-const { requireProfile } = require('../middleware/auth');
+const { requireProfile, pruneExpiredSessions } = require('../middleware/auth');
 const { rateLimit } = require('../middleware/rateLimit');
 
 const router = express.Router();
@@ -259,6 +259,9 @@ router.post('/me/passcode', requireProfile, async (req, res) => {
 // can offer "sign this one out" without handing back a working credential.
 router.get('/sessions', requireProfile, (req, res) => {
   try {
+    // Self-healing: drop this profile's dead rows before listing, so the list
+    // can't show a session that would be rejected the moment it was used.
+    pruneExpiredSessions(getDb(), req.profileId);
     const rows = getDb().prepare(`
       SELECT rowid AS id, token, user_agent, ip, created_at, last_seen
       FROM sessions WHERE profile_id = $pid

@@ -141,6 +141,14 @@ function start() {
 
   initDb();
 
+  // Sweep sessions past the 30-day TTL. requireProfile only expires a token
+  // when someone presents it, so abandoned ones accumulate — production held
+  // two from 2 July still sitting there on 10 August.
+  const { pruneExpiredSessions } = require('./src/middleware/auth');
+  const { getDb } = require('./src/db');
+  const swept = pruneExpiredSessions(getDb());
+  if (swept) console.log(`Pruned ${swept} expired session(s)`);
+
   // Forward any locally-stored reports that haven't reached Orbit yet.
   (async () => {
     if (process.env.ORBIT_URL?.trim()) {

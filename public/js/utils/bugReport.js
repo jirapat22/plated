@@ -163,7 +163,9 @@ export function installErrorCapture() {
     const r = e.reason;
     // Having no connection isn't a bug (see offlineError in api.js) — it was
     // filing itself as a 5xx in Orbit from any write attempted offline.
-    if (r?.offline) return;
+    // Nor is a restarting server (unreachableError), which otherwise arrived
+    // here as a bare "HTTP 502" alongside the per-request reports.
+    if (r?.offline || r?.unreachable) return;
     const message = r?.message || (typeof r === 'string' ? r : 'Unhandled promise rejection');
     autoReport(message, r?.stack || null);
   });

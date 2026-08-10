@@ -50,4 +50,22 @@ function requireProfile(req, res, next) {
   }
 }
 
-module.exports = { requireProfile, SESSION_TTL_MS };
+// Expired rows are otherwise only deleted when their token is USED — so a
+// session nobody ever returns to sits in the table forever. Inert until the
+// device list shipped, which listed every row for a profile and therefore
+// showed long-dead sessions as signed-in devices: production had two from 2
+// July still listed on 10 August, 9 days past the 30-day TTL. That is exactly
+// the wrong answer from a feature built to tell you who is signed in.
+// created_at is 'YYYY-MM-DD HH:MM:SS' UTC, so a string compare in the same
+// shape orders correctly.
+function pruneExpiredSessions(db, profileId = null) {
+  const cutoff = new Date(Date.now() - SESSION_TTL_MS).toISOString().replace('T', ' ').slice(0, 19);
+  try {
+    return profileId == null
+      ? db.prepare('DELETE FROM sessions WHERE created_at < $c').run({ c: cutoff }).changes
+      : db.prepare('DELETE FROM sessions WHERE created_at < $c AND profile_id = $p')
+          .run({ c: cutoff, p: profileId }).changes;
+  } catch { return 0; }
+}
+
+module.exports = { requireProfile, pruneExpiredSessions, SESSION_TTL_MS };

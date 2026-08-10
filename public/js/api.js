@@ -18,6 +18,20 @@ function offlineError(method) {
   return Object.assign(new Error(msg), { status: 503, offline: true });
 }
 
+// 502/503/504 come from the proxy in front of the app, not from the app: the
+// container is restarting, or briefly unreachable. From the client these are
+// indistinguishable from a deploy, and a deploy is the usual cause — three of
+// these landed in Orbit as "bugs" 48 seconds after a push, from a browser that
+// happened to have the app open. Not faults, and not worth paging over.
+// A 500 still is: that's the app itself throwing.
+const UNREACHABLE = new Set([502, 503, 504]);
+function unreachableError(status) {
+  return Object.assign(
+    new Error('The server is restarting — try again in a moment.'),
+    { status, unreachable: true },
+  );
+}
+
 async function request(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (_token) headers['Authorization'] = `Bearer ${_token}`;
@@ -55,7 +69,12 @@ async function request(method, path, body) {
     // not a server fault: it was filing itself as a 5xx bug in Orbit, and
     // surfacing to the user as a toast reading just "offline".
     if (data?.offline) throw offlineError(method);
-    // Server faults (5xx) are real bugs — capture them; 4xx are expected.
+    // A restarting or unreachable server is not a bug in the app — see above.
+    // Thrown with .unreachable so the global rejection handler skips it too,
+    // the same way .offline is skipped; otherwise the same blip reports twice,
+    // once from here and once as a bare "HTTP 502" from the uncaught rejection.
+    if (UNREACHABLE.has(resp.status)) throw unreachableError(resp.status);
+    // Server faults the app itself raised are real bugs — capture those.
     if (resp.status >= 500) reportApiError({ method, path, status: resp.status, message: data?.error || '' });
     const err = new Error(data?.error || `HTTP ${resp.status}`);
     // Most callers only read err.message, but some errors carry structured
