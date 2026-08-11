@@ -66,6 +66,31 @@ async function ironFetch(pid, path) {
 }
 
 // Typed helpers for the IronLog Plated API
+// Bring IronLog weigh-ins into weight_log, which is the copy every calculation
+// in the app reads. Deduped by local calendar day, and a day you already have
+// is never overwritten — a manual correction outranks the scale.
+//
+// Shared by /sync and /today so the two can't disagree about which day a
+// weigh-in belongs to: localDayOf, not split('T')[0]. Weighing at 7am NZ
+// timestamps at ~19:00 UTC the day BEFORE, which is how 74% of one profile's
+// weigh-ins once landed a day early.
+function importBodyweight(db, pid, bwList) {
+  if (!Array.isArray(bwList) || !bwList.length) return 0;
+  const tz     = tzFor(db, pid);
+  const exists = db.prepare('SELECT 1 FROM weight_log WHERE profile_id = $pid AND date = $date');
+  const insert = db.prepare(
+    "INSERT INTO weight_log (date, weight_kg, profile_id, source) VALUES ($date, $kg, $pid, 'ironlog')"
+  );
+  let added = 0;
+  for (const w of bwList) {
+    const date = localDayOf(w.date, tz);
+    const kg   = w.weight_kg ?? w.weight ?? w.bodyweight_kg;
+    if (!date || kg == null) continue;
+    if (!exists.get({ pid, date })) { insert.run({ date, kg, pid }); added++; }
+  }
+  return added;
+}
+
 const getProfile         = (pid)             => ironFetch(pid, '/api/plated/profile');
 const getBodyweight       = (pid, limit = 30) => ironFetch(pid, `/api/plated/bodyweight?limit=${limit}`);
 // tz = client's getTimezoneOffset() (minutes behind UTC; NZ = -720). IronLog
@@ -142,6 +167,22 @@ router.get('/today', async (req, res) => {
     let bodyweight = null;
     if (bwRes.status === 'fulfilled') {
       const bwList = bwRes.value?.data ?? bwRes.value;
+      // Import, not just display. This route already had the weigh-ins in hand
+      // and only rendered them, while the copy that Trends actually does maths
+      // on (weight_log) was written solely by the manual Sync button in
+      // Settings. So Today showed a weight from this morning while real
+      // maintenance was computed from a scale reading four days old — the
+      // number on screen and the number in the sum were different weights, with
+      // nothing to suggest it.
+      // A GET that writes, deliberately: this route already stamps
+      // ironlog_last_synced below, and importing here is what finally makes
+      // that label true.
+      try {
+        const added = importBodyweight(getDb(), pid, bwList);
+        // New weigh-ins move trend weight, and in g/kg mode the macro goals
+        // follow it. Without this they'd lag until the next manual sync.
+        if (added) recalcMacroGoals(getDb(), pid);
+      } catch { /* best-effort — never fail Today over the scale */ }
       if (Array.isArray(bwList) && bwList.length) {
         const norm = bwList
           .map(w => ({ date: workoutLocalDate(w, tzOff), kg: Number(w.weight_kg ?? w.weight ?? w.bodyweight_kg) || null }))
@@ -249,23 +290,8 @@ router.post('/sync', async (req, res) => {
     // Import bodyweight history from IronLog into the weight log (dedupe by date)
     let weightsImported = 0;
     try {
-      const bwRaw  = await getBodyweight(pid, 60);
-      const bwList = bwRaw?.data ?? bwRaw;
-      if (Array.isArray(bwList)) {
-        const exists = db.prepare('SELECT 1 FROM weight_log WHERE profile_id = $pid AND date = $date');
-        const insert = db.prepare(
-          "INSERT INTO weight_log (date, weight_kg, profile_id, source) VALUES ($date, $kg, $pid, 'ironlog')"
-        );
-        for (const w of bwList) {
-          // localDayOf, not split('T')[0] — see the note there. Weighing at 7am
-          // NZ timestamps at ~19:00 UTC the previous day, so the UTC day filed
-          // most weigh-ins a day early, and this loop WRITES those dates.
-          const date = localDayOf(w.date, tzFor(db, pid));
-          const kg   = w.weight_kg ?? w.weight;
-          if (!date || kg == null) continue;
-          if (!exists.get({ pid, date })) { insert.run({ date, kg, pid }); weightsImported++; }
-        }
-      }
+      const bwRaw = await getBodyweight(pid, 60);
+      weightsImported = importBodyweight(db, pid, bwRaw?.data ?? bwRaw);
     } catch { /* bodyweight import is best-effort */ }
     if (weightsImported) updates.bodyweight_entries_imported = weightsImported;
 
