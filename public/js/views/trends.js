@@ -132,6 +132,31 @@ function linFit(xs, ys) {
   return denom === 0 ? null : (n * sxy - sx * sy) / denom;
 }
 
+// How much that slope can be trusted: the standard error of the fitted line,
+// from the spread of the weigh-ins around it. Multiplied by 7,700 it becomes a
+// kcal/day band on the maintenance figure, which is the number that decides
+// whether it's worth acting on.
+//
+// This matters more than it sounds. Measured on one real 28-day history the
+// same weigh-ins gave −0.16 kg/wk over 28 days and +0.52 kg/wk over 14 — not
+// merely less precise, the opposite direction. A number that can flip sign
+// should not be presented with the same confidence as one that can't.
+//
+// ponytail: the band from weight noise only. Intake is the other half of the
+// estimate and its error is unmeasurable from inside the app, so this is a
+// floor on the uncertainty, never the whole of it.
+function linFitStdErr(xs, ys, slope) {
+  const n = xs.length;
+  if (n < 3 || slope == null) return null;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  const sxx = xs.reduce((s, x) => s + (x - mx) ** 2, 0);
+  if (sxx === 0) return null;
+  const b0 = my - slope * mx;
+  const ssRes = ys.reduce((s, y, i) => s + (y - (b0 + slope * xs[i])) ** 2, 0);
+  return Math.sqrt(ssRes / (n - 2) / sxx);
+}
+
 function makeChart(id, labels, data, color, yLabel, opts = {}) {
   destroyChart(id);
   const ctx = document.getElementById(id);
@@ -554,6 +579,16 @@ export function renderTrends(container) {
     const realTDEE = (avgCal != null && slopePerDay != null && rateReliable)
       ? Math.round((avgCal - slopePerDay * 7700) / 10) * 10 : null;
 
+    // How settled that figure is. 95% band on the weight slope, in kcal/day.
+    // "Steady" needs the band tight enough that it's smaller than the ~150 kcal
+    // adjustment you'd make off the back of it — a number you can't act on
+    // without the band swallowing the decision isn't ready. Fresh weigh-ins
+    // too: a tight fit on data that stopped a week ago is confidence about the
+    // past.
+    const slopeSE  = linFitStdErr(wWinX, wWinVals, slopePerDay);
+    const maintCI  = slopeSE != null ? Math.round(1.96 * slopeSE * 7700) : null;
+    const maintSteady = maintCI != null && maintCI <= 250 && (staleDays == null || staleDays <= 3);
+
     // Does the measured figure square with your size and training? Only
     // answerable once the TDEE estimator has stored height/age/sex/activity.
     const shortfall = maintenanceShortfall(realTDEE, {
@@ -732,10 +767,16 @@ export function renderTrends(container) {
           <div style="font-size:13px;color:var(--text-muted);margin:2px 0 12px">${verdictSub}</div>
           <div class="stat-grid">
             <div class="stat-cell"><div class="stat-num">${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(2)}</div><div class="stat-lbl">kg / week</div><div class="stat-sub">your real pace</div></div>
-            <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div><div class="stat-sub">what you burn</div></div>
+            <div class="stat-cell"><div class="stat-num">${realTDEE != null ? fmtE(realTDEE) : '—'}</div><div class="stat-lbl">real maint. ${ul}</div><div class="stat-sub" style="${maintCI != null ? `color:${maintSteady ? 'var(--success)' : 'var(--warning)'}` : ''}">${
+              maintCI == null ? 'what you burn'
+                : maintSteady ? `steady · ±${fmtE(maintCI)}`
+                : `settling · ±${fmtE(maintCI)}`}</div></div>
             <div class="stat-cell${!targetWeight ? ' set-target-cell' : ''}"${!targetWeight ? ' style="cursor:pointer"' : ''}><div class="stat-num">${weeksToTarget ? '~' + Math.round(weeksToTarget) + 'w' : '–'}</div><div class="stat-lbl"${!targetWeight ? ' style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px"' : ''}>${targetWeight ? 'to ' + targetWeight + ' kg' : 'set target'}</div><div class="stat-sub">${weeksToTarget ? 'at this pace' : (targetWeight ? 'not at this pace' : '&nbsp;')}</div></div>
           </div>
           ${staleDays >= 4 ? `<div style="font-size:11px;color:var(--warning);margin-top:10px">Newest weigh-in is ${staleDays} days old — nothing since then counts toward this.</div>` : ''}
+          ${maintCI != null ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">${maintSteady
+            ? `Maintenance has settled to within <strong style="color:var(--success)">±${fmtE(maintCI)} ${ul}</strong>. That's tighter than the amount you'd adjust a goal by, so if your pace is off target this is the moment a change is worth making.`
+            : `Your weigh-ins still swing enough that this could be anywhere within <strong style="color:var(--warning)">±${fmtE(maintCI)} ${ul}</strong> — wider than the amount you'd change a goal by, so adjusting now would be guesswork. More weigh-ins narrow it faster than more days do.`}</div>` : ''}
           ${shortfall ? `<div style="font-size:11px;color:var(--warning);margin-top:10px">Your size and training predict about ${fmtE(shortfall.predicted)} ${ul} — measured maintenance is ${fmtE(shortfall.gap)} lower. That's usually under-logging, sometimes an over-stated activity level. Weigh your food for two weeks before cutting any lower.</div>` : ''}
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>${howWorkedOut}`
             : `<details class="nl-details" style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
