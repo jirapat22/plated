@@ -425,6 +425,68 @@ function reportContext(db, pid, from, to) {
   };
 }
 
+// Least-squares slope, kg per day. Same fit Trends uses for its rate.
+function slopePerDay(points) {
+  const n = points.length;
+  if (n < 2) return null;
+  const x0 = Date.parse(points[0].date + 'T00:00:00Z') / 864e5;
+  const xs = points.map(p => Date.parse(p.date + 'T00:00:00Z') / 864e5 - x0);
+  const ys = points.map(p => p.weight_kg);
+  const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+  const sxx = xs.reduce((s, x) => s + (x - mx) ** 2, 0);
+  if (!sxx) return null;
+  return xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0) / sxx;
+}
+
+// Weight over time: the raw readings, the same smoothing Trends applies, the
+// week-by-week picture, the pace, and where the data simply isn't.
+//
+// The trend column averages the last 7 WEIGH-INS, not the last 7 calendar
+// days — matching movingAvg() in the app exactly, so the report and Trends
+// can't quote different numbers for the same thing.
+function analyseWeight(weights) {
+  if (!weights.length) return null;
+  const kgs = weights.map(w => w.weight_kg);
+  const series = weights.map((w, i) => {
+    const win = kgs.slice(Math.max(0, i - 6), i + 1);
+    return { date: w.date, kg: w.weight_kg, trend: round1(win.reduce((a, b) => a + b, 0) / win.length) };
+  });
+
+  // Monday-start weeks, in UTC so the bucket never depends on where this runs.
+  const weekStart = iso => {
+    const d = new Date(iso + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    return d.toISOString().slice(0, 10);
+  };
+  const buckets = new Map();
+  for (const w of weights) {
+    const k = weekStart(w.date);
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k).push(w.weight_kg);
+  }
+  const weekly = [...buckets.entries()].sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([week, vals]) => ({ week, n: vals.length, avg: round1(vals.reduce((a, b) => a + b, 0) / vals.length) }));
+  // Change is against the previous week's AVERAGE, so one salty Saturday moves
+  // it far less than a raw week-end-to-week-end diff would.
+  weekly.forEach((w, i) => { w.change = i ? round1(w.avg - weekly[i - 1].avg) : null; });
+
+  // Stretches with no reading at all. A trend line drawn across a five-day hole
+  // looks exactly like one drawn across five daily weigh-ins, and isn't.
+  const gaps = [];
+  for (let i = 1; i < weights.length; i++) {
+    const days = Math.round((Date.parse(weights[i].date) - Date.parse(weights[i - 1].date)) / 864e5);
+    if (days >= 3) gaps.push({ after: weights[i - 1].date, before: weights[i].date, missing: days - 1 });
+  }
+
+  const slope = slopePerDay(weights);
+  return {
+    series, weekly, gaps,
+    ratePerWeek: slope != null ? round1(slope * 7) : null,
+    // How much of the range actually has readings behind it.
+    spanDays: Math.round((Date.parse(weights[weights.length - 1].date) - Date.parse(weights[0].date)) / 864e5),
+  };
+}
+
 // Groups flat meal-entry rows into day -> meal -> entries, with subtotals at
 // every level and a period-average computed over days actually logged (not
 // diluted by unlogged days — more meaningful for a doctor/coach to read).
@@ -498,9 +560,44 @@ function buildReport(rows, from, to, ctx = {}) {
     from, to, days,
     summary: { daysInRange, daysLogged, avg },
     goals, vsGoal, adherence, weight, estMaintenance,
+    weightDetail: analyseWeight(wRows),
     phase: ctx.phase || null,
     tdee:  ctx.tdee ?? null,
   };
+}
+
+// Weight chart as inline SVG: no library, no external request, and it survives
+// printing, an email client, and being opened offline. Raw readings as points,
+// the smoothed trend as the line through them — which is the whole argument for
+// drawing it, since the two tell noticeably different stories.
+function weightChartSvg(detail) {
+  const pts = detail?.series || [];
+  if (pts.length < 2) return '';
+  const W = 700, H = 190, L = 42, R = 12, T = 14, B = 26;
+  const day = iso => Date.parse(iso + 'T00:00:00Z') / 864e5;
+  const x0 = day(pts[0].date), x1 = day(pts[pts.length - 1].date);
+  const all = pts.flatMap(p => [p.kg, p.trend]);
+  let lo = Math.min(...all), hi = Math.max(...all);
+  const pad = Math.max((hi - lo) * 0.15, 0.3);          // never a flat line on the axis
+  lo -= pad; hi += pad;
+  const px = iso => L + (x1 === x0 ? 0 : (day(iso) - x0) / (x1 - x0)) * (W - L - R);
+  const py = kg => T + (1 - (kg - lo) / (hi - lo)) * (H - T - B);
+  const path = key => pts.map((p, i) => `${i ? 'L' : 'M'}${px(p.date).toFixed(1)},${py(p[key]).toFixed(1)}`).join('');
+  // Three gridlines: bottom, middle, top of the padded range.
+  const ticks = [lo + pad, (lo + hi) / 2, hi - pad];
+  return `
+  <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Weight over time"
+       style="display:block;max-width:${W}px;font-family:inherit">
+    ${ticks.map(t => `
+      <line x1="${L}" y1="${py(t).toFixed(1)}" x2="${W - R}" y2="${py(t).toFixed(1)}" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="${L - 6}" y="${(py(t) + 3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="#9ca3af">${g(t)}</text>`).join('')}
+    <path d="${path('kg')}" fill="none" stroke="#c7cbd1" stroke-width="1.2"/>
+    <path d="${path('trend')}" fill="none" stroke="#4c1d95" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+    ${pts.map(p => `<circle cx="${px(p.date).toFixed(1)}" cy="${py(p.kg).toFixed(1)}" r="2.2" fill="#6b7280"/>`).join('')}
+    <text x="${L}" y="${H - 8}" font-size="10" fill="#9ca3af">${escHtml(pts[0].date)}</text>
+    <text x="${W - R}" y="${H - 8}" font-size="10" fill="#9ca3af" text-anchor="end">${escHtml(pts[pts.length - 1].date)}</text>
+  </svg>
+  <p class="note"><span style="color:#6b7280">●</span> raw weigh-in &nbsp; <span style="color:#4c1d95">▬</span> trend (mean of the last 7 weigh-ins, the same smoothing Trends uses)</p>`;
 }
 
 function toCsv(report) {
@@ -550,6 +647,28 @@ function toCsv(report) {
     lines.push(kv('Days over goal', adherence.over));
     lines.push(kv('Days under goal', adherence.under));
   }
+
+  const wd = report.weightDetail;
+  if (wd) {
+    if (wd.ratePerWeek != null) lines.push(kv('Rate of change (kg/week, least-squares)', wd.ratePerWeek));
+    lines.push('', 'Weight by week' + ','.repeat(COLS - 1));
+    // Header labels go through escCsv like any other cell: one of them below
+    // contains a comma, and unescaped it split into an extra column and made
+    // the whole file ragged.
+    const head = (...cells) => cells.map(escCsv).concat(Array(COLS - cells.length).fill('')).join(',');
+    lines.push(head('Week starting', 'Average (kg)', 'Change vs prev week (kg)', 'Weigh-ins'));
+    for (const w of wd.weekly) lines.push([w.week, w.avg, w.change ?? '', w.n].concat(Array(COLS - 4).fill('')).join(','));
+
+    lines.push('', 'All weigh-ins' + ','.repeat(COLS - 1));
+    lines.push(head('Date', 'Weight (kg)', 'Trend (7 weigh-ins, kg)'));
+    for (const p of wd.series) lines.push([p.date, p.kg, p.trend].concat(Array(COLS - 3).fill('')).join(','));
+
+    if (wd.gaps.length) {
+      lines.push('', 'Gaps with no weigh-in' + ','.repeat(COLS - 1));
+      lines.push(head('After', 'Before', 'Days missing'));
+      for (const gp of wd.gaps) lines.push([gp.after, gp.before, gp.missing].concat(Array(COLS - 3).fill('')).join(','));
+    }
+  }
   return lines.join('\n');
 }
 
@@ -598,11 +717,29 @@ function toMarkdown(report) {
     }
   }
   if (weight) {
+    const wd = report.weightDetail;
     lines.push('', '## Weight', '', '| | |', '|---|---|',
       `| Start | ${g(weight.first.weight_kg)} kg (${weight.first.date}) |`,
       `| End | ${g(weight.last.weight_kg)} kg (${weight.last.date}) |`,
       `| Change | ${delta(weight.change)} kg over ${weight.spanDays} days |`,
       `| Weigh-ins | ${weight.count} |`);
+    if (wd?.ratePerWeek != null) lines.push(`| Rate | ${delta(wd.ratePerWeek)} kg/week |`);
+    if (wd) {
+      lines.push('', '### By week', '',
+        '| Week starting | Average | Change | Weigh-ins |', '|---|--:|--:|--:|');
+      for (const w of wd.weekly) lines.push(`| ${w.week} | ${g(w.avg)} kg | ${w.change == null ? '–' : delta(w.change)} | ${w.n} |`);
+
+      lines.push('', '### Every weigh-in', '',
+        '| Date | Weight | Trend |', '|---|--:|--:|');
+      for (const p of wd.series) lines.push(`| ${p.date} | ${g(p.kg)} kg | ${g(p.trend)} kg |`);
+      lines.push('', '_Trend is the mean of the last 7 weigh-ins — the same smoothing Trends uses, so the two agree._');
+
+      if (wd.gaps.length) {
+        lines.push('', '### Gaps with no weigh-in', '');
+        for (const gp of wd.gaps) lines.push(`- ${gp.missing} day${gp.missing === 1 ? '' : 's'} between ${gp.after} and ${gp.before}`);
+        lines.push('', '_The trend line is drawn straight across these — it has no data there._');
+      }
+    }
   }
 
   if (!report.days.length) {
@@ -691,15 +828,34 @@ function toHtml(report) {
     ${report.estMaintenance != null ? `<p class="note">Implied maintenance is average intake corrected for weight change (1&nbsp;kg ≈ 7,700&nbsp;kcal). It counts every logged day, where the figure on Trends drops under-logged days and uses a fixed 28-day window — so the two can legitimately differ.</p>` : ''}
   </section>`;
 
+  const wd = report.weightDetail;
   const weightBlock = !weight ? '' : `
   <section class="block">
     <h3>Weight</h3>
+    ${weightChartSvg(wd)}
     <table class="kv"><tbody>
       <tr><td>Start</td><td>${g(weight.first.weight_kg)} kg <span style="color:#9ca3af">${escHtml(weight.first.date)}</span></td></tr>
       <tr><td>End</td><td>${g(weight.last.weight_kg)} kg <span style="color:#9ca3af">${escHtml(weight.last.date)}</span></td></tr>
       <tr><td>Change</td><td>${delta(weight.change)} kg over ${weight.spanDays} days</td></tr>
+      ${wd?.ratePerWeek != null ? `<tr><td>Rate</td><td>${delta(wd.ratePerWeek)} kg/week</td></tr>` : ''}
       <tr><td>Weigh-ins</td><td>${weight.count}</td></tr>
     </tbody></table>
+    ${!wd ? '' : `
+    <h3 style="margin-top:22px">By week</h3>
+    <table class="kv">
+      <thead><tr><th>Week starting</th><th>Average</th><th>Change</th><th>Weigh-ins</th></tr></thead>
+      <tbody>${wd.weekly.map(w => `<tr><td>${escHtml(w.week)}</td><td>${g(w.avg)} kg</td><td>${w.change == null ? '–' : delta(w.change)}</td><td>${w.n}</td></tr>`).join('')}</tbody>
+    </table>
+    <h3 style="margin-top:22px">Every weigh-in</h3>
+    <table class="kv">
+      <thead><tr><th>Date</th><th>Weight</th><th>Trend</th></tr></thead>
+      <tbody>${wd.series.map(p => `<tr><td>${escHtml(p.date)}</td><td>${g(p.kg)} kg</td><td>${g(p.trend)} kg</td></tr>`).join('')}</tbody>
+    </table>
+    <p class="note">Trend is the mean of the last 7 weigh-ins — the same smoothing Trends uses, so the two agree.</p>
+    ${!wd.gaps.length ? '' : `
+    <h3 style="margin-top:22px">Gaps with no weigh-in</h3>
+    <table class="kv"><tbody>${wd.gaps.map(gp => `<tr><td>${escHtml(gp.after)} → ${escHtml(gp.before)}</td><td>${gp.missing} day${gp.missing === 1 ? '' : 's'} missing</td></tr>`).join('')}</tbody></table>
+    <p class="note">The trend line is drawn straight across these — it has no data there.</p>`}`}
   </section>`;
 
   return `<!doctype html>
