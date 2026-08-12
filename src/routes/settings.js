@@ -398,10 +398,37 @@ const g = v => {
 const macroLine = t => `${g(t.protein)}P · ${g(t.carbs)}C · ${g(t.fat)}F${t.fiber ? ` · ${g(t.fiber)} fib` : ''}`;
 const foodName = e => (e.food_brand ? `${e.food_name} (${e.food_brand})` : e.food_name);
 
+// Everything the report needs beyond the food rows: what you were aiming at,
+// what the scale did, and the plan behind both.
+//
+// Goals are CURRENT goals. Plated stores one value per setting and no history,
+// so there is genuinely no way to know what the goal was on a past day — the
+// renderers say so rather than implying the figure applied across the range.
+function reportContext(db, pid, from, to) {
+  const s = allSettings(db, pid);
+  const num = k => { const v = parseFloat(s[k]); return Number.isFinite(v) ? v : null; };
+  // One weigh-in per day (the latest, same rule as everywhere else).
+  const weights = db.prepare(`
+    SELECT date, weight_kg FROM weight_log
+    WHERE profile_id = $pid AND date >= $from AND date <= $to
+      AND id IN (SELECT MAX(id) FROM weight_log WHERE profile_id = $pid GROUP BY date)
+    ORDER BY date ASC
+  `).all({ pid, from, to });
+  return {
+    goals: {
+      calories: num('calorie_goal'), protein: num('protein_goal'),
+      carbs: num('carb_goal'), fat: num('fat_goal'), fiber: num('fiber_goal'),
+    },
+    phase: s.phase || null,
+    tdee:  num('tdee'),
+    weights,
+  };
+}
+
 // Groups flat meal-entry rows into day -> meal -> entries, with subtotals at
 // every level and a period-average computed over days actually logged (not
 // diluted by unlogged days — more meaningful for a doctor/coach to read).
-function buildReport(rows, from, to) {
+function buildReport(rows, from, to, ctx = {}) {
   const byDate = new Map();
   for (const r of rows) {
     if (!byDate.has(r.date)) byDate.set(r.date, new Map());
@@ -422,25 +449,107 @@ function buildReport(rows, from, to) {
   const avg = daysLogged ? sumMacros(days.map(d => d.total)) : zeroMacros();
   for (const k in avg) avg[k] = round1(avg[k] / (daysLogged || 1));
 
-  return { from, to, days, summary: { daysInRange, daysLogged, avg } };
+  const goals = ctx.goals || {};
+  const wRows = ctx.weights || [];
+
+  // Hang each day's weigh-in off its day, so intake and the scale can be read
+  // on one line instead of cross-referencing two tables.
+  const byWeight = Object.fromEntries(wRows.map(w => [w.date, w.weight_kg]));
+  for (const d of days) d.weight_kg = byWeight[d.date] ?? null;
+
+  const weight = wRows.length ? {
+    count: wRows.length,
+    first: wRows[0],
+    last:  wRows[wRows.length - 1],
+    change: round1(wRows[wRows.length - 1].weight_kg - wRows[0].weight_kg),
+    spanDays: Math.round((new Date(wRows[wRows.length - 1].date) - new Date(wRows[0].date)) / 86400000),
+  } : null;
+
+  // Average against target, per macro. Null where no goal is set.
+  const vsGoal = {};
+  for (const k of ['calories', 'protein', 'carbs', 'fat', 'fiber']) {
+    vsGoal[k] = goals[k] != null && daysLogged ? round1(avg[k] - goals[k]) : null;
+  }
+
+  // Adherence says more than the average does: 1,800 every day and alternating
+  // 1,200/2,400 both average 1,800, and they are not the same month.
+  let adherence = null;
+  if (goals.calories > 0 && daysLogged) {
+    const band = goals.calories * 0.10;
+    adherence = { onTarget: 0, over: 0, under: 0, bandPct: 10 };
+    for (const d of days) {
+      const diff = d.total.calories - goals.calories;
+      if (Math.abs(diff) <= band) adherence.onTarget++;
+      else if (diff > 0) adherence.over++;
+      else adherence.under++;
+    }
+  }
+
+  // Maintenance implied by THIS range: what you ate, corrected for what the
+  // scale did (1 kg ~ 7,700 kcal). Deliberately computed from the reported
+  // range rather than reusing Trends' fixed 28-day window, and it counts every
+  // logged day where Trends drops the under-logged ones — so the two figures
+  // can legitimately differ. Needs a real span to mean anything.
+  const estMaintenance = (weight && weight.spanDays >= 14 && daysLogged >= 7)
+    ? Math.round(avg.calories - (weight.change * 7700) / weight.spanDays)
+    : null;
+
+  return {
+    from, to, days,
+    summary: { daysInRange, daysLogged, avg },
+    goals, vsGoal, adherence, weight, estMaintenance,
+    phase: ctx.phase || null,
+    tdee:  ctx.tdee ?? null,
+  };
 }
 
 function toCsv(report) {
-  const lines = ['Date,Meal,Food,Quantity (g),Calories (kcal),Protein (g),Carbs (g),Fat (g),Fiber (g)'];
+  const { summary, goals, vsGoal, adherence, weight } = report;
+  const COLS = 10;
+  // A key/value row padded to the table's width, so a parser reading this as
+  // one CSV doesn't hit ragged rows.
+  const kv = (k, v) => [escCsv(k), escCsv(String(v ?? ''))].concat(Array(COLS - 2).fill('')).join(',');
+  const macroRow = (label, m) => [escCsv(label), '', '', '',
+    m.calories ?? '', m.protein ?? '', m.carbs ?? '', m.fat ?? '', m.fiber ?? '', ''].join(',');
+
+  const lines = ['Date,Meal,Food,Quantity (g),Calories (kcal),Protein (g),Carbs (g),Fat (g),Fiber (g),Weight (kg)'];
   for (const day of report.days) {
     for (const meal of day.meals) {
       for (const e of meal.entries) {
         lines.push([day.date, escCsv(meal.name), escCsv(foodName(e)),
-          e.quantity_g ?? '', e.calories ?? '', e.protein ?? '', e.carbs ?? '', e.fat ?? '', e.fiber ?? ''].join(','));
+          e.quantity_g ?? '', e.calories ?? '', e.protein ?? '', e.carbs ?? '', e.fat ?? '', e.fiber ?? '', ''].join(','));
       }
     }
-    lines.push([day.date, '', 'Day total', '', day.total.calories, day.total.protein, day.total.carbs, day.total.fat, day.total.fiber].join(','));
+    // The day's weigh-in rides on its total row — intake and scale on one line.
+    lines.push([day.date, '', 'Day total', '', day.total.calories, day.total.protein,
+      day.total.carbs, day.total.fat, day.total.fiber, day.weight_kg ?? ''].join(','));
   }
-  const { summary } = report;
-  lines.push('', 'Summary,,,,,,,,');
-  lines.push(`Date range,${report.from} to ${report.to},,,,,,,`);
-  lines.push(`Days logged,${summary.daysLogged} of ${summary.daysInRange},,,,,,,`);
-  lines.push(`Average per logged day,,,,${summary.avg.calories},${summary.avg.protein},${summary.avg.carbs},${summary.avg.fat},${summary.avg.fiber}`);
+
+  lines.push('', 'Summary' + ','.repeat(COLS - 1));
+  lines.push(kv('Date range', `${report.from} to ${report.to}`));
+  lines.push(kv('Days logged', `${summary.daysLogged} of ${summary.daysInRange}`));
+  lines.push(macroRow('Average per logged day', summary.avg));
+  lines.push(macroRow('Goal (current, see note)', goals));
+  lines.push(macroRow('Average minus goal', vsGoal));
+  lines.push(kv('Note on goals', 'Goals are current values. Plated stores no goal history, so earlier days in this range may have had different targets.'));
+
+  if (report.phase) lines.push(kv('Phase', report.phase));
+  if (report.tdee != null) lines.push(kv('Set maintenance / TDEE (kcal)', report.tdee));
+  if (report.estMaintenance != null) {
+    lines.push(kv('Estimated maintenance from this range (kcal)', report.estMaintenance));
+    lines.push(kv('How that was derived', 'Average intake minus weight change x 7700 / days. Counts every logged day; Trends excludes under-logged days and uses a fixed 28-day window, so the two can differ.'));
+  }
+  if (weight) {
+    lines.push(kv('Weight start (kg)', `${weight.first.weight_kg} on ${weight.first.date}`));
+    lines.push(kv('Weight end (kg)', `${weight.last.weight_kg} on ${weight.last.date}`));
+    lines.push(kv('Weight change (kg)', weight.change));
+    lines.push(kv('Weigh-ins', weight.count));
+  }
+  if (adherence) {
+    lines.push(kv(`Days within ${adherence.bandPct}% of calorie goal`, adherence.onTarget));
+    lines.push(kv('Days over goal', adherence.over));
+    lines.push(kv('Days under goal', adherence.under));
+  }
   return lines.join('\n');
 }
 
@@ -464,6 +573,38 @@ function toMarkdown(report) {
     `| Avg fiber | ${g(a.fiber)} g |`,
   ];
 
+  const { goals, vsGoal, adherence, weight } = report;
+  const delta = v => (v == null ? '–' : `${v > 0 ? '+' : ''}${g(v)}`);
+  if (goals.calories != null || goals.protein != null) {
+    lines.push('', '## Goals', '',
+      '| | Goal | Average | Difference |', '|---|--:|--:|--:|',
+      `| Calories | ${kcal(goals.calories)} | ${kcal(a.calories)} | ${delta(vsGoal.calories)} |`,
+      `| Protein | ${g(goals.protein)} g | ${g(a.protein)} g | ${delta(vsGoal.protein)} |`,
+      `| Carbs | ${g(goals.carbs)} g | ${g(a.carbs)} g | ${delta(vsGoal.carbs)} |`,
+      `| Fat | ${g(goals.fat)} g | ${g(a.fat)} g | ${delta(vsGoal.fat)} |`,
+      `| Fiber | ${g(goals.fiber)} g | ${g(a.fiber)} g | ${delta(vsGoal.fiber)} |`,
+      '', '_Goals shown are current values — Plated keeps no history of goal changes, so earlier days in this range may have had different targets._');
+  }
+  if (adherence) {
+    lines.push('', `**Adherence:** ${adherence.onTarget} of ${report.summary.daysLogged} logged days within ${adherence.bandPct}% of the calorie goal · ${adherence.over} over · ${adherence.under} under`);
+  }
+  if (report.phase || report.tdee != null || report.estMaintenance != null) {
+    lines.push('', '## Plan', '', '| | |', '|---|---|');
+    if (report.phase) lines.push(`| Phase | ${report.phase} |`);
+    if (report.tdee != null) lines.push(`| Set maintenance (TDEE) | ${kcal(report.tdee)} kcal |`);
+    if (report.estMaintenance != null) {
+      lines.push(`| Maintenance implied by this range | ${kcal(report.estMaintenance)} kcal |`);
+      lines.push('', '_Implied maintenance = average intake corrected for weight change (1 kg ≈ 7,700 kcal). It counts every logged day, where the Trends figure drops under-logged days and uses a fixed 28-day window — so the two can differ._');
+    }
+  }
+  if (weight) {
+    lines.push('', '## Weight', '', '| | |', '|---|---|',
+      `| Start | ${g(weight.first.weight_kg)} kg (${weight.first.date}) |`,
+      `| End | ${g(weight.last.weight_kg)} kg (${weight.last.date}) |`,
+      `| Change | ${delta(weight.change)} kg over ${weight.spanDays} days |`,
+      `| Weigh-ins | ${weight.count} |`);
+  }
+
   if (!report.days.length) {
     lines.push('', '_No meals logged in this date range._');
     return lines.join('\n');
@@ -471,7 +612,7 @@ function toMarkdown(report) {
 
   for (const day of report.days) {
     const t = day.total;
-    lines.push('', '---', '', `## ${fmtDay(day.date)}`, '',
+    lines.push('', '---', '', `## ${fmtDay(day.date)}${day.weight_kg != null ? ` · ${g(day.weight_kg)} kg` : ''}`, '',
       `**${kcal(t.calories)} kcal** · ${macroLine(t)}`, '',
       '| Meal | Food | Qty | Cal | P | C | F | Fib |',
       '|---|---|--:|--:|--:|--:|--:|--:|');
@@ -504,7 +645,7 @@ function toHtml(report) {
     return `
     <section class="day">
       <div class="day-head">
-        <h2>${escHtml(fmtDay(day.date))}</h2>
+        <h2>${escHtml(fmtDay(day.date))}${day.weight_kg != null ? ` <span class="dayw">${g(day.weight_kg)} kg</span>` : ''}</h2>
         <div class="day-total"><strong>${kcal(t.calories)} kcal</strong><span>${escHtml(macroLine(t))}</span></div>
       </div>
       <table>
@@ -515,6 +656,51 @@ function toHtml(report) {
       </table>
     </section>`;
   }).join('') || '<p class="empty">No meals logged in this date range.</p>';
+
+  const { goals, vsGoal, adherence, weight } = report;
+  const delta = v => v == null ? '–'
+    : `<span class="${v > 0 ? 'over' : v < 0 ? 'under' : ''}">${v > 0 ? '+' : ''}${g(v)}</span>`;
+  const goalRow = (label, goal, avgV, d, unit) => goal == null ? '' :
+    `<tr><td>${label}</td><td>${unit === 'kcal' ? kcal(goal) : g(goal)}</td><td>${unit === 'kcal' ? kcal(avgV) : g(avgV)}</td><td>${delta(d)}</td></tr>`;
+
+  const goalBlock = (goals.calories == null && goals.protein == null) ? '' : `
+  <section class="block">
+    <h3>Goals vs actual</h3>
+    <table class="kv">
+      <thead><tr><th></th><th>Goal</th><th>Average</th><th>Diff</th></tr></thead>
+      <tbody>
+        ${goalRow('Calories', goals.calories, a.calories, vsGoal.calories, 'kcal')}
+        ${goalRow('Protein (g)', goals.protein, a.protein, vsGoal.protein)}
+        ${goalRow('Carbs (g)', goals.carbs, a.carbs, vsGoal.carbs)}
+        ${goalRow('Fat (g)', goals.fat, a.fat, vsGoal.fat)}
+        ${goalRow('Fiber (g)', goals.fiber, a.fiber, vsGoal.fiber)}
+      </tbody>
+    </table>
+    ${adherence ? `<p class="note"><strong>${adherence.onTarget} of ${summary.daysLogged}</strong> logged days landed within ${adherence.bandPct}% of the calorie goal · ${adherence.over} over · ${adherence.under} under.</p>` : ''}
+    <p class="note">Goals shown are current values. Plated keeps no history of goal changes, so earlier days in this range may have had different targets.</p>
+  </section>`;
+
+  const planBlock = (!report.phase && report.tdee == null && report.estMaintenance == null) ? '' : `
+  <section class="block">
+    <h3>Plan</h3>
+    <table class="kv"><tbody>
+      ${report.phase ? `<tr><td>Phase</td><td>${escHtml(report.phase)}</td></tr>` : ''}
+      ${report.tdee != null ? `<tr><td>Set maintenance (TDEE)</td><td>${kcal(report.tdee)} kcal</td></tr>` : ''}
+      ${report.estMaintenance != null ? `<tr><td>Maintenance implied by this range</td><td>${kcal(report.estMaintenance)} kcal</td></tr>` : ''}
+    </tbody></table>
+    ${report.estMaintenance != null ? `<p class="note">Implied maintenance is average intake corrected for weight change (1&nbsp;kg ≈ 7,700&nbsp;kcal). It counts every logged day, where the figure on Trends drops under-logged days and uses a fixed 28-day window — so the two can legitimately differ.</p>` : ''}
+  </section>`;
+
+  const weightBlock = !weight ? '' : `
+  <section class="block">
+    <h3>Weight</h3>
+    <table class="kv"><tbody>
+      <tr><td>Start</td><td>${g(weight.first.weight_kg)} kg <span style="color:#9ca3af">${escHtml(weight.first.date)}</span></td></tr>
+      <tr><td>End</td><td>${g(weight.last.weight_kg)} kg <span style="color:#9ca3af">${escHtml(weight.last.date)}</span></td></tr>
+      <tr><td>Change</td><td>${delta(weight.change)} kg over ${weight.spanDays} days</td></tr>
+      <tr><td>Weigh-ins</td><td>${weight.count}</td></tr>
+    </tbody></table>
+  </section>`;
 
   return `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -557,6 +743,19 @@ function toHtml(report) {
   .meal-row td { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
     color: #6b7280; background: #fafafb; padding-top: 8px; padding-bottom: 4px; border-bottom: none; }
   .empty { color: #6b7280; }
+  .dayw { font-size: 11px; font-weight: 500; color: #6b7280; margin-left: 6px; }
+  .block { margin-bottom: 28px; }
+  .block h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+    color: #6b7280; margin: 0 0 8px; font-weight: 600; }
+  .kv { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .kv td { padding: 4px 8px; border-bottom: 1px solid #f1f2f4; font-variant-numeric: tabular-nums; }
+  .kv td:first-child { text-align: left; color: #6b7280; }
+  .kv td:not(:first-child) { text-align: right; white-space: nowrap; }
+  .kv th { font-size: 10px; font-weight: 600; color: #6b7280; text-transform: uppercase;
+    letter-spacing: .05em; border-bottom: 1px solid #e5e7eb; padding: 4px 8px; text-align: right; }
+  .kv th:first-child { text-align: left; }
+  .over { color: #b45309; } .under { color: #1d4ed8; }
+  .note { font-size: 11px; color: #6b7280; margin-top: 8px; line-height: 1.45; }
 
   @media print {
     body { margin: 0; max-width: none; font-size: 12px; }
@@ -578,6 +777,9 @@ function toHtml(report) {
       <div class="stat"><div class="v">${summary.daysLogged}<span style="color:#9ca3af;font-weight:400">/${summary.daysInRange}</span></div><div class="k">days logged</div></div>
     </div>
   </div>
+  ${goalBlock}
+  ${planBlock}
+  ${weightBlock}
   ${dayBlocks}
 </body></html>`;
 }
@@ -608,7 +810,7 @@ router.get('/export-report', (req, res) => {
       ORDER BY ms.date ASC, ms.meal_index ASC, me.logged_at ASC
     `).all({ pid, from, to });
 
-    const report = buildReport(rows, from, to);
+    const report = buildReport(rows, from, to, reportContext(db, pid, from, to));
     const base = `plated-report-${from}_to_${to}`;
 
     if (format === 'csv') {
