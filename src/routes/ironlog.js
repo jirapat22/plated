@@ -2,6 +2,7 @@ const express = require('express');
 const { getDb } = require('../db');
 const { todayLocal, localDayOf, tzFor } = require('../utils/tz');
 const { recalcMacroGoals } = require('../utils/macros');
+const { snapshotGoals } = require('../utils/goals');
 
 // Extract all goals from IronLog profile data
 function extractProfile(profileData) {
@@ -181,7 +182,7 @@ router.get('/today', async (req, res) => {
         const added = importBodyweight(getDb(), pid, bwList);
         // New weigh-ins move trend weight, and in g/kg mode the macro goals
         // follow it. Without this they'd lag until the next manual sync.
-        if (added) recalcMacroGoals(getDb(), pid);
+        if (added) { recalcMacroGoals(getDb(), pid); snapshotGoals(getDb(), pid, today); }
       } catch { /* best-effort — never fail Today over the scale */ }
       if (Array.isArray(bwList) && bwList.length) {
         const norm = bwList
@@ -300,6 +301,9 @@ router.post('/sync', async (req, res) => {
     // sent — the local multipliers are the source of truth for that profile.
     const macros = recalcMacroGoals(db, pid);
     if (macros) Object.assign(updates, { protein_goal: macros.protein, carb_goal: macros.carbs, fat_goal: macros.fat });
+    // A sync can push a whole new calorie goal from IronLog. That is as real a
+    // goal change as typing one, so it goes in the history the same way.
+    snapshotGoals(db, pid, todayLocal(tzFor(db, pid)));
 
     // profile_raw (IronLog's entire upstream payload) used to ride along here.
     // Nothing consumed it — /api/ironlog/raw already exists for inspection —
@@ -340,6 +344,7 @@ router.post('/phase', (req, res) => {
     // Carbs are the remainder of the calorie goal in g/kg mode, so a phase
     // change has to re-derive them.
     const macros = recalcMacroGoals(db, pid);
+    snapshotGoals(db, pid, todayLocal(tzFor(db, pid)));   // a phase switch recomputes the calorie goal
 
     res.json({ phase, tdee, calorie_goal, ...(macros ? { macros } : {}) });
   } catch (err) {

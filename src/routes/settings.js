@@ -2,6 +2,7 @@ const express = require('express');
 const { getDb } = require('../db');
 const { todayLocal, isValidTz, tzFor } = require('../utils/tz');
 const { recalcMacroGoals, trendWeight } = require('../utils/macros');
+const { snapshotGoals, goalsOn } = require('../utils/goals');
 
 const router = express.Router();
 
@@ -124,6 +125,9 @@ router.patch('/', (req, res) => {
     if (!setsGramsDirectly && MACRO_INPUTS.some(k => k in req.body)) {
       recalcMacroGoals(db, req.profileId);
     }
+    // After every path that can move a goal, not before: this records what the
+    // goals ARE now, and no-ops when nothing actually changed.
+    snapshotGoals(db, req.profileId, todayLocal(tzFor(db, req.profileId)));
     res.json(allSettings(db, req.profileId));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -414,6 +418,13 @@ function reportContext(db, pid, from, to) {
       AND id IN (SELECT MAX(id) FROM weight_log WHERE profile_id = $pid GROUP BY date)
     ORDER BY date ASC
   `).all({ pid, from, to });
+  // Goals as they were on each day, from goal_history. Cached per date because
+  // adherence asks for one per logged day and the weekly table asks again.
+  const cache = new Map();
+  const goalFor = date => {
+    if (!cache.has(date)) cache.set(date, goalsOn(db, pid, date));
+    return cache.get(date);
+  };
   return {
     goals: {
       calories: num('calorie_goal'), protein: num('protein_goal'),
@@ -422,6 +433,7 @@ function reportContext(db, pid, from, to) {
     phase: s.phase || null,
     tdee:  num('tdee'),
     weights,
+    goalFor,
   };
 }
 
@@ -535,17 +547,30 @@ function buildReport(rows, from, to, ctx = {}) {
 
   // Adherence says more than the average does: 1,800 every day and alternating
   // 1,200/2,400 both average 1,800, and they are not the same month.
+  // Each day is judged against the goal that was live THAT day. Measuring an
+  // old week against a goal set afterwards is how a month spent on plan turns
+  // into a month of failures the moment you adjust your target.
+  const goalFor = ctx.goalFor || (() => null);
+  for (const d of days) {
+    const gh = goalFor(d.date);
+    d.goal = gh && gh.calorie_goal > 0 ? gh.calorie_goal : (goals.calories || null);
+    d.goalRecorded = !!gh?.recorded;
+  }
   let adherence = null;
-  if (goals.calories > 0 && daysLogged) {
-    const band = goals.calories * 0.10;
-    adherence = { onTarget: 0, over: 0, under: 0, bandPct: 10 };
+  if (daysLogged && days.some(d => d.goal > 0)) {
+    adherence = { onTarget: 0, over: 0, under: 0, bandPct: 10, unknownGoal: 0 };
     for (const d of days) {
-      const diff = d.total.calories - goals.calories;
-      if (Math.abs(diff) <= band) adherence.onTarget++;
+      if (!(d.goal > 0)) { adherence.unknownGoal++; continue; }
+      const diff = d.total.calories - d.goal;
+      if (Math.abs(diff) <= d.goal * 0.10) adherence.onTarget++;
       else if (diff > 0) adherence.over++;
       else adherence.under++;
     }
   }
+  // Did the goal actually move inside this range? Only worth explaining if so.
+  const goalChanges = [...new Map(days.filter(d => d.goalRecorded)
+    .map(d => [goalFor(d.date).effective_from, goalFor(d.date)])).values()]
+    .sort((a, b) => (a.effective_from < b.effective_from ? -1 : 1));
 
   // Maintenance implied by THIS range: what you ate, corrected for what the
   // scale did (1 kg ~ 7,700 kcal). Deliberately computed from the reported
@@ -559,7 +584,7 @@ function buildReport(rows, from, to, ctx = {}) {
   return {
     from, to, days,
     summary: { daysInRange, daysLogged, avg },
-    goals, vsGoal, adherence, weight, estMaintenance,
+    goals, vsGoal, adherence, weight, estMaintenance, goalChanges,
     weightDetail: analyseWeight(wRows),
     phase: ctx.phase || null,
     tdee:  ctx.tdee ?? null,
@@ -608,8 +633,16 @@ function toCsv(report) {
   const kv = (k, v) => [escCsv(k), escCsv(String(v ?? ''))].concat(Array(COLS - 2).fill('')).join(',');
   const macroRow = (label, m) => [escCsv(label), '', '', '',
     m.calories ?? '', m.protein ?? '', m.carbs ?? '', m.fat ?? '', m.fiber ?? '', ''].join(',');
+  // Header labels escape like any other cell — one of them contains a comma,
+  // and unescaped it split into an extra column and made the file ragged.
+  // Declared here rather than inside a block: the goal-changes section uses it
+  // too, and a const scoped to a later block threw a ReferenceError that came
+  // back as a 500 with an empty report.
+  const head = (...cells) => cells.map(escCsv).concat(Array(COLS - cells.length).fill('')).join(',');
 
-  const lines = ['Date,Meal,Food,Quantity (g),Calories (kcal),Protein (g),Carbs (g),Fat (g),Fiber (g),Weight (kg)'];
+  // Quantity doubles as the day's calorie goal on Day total rows — same column,
+  // unambiguous by row type, and it keeps the table at ten columns.
+  const lines = ['Date,Meal,Food,Quantity (g) / day goal,Calories (kcal),Protein (g),Carbs (g),Fat (g),Fiber (g),Weight (kg)'];
   for (const day of report.days) {
     for (const meal of day.meals) {
       for (const e of meal.entries) {
@@ -618,7 +651,7 @@ function toCsv(report) {
       }
     }
     // The day's weigh-in rides on its total row — intake and scale on one line.
-    lines.push([day.date, '', 'Day total', '', day.total.calories, day.total.protein,
+    lines.push([day.date, '', 'Day total', day.goal ?? '', day.total.calories, day.total.protein,
       day.total.carbs, day.total.fat, day.total.fiber, day.weight_kg ?? ''].join(','));
   }
 
@@ -648,14 +681,20 @@ function toCsv(report) {
     lines.push(kv('Days under goal', adherence.under));
   }
 
+  if (report.goalChanges?.length > 1) {
+    lines.push('', 'Goal changes in this range' + ','.repeat(COLS - 1));
+    lines.push(head('Effective from', 'Calories', 'Protein (g)', 'Carbs (g)', 'Fat (g)', 'Fiber (g)'));
+    for (const gc of report.goalChanges) {
+      lines.push([gc.effective_from, gc.calorie_goal ?? '', gc.protein_goal ?? '', gc.carb_goal ?? '',
+        gc.fat_goal ?? '', gc.fiber_goal ?? ''].concat(Array(COLS - 6).fill('')).join(','));
+    }
+    lines.push(kv('Note', 'Each day above is compared against the goal in force on that day, not the current one.'));
+  }
+
   const wd = report.weightDetail;
   if (wd) {
     if (wd.ratePerWeek != null) lines.push(kv('Rate of change (kg/week, least-squares)', wd.ratePerWeek));
     lines.push('', 'Weight by week' + ','.repeat(COLS - 1));
-    // Header labels go through escCsv like any other cell: one of them below
-    // contains a comma, and unescaped it split into an extra column and made
-    // the whole file ragged.
-    const head = (...cells) => cells.map(escCsv).concat(Array(COLS - cells.length).fill('')).join(',');
     lines.push(head('Week starting', 'Average (kg)', 'Change vs prev week (kg)', 'Weigh-ins'));
     for (const w of wd.weekly) lines.push([w.week, w.avg, w.change ?? '', w.n].concat(Array(COLS - 4).fill('')).join(','));
 
@@ -705,7 +744,14 @@ function toMarkdown(report) {
       '', '_Goals shown are current values — Plated keeps no history of goal changes, so earlier days in this range may have had different targets._');
   }
   if (adherence) {
-    lines.push('', `**Adherence:** ${adherence.onTarget} of ${report.summary.daysLogged} logged days within ${adherence.bandPct}% of the calorie goal · ${adherence.over} over · ${adherence.under} under`);
+    lines.push('', `**Adherence:** ${adherence.onTarget} of ${report.summary.daysLogged} logged days within ${adherence.bandPct}% of that day's calorie goal · ${adherence.over} over · ${adherence.under} under${adherence.unknownGoal ? ` · ${adherence.unknownGoal} with no recorded goal` : ''}`);
+  }
+  if (report.goalChanges?.length > 1) {
+    lines.push('', '### Goal changes in this range', '', '| From | Calories | P | C | F | Fib |', '|---|--:|--:|--:|--:|--:|');
+    for (const gc of report.goalChanges) {
+      lines.push(`| ${gc.effective_from} | ${kcal(gc.calorie_goal)} | ${g(gc.protein_goal)} | ${g(gc.carb_goal)} | ${g(gc.fat_goal)} | ${g(gc.fiber_goal)} |`);
+    }
+    lines.push('', "_Every day above is compared against the goal in force on that day, not the current one._");
   }
   if (report.phase || report.tdee != null || report.estMaintenance != null) {
     lines.push('', '## Plan', '', '| | |', '|---|---|');
@@ -813,8 +859,15 @@ function toHtml(report) {
         ${goalRow('Fiber (g)', goals.fiber, a.fiber, vsGoal.fiber)}
       </tbody>
     </table>
-    ${adherence ? `<p class="note"><strong>${adherence.onTarget} of ${summary.daysLogged}</strong> logged days landed within ${adherence.bandPct}% of the calorie goal · ${adherence.over} over · ${adherence.under} under.</p>` : ''}
-    <p class="note">Goals shown are current values. Plated keeps no history of goal changes, so earlier days in this range may have had different targets.</p>
+    ${adherence ? `<p class="note"><strong>${adherence.onTarget} of ${summary.daysLogged}</strong> logged days landed within ${adherence.bandPct}% of <em>that day's</em> calorie goal · ${adherence.over} over · ${adherence.under} under${adherence.unknownGoal ? ` · ${adherence.unknownGoal} from before goals were recorded` : ''}.</p>` : ''}
+    ${report.goalChanges?.length > 1 ? `
+      <h3 style="margin-top:22px">Goal changes in this range</h3>
+      <table class="kv">
+        <thead><tr><th>From</th><th>Calories</th><th>P</th><th>C</th><th>F</th><th>Fib</th></tr></thead>
+        <tbody>${report.goalChanges.map(gc => `<tr><td>${escHtml(gc.effective_from)}</td><td>${kcal(gc.calorie_goal)}</td><td>${g(gc.protein_goal)}</td><td>${g(gc.carb_goal)}</td><td>${g(gc.fat_goal)}</td><td>${g(gc.fiber_goal)}</td></tr>`).join('')}</tbody>
+      </table>
+      <p class="note">Each day is compared against the goal in force on that day, not the current one — so a week eaten against an older target is judged against that target.</p>`
+      : `<p class="note">The row above is your current goal. Days before goals began being recorded are compared against it, since there is nothing else to compare them to.</p>`}
   </section>`;
 
   const planBlock = (!report.phase && report.tdee == null && report.estMaintenance == null) ? '' : `

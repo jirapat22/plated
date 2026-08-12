@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDb, canView } = require('../db');
 const { todayLocal, tzFor } = require('../utils/tz');
+const { goalsOn } = require('../utils/goals');
 
 const router = express.Router();
 
@@ -107,7 +108,14 @@ router.get('/day/:date', (req, res) => {
     if (pid == null) return;
     const db = getDb();
     const sessions = loadDay(db, date, pid);
-    res.json({ date, sessions, totals: sumTotals(sessions), log_status: logStatus(db, date, pid) });
+    // The goals that were live on THIS date, not the ones live now. Scrolling
+    // back through History used to judge a day in July against a goal set in
+    // August, turning an on-plan day into a blowout after the fact.
+    res.json({
+      date, sessions, totals: sumTotals(sessions),
+      log_status: logStatus(db, date, pid),
+      goals: goalsOn(db, pid, date),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

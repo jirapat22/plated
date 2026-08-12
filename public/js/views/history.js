@@ -183,13 +183,27 @@ export function renderHistory(container) {
   }
 
   function renderDay(el, mealData, settings, date, dayWeight) {
-    const goals = {
-      cal:    parseFloat(settings.calorie_goal) || 2000,
-      protein:parseFloat(settings.protein_goal) || 150,
-      carbs:  parseFloat(settings.carb_goal)     || 250,
-      fat:    parseFloat(settings.fat_goal)       || 65,
-      fiber:  parseFloat(settings.fiber_goal)     || 30,
+    // Prefer the goals that were live on THIS date — the day route returns them
+    // from goal_history. Falling back to current settings covers days before
+    // any goal change was recorded, and a connected profile's day where the
+    // payload is theirs and the goals are not.
+    const hist = mealData.goals;
+    const pick = (k, fallback) => {
+      const v = parseFloat(hist?.[k]);
+      if (Number.isFinite(v) && v > 0) return v;
+      return parseFloat(settings[k]) || fallback;
     };
+    const goals = {
+      cal:     pick('calorie_goal', 2000),
+      protein: pick('protein_goal', 150),
+      carbs:   pick('carb_goal', 250),
+      fat:     pick('fat_goal', 65),
+      fiber:   pick('fiber_goal', 30),
+    };
+    // Say so when the day was judged against a goal you no longer have, rather
+    // than leaving someone to wonder why the number moved.
+    const goalIsHistoric = hist?.recorded
+      && parseFloat(hist.calorie_goal) !== (parseFloat(settings.calorie_goal) || null);
     const t  = mealData.totals;
     const ul = unitLabel();
 
@@ -210,6 +224,7 @@ export function renderHistory(container) {
           <div>
             <div class="num" style="font-size:28px;font-weight:800">${fmtE(t.calories)}</div>
             <div class="label">${viewed ? ul : `of ${fmtE(goals.cal)} ${ul}`}</div>
+            ${!viewed && goalIsHistoric ? `<div style="font-size:10px;color:var(--text-faint);margin-top:2px">your goal at the time</div>` : ''}
           </div>
           <div style="text-align:right">
             <div class="num" style="font-size:13px;color:var(--protein)">${t.protein.toFixed(1)}g protein</div>

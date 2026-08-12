@@ -120,6 +120,21 @@ function initDb() {
       UNIQUE(profile_a_id, profile_b_id)
     );
 
+    -- What you were aiming at, and from when. profile_settings holds ONE value
+    -- per key, so changing a goal silently rewrote history: a week you ran at
+    -- 2,000 was suddenly judged against the 1,760 you set afterwards, and the
+    -- week looked like a blowout that never happened.
+    -- Keyed by day, not by change: several edits on one day collapse into the
+    -- goal you ended that day with, which is the one that describes it. That
+    -- also bounds the table at one row per day you actually change something.
+    CREATE TABLE IF NOT EXISTS goal_history (
+      profile_id     INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      effective_from TEXT    NOT NULL,          -- local YYYY-MM-DD
+      calorie_goal   REAL, protein_goal REAL, carb_goal REAL, fat_goal REAL, fiber_goal REAL,
+      created_at     TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (profile_id, effective_from)
+    );
+
     CREATE TABLE IF NOT EXISTS profile_settings (
       profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
       key        TEXT NOT NULL,
@@ -257,6 +272,19 @@ function migrateSchema(db) {
   if (!tableHasColumn(db, 'profiles', 'connect_code')) {
     db.exec('ALTER TABLE profiles ADD COLUMN connect_code TEXT');
   }
+
+  // Anchor goal history: without a first row, goalsOn() has nothing to return
+  // and every past day falls back to "current", which is the behaviour this
+  // table exists to stop. Stamped at today, NOT at the earliest logged day —
+  // claiming today's goal applied back then is precisely the lie being fixed.
+  // Anything earlier is genuinely unknown until someone supplies it.
+  try {
+    const { snapshotGoals } = require('./utils/goals');
+    const { todayLocal, tzFor } = require('./utils/tz');
+    for (const { id } of db.prepare('SELECT id FROM profiles').all()) {
+      snapshotGoals(db, id, todayLocal(tzFor(db, id)));
+    }
+  } catch { /* non-fatal — history simply starts on the next goal change */ }
 
   // Sessions recorded a token, a profile and a creation time — nothing about
   // WHO was holding them. You could end other sessions but never see one, so

@@ -2,6 +2,7 @@ const express = require('express');
 const { getDb } = require('../db');
 const { todayLocal, tzFor } = require('../utils/tz');
 const { recalcMacroGoals } = require('../utils/macros');
+const { snapshotGoals } = require('../utils/goals');
 
 const router = express.Router();
 
@@ -86,6 +87,8 @@ router.post('/', (req, res) => {
 
     pushBodyweight(db, req.profileId, logDate, weight_kg);  // sync up to IronLog (best-effort)
     const macros = recalcMacroGoals(db, req.profileId);     // g/kg goals follow the trend
+    // In g/kg mode a weigh-in moves the macro goals, so it is a goal change.
+    snapshotGoals(db, req.profileId, todayLocal(tzFor(db, req.profileId)));
     res.status(201).json(macros ? { ...entry, macros } : entry);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -100,6 +103,7 @@ router.delete('/:id', (req, res) => {
       .run({ id: req.params.id, pid: req.profileId });
     if (result.changes === 0) return res.status(404).json({ error: 'Entry not found' });
     recalcMacroGoals(db, req.profileId);   // removing a weigh-in moves the trend too
+    snapshotGoals(db, req.profileId, todayLocal(tzFor(db, req.profileId)));
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -120,6 +124,7 @@ router.patch('/:id', (req, res) => {
     const entry = db.prepare('SELECT * FROM weight_log WHERE id = $id').get({ id: req.params.id });
     pushBodyweight(db, req.profileId, entry.date, weight_kg);  // keep IronLog in sync (best-effort)
     const macros = recalcMacroGoals(db, req.profileId);
+    snapshotGoals(db, req.profileId, todayLocal(tzFor(db, req.profileId)));
     res.json(macros ? { ...entry, macros } : entry);
   } catch (err) {
     res.status(500).json({ error: err.message });
