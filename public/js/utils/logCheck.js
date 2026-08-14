@@ -8,12 +8,20 @@
 //  - calories < 60% of goal AND <= 2 meals -> flagged:
 //        < 40% of goal -> 'strong' (stronger "did you forget?" nudge)
 //        otherwise      -> 'incomplete'
-//  - Today / future days are never flagged (still in progress).
+//  - Today / future days are never flagged (still in progress) -> 'today'.
 //  - A day the user confirmed as "I ate light" (log_status === 'confirmed')
-//    always counts as 'complete'.
+//    always counts as 'complete', including today — that is the user declaring
+//    the day finished, which is exactly what 'today' means they haven't done.
 
 export const LOG_EMPTY      = 'empty';
 export const LOG_COMPLETE   = 'complete';
+// Still being logged. Distinct from 'complete' because callers need both facts
+// and they are not the same one: don't nag about it, AND don't count it as
+// evidence of anything. It used to return 'complete', so a day holding a single
+// pre-logged meal counted as a fully-logged day — the consistency card read
+// "100% fully logged" off 603 kcal, and the 7-day trend line was dragged down
+// by a day that had barely started.
+export const LOG_TODAY      = 'today';
 const LOG_INCOMPLETE = 'incomplete';
 export const LOG_STRONG     = 'strong';
 
@@ -30,7 +38,7 @@ export function classifyDay(day, goal, todayISO) {
   if (meals === 0) return LOG_EMPTY;
   if (day.log_status === 'confirmed') return LOG_COMPLETE;
   // Don't judge today or the future — still being logged.
-  if (todayISO && day.date && day.date >= todayISO) return LOG_COMPLETE;
+  if (todayISO && day.date && day.date >= todayISO) return LOG_TODAY;
 
   // The calorie floor is checked BEFORE the meal-count shortcut. It used to run
   // after, so three 100-kcal snacks counted as a fully-logged day: it held a

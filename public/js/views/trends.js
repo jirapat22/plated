@@ -3,7 +3,7 @@ import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
 import { localDate }                  from '../utils/date.js';
 import { showToast, navigateTo }      from '../app.js';
 import { openFoodEntry, lazySession } from './log.js';
-import { classifyDay, isFlagged, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY } from '../utils/logCheck.js';
+import { classifyDay, isFlagged, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY, LOG_TODAY } from '../utils/logCheck.js';
 import { movingAvg, weeklyTrendChange, etaWeeks, maintenanceShortfall } from '../utils/stats.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -176,7 +176,10 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
     fill: true,
     borderWidth: 2,
     pointBackgroundColor: opts.pointColors || color,
-    pointBorderColor:     opts.pointColors || color,
+    // Separate border so a point can be drawn hollow (transparent fill, visible
+    // ring) — that's how an in-progress day reads as "not finished yet".
+    pointBorderColor:     opts.pointBorderColors || opts.pointColors || color,
+    pointBorderWidth:     opts.pointBorderWidths || 1,
     pointRadius:          opts.pointRadii  || 2,
     pointHoverRadius:     6,
   }];
@@ -286,7 +289,11 @@ function calcStreak(summary, goal, todayISO) {
     d.setDate(d.getDate() - i);
     const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     const status = classifyDay(byDate[iso] || { date: iso, calories: 0, meal_count: 0 }, goal, todayISO);
-    const logged = status === LOG_COMPLETE;   // fully logged (or "ate light" confirmed)
+    // Today counts toward the streak the moment anything is logged — it is a
+    // "did you show up" number, not a "was the day complete" one. LOG_TODAY has
+    // to be included explicitly now that today no longer arrives as 'complete',
+    // or the streak would drop by one every morning until dinner.
+    const logged = status === LOG_COMPLETE || status === LOG_TODAY;
     const empty  = status === LOG_EMPTY;      // nothing logged that day
 
     if (i > 0 && i % 7 === 0) graceUsed = 0;   // reset grace counter every 7 days back
@@ -403,9 +410,14 @@ export function renderTrends(container) {
     const fullRows = summary.filter(r => r.date <= todayISO)
       .map(r => ({ ...r, status: classifyDay(r, goal, todayISO) }));
     const rows = fullRows.slice(-days);
-    const loggedDays   = rows.filter(r => (r.meal_count || 0) > 0);
-    const flaggedDays  = rows.filter(r => isFlagged(r.status));
-    const completeDays = loggedDays.filter(r => r.status === 'complete');
+    // Today is still filling up, so it is not evidence about whether you log
+    // fully — it is a day in progress. Counting it as finished is how a day
+    // holding one pre-logged meal made the card read "100% fully logged".
+    const finishedRows = rows.filter(r => r.status !== LOG_TODAY);
+    const loggedDays   = finishedRows.filter(r => (r.meal_count || 0) > 0);
+    const flaggedDays  = rows.filter(r => isFlagged(r.status));   // today is never flagged, so unchanged
+    const completeDays = loggedDays.filter(r => r.status === LOG_COMPLETE);
+    const todayRow     = rows.find(r => r.status === LOG_TODAY && (r.meal_count || 0) > 0) || null;
 
     // Only nag about recently-flagged days — you can't realistically fix a
     // month-old day, so anything older than 2 weeks ages off this list by itself.
@@ -419,10 +431,24 @@ export function renderTrends(container) {
     const fats     = rows.map(r => r.fat ?? 0);
 
     // Flagged (likely-incomplete) days get an orange dot so the gap is visible.
+    // Today gets a hollow one: it is on the chart because watching it build is
+    // useful, but it must not read as a finished day sitting next to finished
+    // days. Same arrays go to every macro chart so they agree.
     const FLAG = ink('#f97316');
-    const pointColors = rows.map(r => isFlagged(r.status) ? FLAG : ink('#c8b8ff'));
-    const pointRadii  = rows.map(r => isFlagged(r.status) ? 5 : 2);
+    const DOT  = ink('#c8b8ff');
+    const inProg = r => r.status === LOG_TODAY;
+    const pointColors       = rows.map(r => inProg(r) ? 'transparent' : isFlagged(r.status) ? FLAG : DOT);
+    const pointBorderColors = rows.map(r => isFlagged(r.status) ? FLAG : DOT);
+    const pointBorderWidths = rows.map(r => inProg(r) ? 2 : 1);
+    const pointRadii        = rows.map(r => inProg(r) ? 4 : isFlagged(r.status) ? 5 : 2);
+    const pointOpts   = { pointColors, pointBorderColors, pointBorderWidths, pointRadii };
+    // The 7-day line stops at yesterday. movingAvg is trailing, so only the last
+    // point ever saw today — nulling it is the whole fix. Left in, a 603 kcal
+    // morning pulled the visible trend down by ~200 and made a flat month look
+    // like a sudden drop.
     const calTrend    = movingAvg(cals, 7);
+    const todayIdx    = rows.findIndex(inProg);
+    if (todayIdx >= 0) calTrend[todayIdx] = null;
 
     // Weight series (IronLog + local merged by date). Normalize hard: IronLog
     // can send ISO timestamps and a 'weight' field — both produce NaN/NaN if
@@ -472,7 +498,12 @@ export function renderTrends(container) {
 
     // ── This calendar week (Mon–Sun) ──
     const thisMon = mondayOf(todayISO);
-    const wkRows  = fullRows.filter(r => r.date >= thisMon && (r.meal_count || 0) > 0);
+    // Totals and averages describe FINISHED days. Today's partial total dragged
+    // the week average down every morning — worst on a Monday, where one
+    // pre-logged breakfast was the entire week's "average".
+    const wkAll   = fullRows.filter(r => r.date >= thisMon && (r.meal_count || 0) > 0);
+    const wkToday = wkAll.find(r => r.status === LOG_TODAY) || null;
+    const wkRows  = wkAll.filter(r => r !== wkToday);
     const wkTotal = wkRows.reduce((s, r) => s + (r.calories || 0), 0);
     const wkAvg   = wkRows.length ? wkTotal / wkRows.length : 0;
     const wkLabel = (() => {
@@ -920,12 +951,13 @@ export function renderTrends(container) {
       <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);font-family:var(--font-display);margin:18px 4px 10px">Your week &amp; logging</div>
 
       <!-- This week (Mon–Sun) -->
-      ${wkRows.length ? `
+      ${wkAll.length ? `
       <div class="card" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
           <div class="label">This week</div>
           <span class="range-chip">${wkLabel}</span>
         </div>
+        ${!wkRows.length ? `<div style="font-size:12px;color:var(--text-muted)">No finished days this week yet — today is still being logged.</div>` : `
         <div class="stat-grid">
           <div class="stat-cell"><div class="stat-num">${fmtE(wkTotal)}</div><div class="stat-lbl">total ${ul}</div></div>
           <div class="stat-cell"><div class="stat-num">${fmtE(wkAvg)}</div><div class="stat-lbl">avg / day</div></div>
@@ -937,7 +969,8 @@ export function renderTrends(container) {
           <span><span style="color:var(--carbs);font-weight:600">${Math.round(wkC)}</span><span style="color:var(--text-faint)">/${Math.round(carbGoal)} C</span></span>
           <span><span style="color:var(--fat);font-weight:600">${Math.round(wkF)}</span><span style="color:var(--text-faint)">/${Math.round(fatGoal)} F</span></span>
           <span style="color:var(--text-faint);margin-left:auto">avg/day</span>
-        </div>
+        </div>`}
+        ${wkToday ? `<div style="font-size:12px;color:var(--text-faint);margin-top:10px;border-top:1px solid var(--border);padding-top:10px">Today in progress · <strong style="color:var(--text-muted)">${fmtE(wkToday.calories || 0)} ${ul}</strong> so far, not counted above.</div>` : ''}
       </div>` : ''}
 
       <!-- Weekly averages (Mon–Sun), per macro — "am I eating more than usual?" -->
@@ -970,6 +1003,7 @@ export function renderTrends(container) {
           <div class="stat-cell"><div class="stat-num">${completePct}%</div><div class="stat-lbl">fully logged</div></div>
           <div class="stat-cell"><div class="stat-num" style="color:${recentFlagged.length ? FLAG : 'var(--text)'}">${recentFlagged.length}</div><div class="stat-lbl">need a look</div></div>
         </div>
+        ${todayRow ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">Today isn't counted here — it's still being logged (${fmtE(todayRow.calories || 0)} ${ul} so far). It joins these figures tomorrow.</div>` : ''}
       </div>
 
       ${recentFlagged.length ? `
@@ -1181,9 +1215,9 @@ export function renderTrends(container) {
     requestAnimationFrame(() => {
       makeChart('chart-cal', labels, cals, ink('#c8b8ff'), ul, {
         goalLine: goalDisplay, avgLine: weeklyAvgDisplay,
-        pointColors, pointRadii, trendData: calTrend,
+        ...pointOpts, trendData: calTrend,
       });
-      makeChart('chart-pro',  labels, proteins, ink('#1E88E5'), 'g', { goalLine: proteinGoal });
+      makeChart('chart-pro',  labels, proteins, ink('#1E88E5'), 'g', { goalLine: proteinGoal, ...pointOpts });
       if (wVals.length > 1) makeChart('chart-wt', wLabels, wVals, ink('#62d8ff'), 'kg', { trendData: wTrend, goalLine: targetWeight ?? undefined, expectedData: expectedAligned ?? undefined });
       else {
         const c = document.getElementById('chart-wt');
@@ -1196,8 +1230,8 @@ export function renderTrends(container) {
       const drawMacros = () => {
         if (!more || drawn || !more.open) return;
         drawn = true;
-        makeChart('chart-carb', labels, carbs, ink('#f97316'), 'g', { goalLine: carbGoal });
-        makeChart('chart-fat',  labels, fats,  ink('#eab308'), 'g', { goalLine: fatGoal  });
+        makeChart('chart-carb', labels, carbs, ink('#f97316'), 'g', { goalLine: carbGoal, ...pointOpts });
+        makeChart('chart-fat',  labels, fats,  ink('#eab308'), 'g', { goalLine: fatGoal,  ...pointOpts });
       };
       more?.addEventListener('toggle', drawMacros);
       drawMacros();
