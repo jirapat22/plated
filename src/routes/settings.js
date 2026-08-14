@@ -199,6 +199,12 @@ router.get('/export', (req, res) => {
         WHERE ms.profile_id = $pid
       `).all({ pid }),
       weight_log:    db.prepare('SELECT * FROM weight_log WHERE profile_id = $pid').all({ pid }),
+      // Without this, export → "clear all data" → import silently reinstates the
+      // exact defect goal_history exists to prevent: settings come back, boot
+      // re-anchors the current goal at TODAY, and every past day quietly reverts
+      // to being judged against a target set afterwards. Unrecoverable, because
+      // nothing else in the file records what you were aiming at and when.
+      goal_history:  db.prepare('SELECT * FROM goal_history WHERE profile_id = $pid ORDER BY effective_from').all({ pid }),
       settings:      allSettings(db, pid),
     };
     const filename = `plated-export-${new Date().toISOString().split('T')[0]}.json`;
@@ -231,6 +237,10 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
     // Absent from exports taken before batches were included — an older backup
     // restores exactly as it did before rather than wiping the batches you have.
     const batches       = Array.isArray(body.batches) ? body.batches : null;
+    // Same null-not-empty rule as batches: a file taken before goal history
+    // existed leaves the history you have alone rather than wiping it to match
+    // a file that never knew about it.
+    const goal_history  = Array.isArray(body.goal_history) ? body.goal_history : null;
     const settings      = (body.settings && typeof body.settings === 'object') ? body.settings : {};
 
     if (!body.exported_at || !Array.isArray(body.meal_sessions)) {
@@ -240,6 +250,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
     let foodsAdded = 0;
     let entriesImported = 0;
     let batchesImported = 0;
+    let goalRowsImported = 0;
     db.exec('BEGIN');
     try {
       const findFood = db.prepare('SELECT id FROM foods WHERE name = $name AND brand IS $brand');
@@ -344,6 +355,25 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
         }
       }
 
+      if (goal_history) {
+        db.prepare('DELETE FROM goal_history WHERE profile_id = $pid').run({ pid });
+        const insGoal = db.prepare(`
+          INSERT INTO goal_history (profile_id, effective_from, calorie_goal, protein_goal, carb_goal, fat_goal, fiber_goal, created_at)
+          VALUES ($pid, $d, $cal, $pro, $carb, $fat, $fib, COALESCE($created, datetime('now')))
+        `);
+        for (const gh of goal_history) {
+          // The date is the primary key and the whole point of the row — a junk
+          // one would sort wrong and answer for days it never applied to.
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(gh.effective_from ?? ''))) continue;
+          insGoal.run({
+            pid, d: gh.effective_from,
+            cal: gh.calorie_goal ?? null, pro: gh.protein_goal ?? null, carb: gh.carb_goal ?? null,
+            fat: gh.fat_goal ?? null, fib: gh.fiber_goal ?? null, created: gh.created_at ?? null,
+          });
+          goalRowsImported++;
+        }
+      }
+
       const setSetting = db.prepare('INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)');
       for (const [key, value] of Object.entries(settings)) {
         if (ALLOWED.has(key) && value != null) setSetting.run({ pid, key, value: String(value) });
@@ -355,9 +385,14 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
       throw e;
     }
 
+    // A file older than goal history restores the settings without the record of
+    // when they applied, so stamp the restored goals as of today. No-ops when
+    // the file carried its own history and the newest row already matches.
+    snapshotGoals(db, pid, todayLocal(tzFor(db, pid)));
+
     res.json({
       success: true,
-      imported: { meals: meal_sessions.length, entries: entriesImported, weight: weight_log.length, foods_added: foodsAdded, batches: batchesImported },
+      imported: { meals: meal_sessions.length, entries: entriesImported, weight: weight_log.length, foods_added: foodsAdded, batches: batchesImported, goal_rows: goalRowsImported },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -402,12 +437,33 @@ const g = v => {
 const macroLine = t => `${g(t.protein)}P · ${g(t.carbs)}C · ${g(t.fat)}F${t.fiber ? ` · ${g(t.fiber)} fib` : ''}`;
 const foodName = e => (e.food_brand ? `${e.food_name} (${e.food_brand})` : e.food_name);
 
+// The goal caveat, written once. Three hand-maintained copies is exactly how
+// this went wrong: when goal history shipped, the HTML note was rewritten and
+// the CSV and Markdown ones were not, so both files carried "Plated stores no
+// goal history" directly above an adherence line computed from that history.
+// Now the renderers can only differ in markup, never in what they claim.
+function goalNote(report) {
+  const head = 'The goal row above is your current goal.';
+  const a = report.adherence;
+  if (!a) return `${head} No logged days in this range to compare it against.`;
+  const est = a.estimated || 0;
+  if (!est) return `${head} Every logged day in this range is compared against the goal recorded for that day.`;
+  const cur = report.goals.calories != null ? `${kcal(report.goals.calories)} kcal` : 'it';
+  const d = `${est} logged day${est === 1 ? '' : 's'}`;
+  return report.historyFrom
+    ? `${head} Goal history begins ${report.historyFrom} — days from then on are compared against the goal recorded for that day, while the ${d} before it are compared against ${cur}, because nothing was recorded yet. Treat those as an estimate.`
+    : `${head} No goal was recorded for any day in this range, so all ${d} are compared against ${cur}. If your target was different then, those comparisons are estimates rather than measurements.`;
+}
+
 // Everything the report needs beyond the food rows: what you were aiming at,
 // what the scale did, and the plan behind both.
 //
-// Goals are CURRENT goals. Plated stores one value per setting and no history,
-// so there is genuinely no way to know what the goal was on a past day — the
-// renderers say so rather than implying the figure applied across the range.
+// `goals` is the CURRENT goal — the headline figure, labelled as such. Per-day
+// comparisons do NOT use it: they go through goalFor(), which reads
+// goal_history and answers for the day being asked about. Days that predate the
+// history genuinely have no recorded answer and fall back to the current goal;
+// the renderers count those separately and say so, rather than letting an
+// estimate pass as a measurement.
 function reportContext(db, pid, from, to) {
   const s = allSettings(db, pid);
   const num = k => { const v = parseFloat(s[k]); return Number.isFinite(v) ? v : null; };
@@ -558,9 +614,15 @@ function buildReport(rows, from, to, ctx = {}) {
   }
   let adherence = null;
   if (daysLogged && days.some(d => d.goal > 0)) {
-    adherence = { onTarget: 0, over: 0, under: 0, bandPct: 10, unknownGoal: 0 };
+    adherence = { onTarget: 0, over: 0, under: 0, bandPct: 10, unknownGoal: 0, estimated: 0 };
     for (const d of days) {
       if (!(d.goal > 0)) { adherence.unknownGoal++; continue; }
+      // Scored against the CURRENT goal because nothing was recorded that far
+      // back. Still the most useful comparison available, but it is an estimate
+      // and has to travel labelled: goal history began on one date, and every
+      // day before it was silently being judged against a target that may not
+      // have existed yet — the exact defect goal_history was built to end.
+      if (!d.goalRecorded) adherence.estimated++;
       const diff = d.total.calories - d.goal;
       if (Math.abs(diff) <= d.goal * 0.10) adherence.onTarget++;
       else if (diff > 0) adherence.over++;
@@ -571,6 +633,10 @@ function buildReport(rows, from, to, ctx = {}) {
   const goalChanges = [...new Map(days.filter(d => d.goalRecorded)
     .map(d => [goalFor(d.date).effective_from, goalFor(d.date)])).values()]
     .sort((a, b) => (a.effective_from < b.effective_from ? -1 : 1));
+  // The first day in this range with a real recorded goal. Everything before it
+  // is measured against the current one, and every renderer needs to be able to
+  // name that date rather than waving at "earlier days".
+  const historyFrom = goalChanges.length ? goalChanges[0].effective_from : null;
 
   // Maintenance implied by THIS range: what you ate, corrected for what the
   // scale did (1 kg ~ 7,700 kcal). Deliberately computed from the reported
@@ -584,7 +650,7 @@ function buildReport(rows, from, to, ctx = {}) {
   return {
     from, to, days,
     summary: { daysInRange, daysLogged, avg },
-    goals, vsGoal, adherence, weight, estMaintenance, goalChanges,
+    goals, vsGoal, adherence, weight, estMaintenance, goalChanges, historyFrom,
     weightDetail: analyseWeight(wRows),
     phase: ctx.phase || null,
     tdee:  ctx.tdee ?? null,
@@ -661,7 +727,7 @@ function toCsv(report) {
   lines.push(macroRow('Average per logged day', summary.avg));
   lines.push(macroRow('Goal (current, see note)', goals));
   lines.push(macroRow('Average minus goal', vsGoal));
-  lines.push(kv('Note on goals', 'Goals are current values. Plated stores no goal history, so earlier days in this range may have had different targets.'));
+  lines.push(kv('Note on goals', goalNote(report)));
 
   if (report.phase) lines.push(kv('Phase', report.phase));
   if (report.tdee != null) lines.push(kv('Set maintenance / TDEE (kcal)', report.tdee));
@@ -679,6 +745,8 @@ function toCsv(report) {
     lines.push(kv(`Days within ${adherence.bandPct}% of calorie goal`, adherence.onTarget));
     lines.push(kv('Days over goal', adherence.over));
     lines.push(kv('Days under goal', adherence.under));
+    if (adherence.estimated) lines.push(kv('Days measured against the current goal (none recorded then)', adherence.estimated));
+    if (adherence.unknownGoal) lines.push(kv('Days with no goal at all', adherence.unknownGoal));
   }
 
   if (report.goalChanges?.length > 1) {
@@ -688,7 +756,7 @@ function toCsv(report) {
       lines.push([gc.effective_from, gc.calorie_goal ?? '', gc.protein_goal ?? '', gc.carb_goal ?? '',
         gc.fat_goal ?? '', gc.fiber_goal ?? ''].concat(Array(COLS - 6).fill('')).join(','));
     }
-    lines.push(kv('Note', 'Each day above is compared against the goal in force on that day, not the current one.'));
+    lines.push(kv('Note', "Days from each date onward are compared against that row's goal."));
   }
 
   const wd = report.weightDetail;
@@ -741,17 +809,20 @@ function toMarkdown(report) {
       `| Carbs | ${g(goals.carbs)} g | ${g(a.carbs)} g | ${delta(vsGoal.carbs)} |`,
       `| Fat | ${g(goals.fat)} g | ${g(a.fat)} g | ${delta(vsGoal.fat)} |`,
       `| Fiber | ${g(goals.fiber)} g | ${g(a.fiber)} g | ${delta(vsGoal.fiber)} |`,
-      '', '_Goals shown are current values — Plated keeps no history of goal changes, so earlier days in this range may have had different targets._');
+      '', `_${goalNote(report)}_`);
   }
   if (adherence) {
-    lines.push('', `**Adherence:** ${adherence.onTarget} of ${report.summary.daysLogged} logged days within ${adherence.bandPct}% of that day's calorie goal · ${adherence.over} over · ${adherence.under} under${adherence.unknownGoal ? ` · ${adherence.unknownGoal} with no recorded goal` : ''}`);
+    lines.push('', `**Adherence:** ${adherence.onTarget} of ${report.summary.daysLogged} logged days within ${adherence.bandPct}% of that day's calorie goal · ${adherence.over} over · ${adherence.under} under${adherence.unknownGoal ? ` · ${adherence.unknownGoal} with no goal at all` : ''}`);
+    if (adherence.estimated) {
+      lines.push('', `_${adherence.estimated} of those day${adherence.estimated === 1 ? ' predates' : 's predate'} recorded goal history and ${adherence.estimated === 1 ? 'was' : 'were'} measured against your current goal instead._`);
+    }
   }
   if (report.goalChanges?.length > 1) {
     lines.push('', '### Goal changes in this range', '', '| From | Calories | P | C | F | Fib |', '|---|--:|--:|--:|--:|--:|');
     for (const gc of report.goalChanges) {
       lines.push(`| ${gc.effective_from} | ${kcal(gc.calorie_goal)} | ${g(gc.protein_goal)} | ${g(gc.carb_goal)} | ${g(gc.fat_goal)} | ${g(gc.fiber_goal)} |`);
     }
-    lines.push('', "_Every day above is compared against the goal in force on that day, not the current one._");
+    lines.push('', "_Days from each date onward are compared against that row's goal._");
   }
   if (report.phase || report.tdee != null || report.estMaintenance != null) {
     lines.push('', '## Plan', '', '| | |', '|---|---|');
@@ -859,15 +930,14 @@ function toHtml(report) {
         ${goalRow('Fiber (g)', goals.fiber, a.fiber, vsGoal.fiber)}
       </tbody>
     </table>
-    ${adherence ? `<p class="note"><strong>${adherence.onTarget} of ${summary.daysLogged}</strong> logged days landed within ${adherence.bandPct}% of <em>that day's</em> calorie goal · ${adherence.over} over · ${adherence.under} under${adherence.unknownGoal ? ` · ${adherence.unknownGoal} from before goals were recorded` : ''}.</p>` : ''}
+    ${adherence ? `<p class="note"><strong>${adherence.onTarget} of ${summary.daysLogged}</strong> logged days landed within ${adherence.bandPct}% of <em>that day's</em> calorie goal · ${adherence.over} over · ${adherence.under} under${adherence.unknownGoal ? ` · ${adherence.unknownGoal} with no goal at all` : ''}.</p>` : ''}
     ${report.goalChanges?.length > 1 ? `
       <h3 style="margin-top:22px">Goal changes in this range</h3>
       <table class="kv">
         <thead><tr><th>From</th><th>Calories</th><th>P</th><th>C</th><th>F</th><th>Fib</th></tr></thead>
         <tbody>${report.goalChanges.map(gc => `<tr><td>${escHtml(gc.effective_from)}</td><td>${kcal(gc.calorie_goal)}</td><td>${g(gc.protein_goal)}</td><td>${g(gc.carb_goal)}</td><td>${g(gc.fat_goal)}</td><td>${g(gc.fiber_goal)}</td></tr>`).join('')}</tbody>
-      </table>
-      <p class="note">Each day is compared against the goal in force on that day, not the current one — so a week eaten against an older target is judged against that target.</p>`
-      : `<p class="note">The row above is your current goal. Days before goals began being recorded are compared against it, since there is nothing else to compare them to.</p>`}
+      </table>` : ''}
+    <p class="note">${escHtml(goalNote(report))}</p>
   </section>`;
 
   const planBlock = (!report.phase && report.tdee == null && report.estMaintenance == null) ? '' : `

@@ -21,7 +21,25 @@ function currentGoals(db, pid) {
   return out;
 }
 
-const same = (a, b) => !!a && !!b && KEYS.every(k => (a[k] ?? null) === (b[k] ?? null));
+// "Nothing moved" — with a gram of slack on the macros.
+//
+// In g/kg mode every weigh-in re-derives protein and fat from trend weight and
+// carbs from whatever calories are left, so a 0.2 kg swing rewrites the gram
+// goals by a rounding unit and each weigh-in files itself as a goal change. A
+// 90-day report would list dozens of ±1 g rows and bury the 2,000 → 1,760 that
+// actually mattered.
+//
+// Compared against the last RECORDED row rather than yesterday's values, so
+// slack can't ratchet: drift accumulates until it crosses MACRO_SLACK and is
+// then written in full, bounding the error at the tolerance instead of letting
+// it compound. Calories are exact — a calorie goal only moves when someone
+// moves it.
+const MACRO_SLACK = 2;   // grams
+const same = (a, b) => !!a && !!b && KEYS.every(k => {
+  const x = a[k] ?? null, y = b[k] ?? null;
+  if (x === null || y === null) return x === y;
+  return k === 'calorie_goal' ? x === y : Math.abs(x - y) <= MACRO_SLACK;
+});
 
 function latestRow(db, pid) {
   return db.prepare(
