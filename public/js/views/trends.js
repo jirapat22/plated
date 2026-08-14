@@ -550,6 +550,24 @@ export function renderTrends(container) {
     const avgCal = validForAvg.length
       ? validForAvg.reduce((s, r) => s + (r.calories ?? 0), 0) / validForAvg.length
       : null;
+    // The same average over just the last 7 counted days. The 4-week figure is
+    // the right input for the maintenance maths — it needs a long window to see
+    // past water — but it is the wrong thing to read as "what I eat", and it
+    // lags a real change by weeks. One profile cut intake ~300/day and the
+    // headline still showed the higher four-week figure with nothing to say it
+    // was looking backwards.
+    // lastWeek, not recent7 — that name is already taken further up by the
+    // logging-streak block, which slices raw rows rather than counted days.
+    const lastWeek = validForAvg.slice(-7);
+    const avgRecent = lastWeek.length >= 4
+      ? lastWeek.reduce((s, r) => s + (r.calories ?? 0), 0) / lastWeek.length
+      : null;
+    // Only worth saying when the two genuinely disagree — otherwise it's noise
+    // on a card that already has plenty.
+    const intakeDrift = (avgCal != null && avgRecent != null && Math.abs(avgRecent - avgCal) >= 150)
+      ? { recent: Math.round(avgRecent), days: lastWeek.length, gap: Math.round(avgRecent - avgCal) }
+      : null;
+
     const targetWeight = parseFloat(settings.target_weight_kg) || null;
     const cfgTdee      = parseFloat(settings.tdee) || null;
     const phase        = settings.phase || 'maintain';
@@ -580,14 +598,17 @@ export function renderTrends(container) {
       ? Math.round((avgCal - slopePerDay * 7700) / 10) * 10 : null;
 
     // How settled that figure is. 95% band on the weight slope, in kcal/day.
-    // "Steady" needs the band tight enough that it's smaller than the ~150 kcal
-    // adjustment you'd make off the back of it — a number you can't act on
-    // without the band swallowing the decision isn't ready. Fresh weigh-ins
+    // "Steady" means the band is tighter than the change you'd make off the back
+    // of it. A goal adjustment is about 150 kcal, so that is the threshold —
+    // it used to be 250 while the copy underneath claimed 150, and a real
+    // reading of ±241 duly arrived, passed the check, and told someone to act
+    // on a figure whose uncertainty was wider than the action. Fresh weigh-ins
     // too: a tight fit on data that stopped a week ago is confidence about the
     // past.
+    const ADJUST_KCAL = 150;
     const slopeSE  = linFitStdErr(wWinX, wWinVals, slopePerDay);
     const maintCI  = slopeSE != null ? Math.round(1.96 * slopeSE * 7700) : null;
-    const maintSteady = maintCI != null && maintCI <= 250 && (staleDays == null || staleDays <= 3);
+    const maintSteady = maintCI != null && maintCI <= ADJUST_KCAL && (staleDays == null || staleDays <= 3);
 
     // Does the measured figure square with your size and training? Only
     // answerable once the TDEE estimator has stored height/age/sex/activity.
@@ -678,7 +699,7 @@ export function renderTrends(container) {
       const underOver = actualDef >= 0 ? `${fmtE(actualDef)} ${ul} under` : `${fmtE(-actualDef)} ${ul} over`;
       let s = `You're eating about ${underOver} your real maintenance (${fmtE(realTDEE)} ${ul}), so ${motion}.`;
       if (cfgTdee) {
-        const plannedDef = Math.abs(Math.round(cfgTdee - avgCal));
+        const plannedDef = Math.abs(Math.round(cfgTdee - (goal > 0 ? goal : avgCal)));   // the plan is the GOAL, not what you ate
         if (realTDEE < cfgTdee - 150) {
           s += ` Your set TDEE (${fmtE(cfgTdee)}) is higher than your real burn — your true gap is smaller than the ${fmtE(plannedDef)} you planned, which is why the scale's slow. (Or you're under-logging — see below.)`;
         } else if (realTDEE > cfgTdee + 150) {
@@ -710,7 +731,12 @@ export function renderTrends(container) {
       const T = (x, y, s, extra = '') => `<text x="${x.toFixed(1)}" y="${y}" text-anchor="middle" ${extra}>${s}</text>`;
       const sign = d => (d >= 0 ? '−' : '+') + fmtE(Math.abs(d));
       const realDef = Math.round(maint - intake);
-      const planDef = cfgTdee ? Math.round(cfgTdee - intake) : null;
+      // What you PLANNED is your TDEE minus your GOAL. This subtracted average
+      // intake instead, so it reported the deficit you happened to achieve and
+      // labelled it a plan: 2,060 − 1,963 = 97, next to a goal that asks for
+      // 300. The other half of this card computed the same phrase differently
+      // again, so one card could print two contradictory "planned" figures.
+      const planDef = cfgTdee && goal > 0 ? Math.round(cfgTdee - goal) : null;
       return `
         <svg viewBox="0 0 320 78" width="100%" preserveAspectRatio="xMidYMid meet" style="display:block;width:100%;max-width:440px;margin:0 auto;overflow:visible;font-family:var(--font-mono)">
           <line x1="16" y1="43" x2="304" y2="43" style="stroke:var(--border)" stroke-width="2" stroke-linecap="round"/>
@@ -731,7 +757,13 @@ export function renderTrends(container) {
           </g>
         </svg>
         <div style="font-size:11px;color:var(--text-faint);margin-top:4px;text-align:center;max-width:440px;margin-left:auto;margin-right:auto">${realDef >= 0 ? 'Real deficit' : 'Real surplus'} <b style="color:var(--accent)">${sign(realDef)} ${ul}</b>${planDef != null ? ` · you planned <span style="color:var(--text-muted)">${sign(planDef)}</span>` : ''}</div>
-        <div style="font-size:9px;color:var(--text-faint);text-align:center;margin-top:3px">“You eat” is your average intake over the last 4 weeks</div>`;
+        <div style="font-size:9px;color:var(--text-faint);text-align:center;margin-top:3px">“You eat” is your average intake over the last 4 weeks</div>
+        ${intakeDrift ? `<div style="font-size:11px;color:var(--warning);text-align:center;margin-top:6px;line-height:1.5;max-width:440px;margin-left:auto;margin-right:auto">
+          Last ${intakeDrift.days} logged days: <strong>${fmtE(intakeDrift.recent)} ${ul}</strong> —
+          ${fmtE(Math.abs(intakeDrift.gap))} ${ul} ${intakeDrift.gap < 0 ? 'below' : 'above'} the 4-week figure above.
+          Your intake has ${intakeDrift.gap < 0 ? 'dropped' : 'risen'} recently, so maintenance is still being worked out
+          from the ${intakeDrift.gap < 0 ? 'higher' : 'lower'} period and will move as these days fill the window.
+        </div>` : ''}`;
     })();
 
     // Compact "real vs planned deficit" shown on the collapsed breakdown summary,
@@ -775,8 +807,8 @@ export function renderTrends(container) {
           </div>
           ${staleDays >= 4 ? `<div style="font-size:11px;color:var(--warning);margin-top:10px">Newest weigh-in is ${staleDays} days old — nothing since then counts toward this.</div>` : ''}
           ${maintCI != null ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">${maintSteady
-            ? `Maintenance has settled to within <strong style="color:var(--success)">±${fmtE(maintCI)} ${ul}</strong>. That's tighter than the amount you'd adjust a goal by, so if your pace is off target this is the moment a change is worth making.`
-            : `Your weigh-ins still swing enough that this could be anywhere within <strong style="color:var(--warning)">±${fmtE(maintCI)} ${ul}</strong> — wider than the amount you'd change a goal by, so adjusting now would be guesswork. More weigh-ins narrow it faster than more days do.`}</div>` : ''}
+            ? `Maintenance has settled to within <strong style="color:var(--success)">±${fmtE(maintCI)} ${ul}</strong> — tighter than the ~${fmtE(ADJUST_KCAL)} ${ul} you'd change a goal by, so if your pace is off target this is the moment a change is worth making.`
+            : `This could be anywhere within <strong style="color:var(--warning)">±${fmtE(maintCI)} ${ul}</strong>, which is wider than the ~${fmtE(ADJUST_KCAL)} ${ul} you'd change a goal by — so a change now would sit inside the margin rather than outside it. More weigh-ins narrow it faster than more days do.`}</div>` : ''}
           ${shortfall ? `<div style="font-size:11px;color:var(--warning);margin-top:10px">Your size and training predict about ${fmtE(shortfall.predicted)} ${ul} — measured maintenance is ${fmtE(shortfall.gap)} lower. That's usually under-logging, sometimes an over-stated activity level. Weigh your food for two weeks before cutting any lower.</div>` : ''}
           ${!rateReliable ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Weigh-ins are too noisy to estimate maintenance (${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(1)} kg/wk looks like water/scale swing). Weigh in consistently for a steadier read.</div>${howWorkedOut}`
             : `<details class="nl-details" style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
