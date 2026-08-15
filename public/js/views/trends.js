@@ -483,8 +483,14 @@ export function renderTrends(container) {
     const wTrend  = movingAvg(wVals, 7);
 
     // ── 7-day average — excludes flagged (likely-incomplete) days ──
+    // And today, which is a different kind of incomplete. This filters on
+    // isFlagged, and isFlagged(LOG_TODAY) is deliberately false, so the
+    // in-progress day slipped straight through the split that moved every other
+    // consumer off 'complete'. It feeds avgLine on the calorie chart: measured
+    // at 1,732 against a true 1,788, and ~155 out first thing in the morning —
+    // least accurate exactly when someone opens the app to check it.
     const recent7  = rows.slice(-7);
-    const valid7   = recent7.filter(r => (r.meal_count || 0) > 0 && !isFlagged(r.status));
+    const valid7   = recent7.filter(r => (r.meal_count || 0) > 0 && !isFlagged(r.status) && r.status !== LOG_TODAY);
     const weeklyAvgKcal = valid7.length
       ? valid7.reduce((s, r) => s + (r.calories ?? 0), 0) / valid7.length
       : null;
@@ -694,7 +700,12 @@ export function renderTrends(container) {
       while (cur <= end) {
         const iso = localDate(cur);
         const row = byDateAll[iso];
-        const intake = row && (row.meal_count || 0) > 0 ? (row.calories || 0) : cfgTdee;
+        // A day still being logged takes the same fallback as an unlogged one:
+        // assume maintenance and project nothing. Without this, one pre-logged
+        // meal passed the meal_count test and the line booked ~0.19 kg of
+        // predicted loss for a day that had barely started.
+        const intake = row && (row.meal_count || 0) > 0 && row.status !== LOG_TODAY
+          ? (row.calories || 0) : cfgTdee;
         cum += (intake - cfgTdee) / TDEE_PER_KG;
         expectedByDate[iso] = cum;
         cur.setDate(cur.getDate() + 1);

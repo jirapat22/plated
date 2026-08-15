@@ -437,6 +437,12 @@ const g = v => {
 const macroLine = t => `${g(t.protein)}P · ${g(t.carbs)}C · ${g(t.fat)}F${t.fiber ? ` · ${g(t.fiber)} fib` : ''}`;
 const foodName = e => (e.food_brand ? `${e.food_name} (${e.food_brand})` : e.food_name);
 
+// Written once for the same reason goalNote is. Empty when the range doesn't
+// reach today, which is most exports.
+const progressNote = report => report.inProgressDay
+  ? `${report.inProgressDay.date} is today and still being logged (${kcal(report.inProgressDay.total.calories)} kcal so far). It is listed in full below, but left out of the averages, the goal comparison and adherence — it is not yet an observation of a day's intake.`
+  : '';
+
 // The goal caveat, written once. Three hand-maintained copies is exactly how
 // this went wrong: when goal history shipped, the HTML note was rewritten and
 // the CSV and Markdown ones were not, so both files carried "Plated stores no
@@ -490,6 +496,10 @@ function reportContext(db, pid, from, to) {
     tdee:  num('tdee'),
     weights,
     goalFor,
+    // The report had no concept of "today", so a range ending today averaged in
+    // a day the user was still eating. Trends learned this; the report is the
+    // artifact someone hands to a doctor, so it matters more here.
+    today: todayLocal(tzFor(db, pid)),
   };
 }
 
@@ -575,8 +585,18 @@ function buildReport(rows, from, to, ctx = {}) {
     .sort((a, b) => (a.date < b.date ? -1 : 1));
 
   const daysInRange = Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
-  const daysLogged = days.length;
-  const avg = daysLogged ? sumMacros(days.map(d => d.total)) : zeroMacros();
+  // A range ending today includes a day still being eaten. It stays in the
+  // day-by-day tables — hiding what you logged would be worse — but it is not
+  // an observation of a day's intake, so it is kept out of every figure derived
+  // from one: the averages, the goal comparison, adherence and the implied
+  // maintenance. Over 90 days it was noise; over 7 it read 1,732 against a true
+  // 1,788, always low, and worst in the morning.
+  for (const d of days) d.inProgress = !!ctx.today && d.date === ctx.today;
+  const finished = days.filter(d => !d.inProgress);
+  const inProgressDay = days.find(d => d.inProgress) || null;
+
+  const daysLogged = finished.length;
+  const avg = daysLogged ? sumMacros(finished.map(d => d.total)) : zeroMacros();
   for (const k in avg) avg[k] = round1(avg[k] / (daysLogged || 1));
 
   const goals = ctx.goals || {};
@@ -613,9 +633,9 @@ function buildReport(rows, from, to, ctx = {}) {
     d.goalRecorded = !!gh?.recorded;
   }
   let adherence = null;
-  if (daysLogged && days.some(d => d.goal > 0)) {
+  if (daysLogged && finished.some(d => d.goal > 0)) {
     adherence = { onTarget: 0, over: 0, under: 0, bandPct: 10, unknownGoal: 0, estimated: 0 };
-    for (const d of days) {
+    for (const d of finished) {
       if (!(d.goal > 0)) { adherence.unknownGoal++; continue; }
       // Scored against the CURRENT goal because nothing was recorded that far
       // back. Still the most useful comparison available, but it is an estimate
@@ -650,7 +670,7 @@ function buildReport(rows, from, to, ctx = {}) {
   return {
     from, to, days,
     summary: { daysInRange, daysLogged, avg },
-    goals, vsGoal, adherence, weight, estMaintenance, goalChanges, historyFrom,
+    goals, vsGoal, adherence, weight, estMaintenance, goalChanges, historyFrom, inProgressDay,
     weightDetail: analyseWeight(wRows),
     phase: ctx.phase || null,
     tdee:  ctx.tdee ?? null,
@@ -717,13 +737,15 @@ function toCsv(report) {
       }
     }
     // The day's weigh-in rides on its total row — intake and scale on one line.
-    lines.push([day.date, '', 'Day total', day.goal ?? '', day.total.calories, day.total.protein,
+    lines.push([day.date, '', escCsv(day.inProgress ? 'Day total (in progress)' : 'Day total'),
+      day.goal ?? '', day.total.calories, day.total.protein,
       day.total.carbs, day.total.fat, day.total.fiber, day.weight_kg ?? ''].join(','));
   }
 
   lines.push('', 'Summary' + ','.repeat(COLS - 1));
   lines.push(kv('Date range', `${report.from} to ${report.to}`));
   lines.push(kv('Days logged', `${summary.daysLogged} of ${summary.daysInRange}`));
+  if (progressNote(report)) lines.push(kv('Today', progressNote(report)));
   lines.push(macroRow('Average per logged day', summary.avg));
   lines.push(macroRow('Goal (current, see note)', goals));
   lines.push(macroRow('Average minus goal', vsGoal));
@@ -798,6 +820,7 @@ function toMarkdown(report) {
     `| Avg fat | ${g(a.fat)} g |`,
     `| Avg fiber | ${g(a.fiber)} g |`,
   ];
+  if (progressNote(report)) lines.push('', `_${progressNote(report)}_`);
 
   const { goals, vsGoal, adherence, weight } = report;
   const delta = v => (v == null ? '–' : `${v > 0 ? '+' : ''}${g(v)}`);
@@ -866,7 +889,7 @@ function toMarkdown(report) {
 
   for (const day of report.days) {
     const t = day.total;
-    lines.push('', '---', '', `## ${fmtDay(day.date)}${day.weight_kg != null ? ` · ${g(day.weight_kg)} kg` : ''}`, '',
+    lines.push('', '---', '', `## ${fmtDay(day.date)}${day.weight_kg != null ? ` · ${g(day.weight_kg)} kg` : ''}${day.inProgress ? ' · still being logged' : ''}`, '',
       `**${kcal(t.calories)} kcal** · ${macroLine(t)}`, '',
       '| Meal | Food | Qty | Cal | P | C | F | Fib |',
       '|---|---|--:|--:|--:|--:|--:|--:|');
@@ -899,7 +922,7 @@ function toHtml(report) {
     return `
     <section class="day">
       <div class="day-head">
-        <h2>${escHtml(fmtDay(day.date))}${day.weight_kg != null ? ` <span class="dayw">${g(day.weight_kg)} kg</span>` : ''}</h2>
+        <h2>${escHtml(fmtDay(day.date))}${day.weight_kg != null ? ` <span class="dayw">${g(day.weight_kg)} kg</span>` : ''}${day.inProgress ? ' <span class="dayw">still being logged</span>' : ''}</h2>
         <div class="day-total"><strong>${kcal(t.calories)} kcal</strong><span>${escHtml(macroLine(t))}</span></div>
       </div>
       <table>
@@ -1055,6 +1078,7 @@ function toHtml(report) {
       <div class="stat"><div class="v">${g(a.fiber)}</div><div class="k">fiber g</div></div>
       <div class="stat"><div class="v">${summary.daysLogged}<span style="color:#9ca3af;font-weight:400">/${summary.daysInRange}</span></div><div class="k">days logged</div></div>
     </div>
+    ${progressNote(report) ? `<p class="note">${escHtml(progressNote(report))}</p>` : ''}
   </div>
   ${goalBlock}
   ${planBlock}
