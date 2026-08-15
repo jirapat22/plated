@@ -559,6 +559,9 @@ function analyseWeight(weights) {
   const slope = slopePerDay(weights);
   return {
     series, weekly, gaps,
+    // Unrounded, because estMaintenance multiplies it by 7,700: rounding to
+    // 0.1 kg/week first would put ±55 kcal/day of pure rounding into the answer.
+    slopePerDay: slope,
     ratePerWeek: slope != null ? round1(slope * 7) : null,
     // How much of the range actually has readings behind it.
     spanDays: Math.round((Date.parse(weights[weights.length - 1].date) - Date.parse(weights[0].date)) / 864e5),
@@ -663,15 +666,25 @@ function buildReport(rows, from, to, ctx = {}) {
   // range rather than reusing Trends' fixed 28-day window, and it counts every
   // logged day where Trends drops the under-logged ones — so the two figures
   // can legitimately differ. Needs a real span to mean anything.
-  const estMaintenance = (weight && weight.spanDays >= 14 && daysLogged >= 7)
-    ? Math.round(avg.calories - (weight.change * 7700) / weight.spanDays)
+  //
+  // From the least-squares fit over every reading, NOT last-minus-first. Two
+  // raw endpoints let a single water-weight morning set the answer, and the end
+  // point is usually today — the most likely day to be carrying water from
+  // yesterday's eating. Measured on real data: the endpoint method read
+  // -0.210 kg/week where the fit read -0.399, a 208 kcal/day difference in the
+  // figure below. The fit was already being computed here and printed two
+  // sections down as "Rate of change", so the report was showing both numbers
+  // and quoting the fragile one.
+  const weightDetail = analyseWeight(wRows);
+  const estMaintenance = (weight && weight.spanDays >= 14 && daysLogged >= 7 && weightDetail?.slopePerDay != null)
+    ? Math.round(avg.calories - weightDetail.slopePerDay * 7700)
     : null;
 
   return {
     from, to, days,
     summary: { daysInRange, daysLogged, avg },
     goals, vsGoal, adherence, weight, estMaintenance, goalChanges, historyFrom, inProgressDay,
-    weightDetail: analyseWeight(wRows),
+    weightDetail,
     phase: ctx.phase || null,
     tdee:  ctx.tdee ?? null,
   };
@@ -755,7 +768,7 @@ function toCsv(report) {
   if (report.tdee != null) lines.push(kv('Set maintenance / TDEE (kcal)', report.tdee));
   if (report.estMaintenance != null) {
     lines.push(kv('Estimated maintenance from this range (kcal)', report.estMaintenance));
-    lines.push(kv('How that was derived', 'Average intake minus weight change x 7700 / days. Counts every logged day; Trends excludes under-logged days and uses a fixed 28-day window, so the two can differ.'));
+    lines.push(kv('How that was derived', 'Average intake minus the least-squares weight trend x 7700. The trend is fitted across every weigh-in rather than taken from the first and last, so one water-weight morning cannot set the answer. Counts every logged day; Trends excludes under-logged days and uses a fixed 28-day window, so the two can differ.'));
   }
   if (weight) {
     lines.push(kv('Weight start (kg)', `${weight.first.weight_kg} on ${weight.first.date}`));
@@ -853,7 +866,7 @@ function toMarkdown(report) {
     if (report.tdee != null) lines.push(`| Set maintenance (TDEE) | ${kcal(report.tdee)} kcal |`);
     if (report.estMaintenance != null) {
       lines.push(`| Maintenance implied by this range | ${kcal(report.estMaintenance)} kcal |`);
-      lines.push('', '_Implied maintenance = average intake corrected for weight change (1 kg ≈ 7,700 kcal). It counts every logged day, where the Trends figure drops under-logged days and uses a fixed 28-day window — so the two can differ._');
+      lines.push('', '_Implied maintenance = average intake corrected for the weight trend (1 kg ≈ 7,700 kcal). The trend is the least-squares fit across every weigh-in — not the first and last readings — so a day of water weight can\'t set the figure. It counts every logged day, where the Trends figure drops under-logged days and uses a fixed 28-day window, so the two can differ._');
     }
   }
   if (weight) {
@@ -971,7 +984,7 @@ function toHtml(report) {
       ${report.tdee != null ? `<tr><td>Set maintenance (TDEE)</td><td>${kcal(report.tdee)} kcal</td></tr>` : ''}
       ${report.estMaintenance != null ? `<tr><td>Maintenance implied by this range</td><td>${kcal(report.estMaintenance)} kcal</td></tr>` : ''}
     </tbody></table>
-    ${report.estMaintenance != null ? `<p class="note">Implied maintenance is average intake corrected for weight change (1&nbsp;kg ≈ 7,700&nbsp;kcal). It counts every logged day, where the figure on Trends drops under-logged days and uses a fixed 28-day window — so the two can legitimately differ.</p>` : ''}
+    ${report.estMaintenance != null ? `<p class="note">Implied maintenance is average intake corrected for the weight <em>trend</em> (1&nbsp;kg ≈ 7,700&nbsp;kcal). The trend is the least-squares fit across every weigh-in rather than the first and last readings, so a single morning of water weight can't set the figure. It counts every logged day, where the figure on Trends drops under-logged days and uses a fixed 28-day window — so the two can legitimately differ.</p>` : ''}
   </section>`;
 
   const wd = report.weightDetail;
