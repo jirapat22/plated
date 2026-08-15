@@ -3,6 +3,8 @@
 // carbs take whatever calories are left, so the goals have to be re-derived
 // whenever the weight or the calorie goal moves — see recalcMacroGoals.
 
+const { localDayOf, tzFor } = require('./tz');
+
 const KCAL = { protein: 4, carbs: 4, fat: 9 };
 const TREND_WINDOW = 7;
 // Only weigh-ins this recent are averaged. stats.js guards the frontend copy
@@ -38,7 +40,10 @@ function trendWeight(db, pid) {
       ORDER BY date DESC LIMIT $n
     ) ORDER BY date ASC
   `);
-  const since = new Date(Date.now() - TREND_MAX_AGE_DAYS * 864e5).toISOString().slice(0, 10);
+  // weight_log.date is a LOCAL calendar day, so the cutoff has to be one too.
+  // toISOString() gives the UTC day — behind local by one for half of every day
+  // in NZ — which quietly made this a 31-day window rather than 30.
+  const since = localDayOf(new Date(Date.now() - TREND_MAX_AGE_DAYS * 864e5).toISOString(), tzFor(db, pid));
 
   const rows = pick.all({ p: pid, n: TREND_WINDOW, since });
   if (rows.length) return rows.reduce((s, r) => s + r.weight_kg, 0) / rows.length;

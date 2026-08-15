@@ -1024,7 +1024,15 @@ export function renderSettings(container) {
       try {
         const result = await api.post('/api/settings/import', data);
         const im = result.imported;
-        showToast(`Restored ${im.entries} food entries, ${im.weight} weigh-ins${im.batches ? `, ${im.batches} batches` : ''}`, 'success');
+        // Name everything that actually came back. The restore quietly reinstates
+        // waist history and "I ate light" confirmations now — saying so is how
+        // someone can tell a complete restore from a partial one, which is the
+        // moment they'd want to know.
+        const bits = [`${im.entries} food entries`, `${im.weight} weigh-ins`];
+        if (im.batches)      bits.push(`${im.batches} batches`);
+        if (im.measurements) bits.push(`${im.measurements} waist readings`);
+        if (im.day_notes)    bits.push(`${im.day_notes} day notes`);
+        showToast(`Restored ${bits.join(', ')}`, 'success');
         window.dispatchEvent(new CustomEvent('plated:settings-changed'));
       } catch (err) {
         showToast(err.message, 'error');

@@ -205,6 +205,21 @@ router.get('/export', (req, res) => {
       // to being judged against a target set afterwards. Unrecoverable, because
       // nothing else in the file records what you were aiming at and when.
       goal_history:  db.prepare('SELECT * FROM goal_history WHERE profile_id = $pid ORDER BY effective_from').all({ pid }),
+      // Waist history. Never captured, so restoring onto a new device or a fresh
+      // DB lost the whole series — and it is the one measurement that keeps
+      // meaning something when the scale is arguing with you.
+      measurements:  db.prepare('SELECT date, waist_cm, logged_at FROM measurements WHERE profile_id = $pid ORDER BY date').all({ pid }),
+      // The "I ate light, this day is fine" confirmations. THE dangerous gap:
+      // "Clear all logged data" deletes these and the export did not carry them,
+      // so export -> clear -> import silently un-confirmed every day. Those days
+      // go back to counting as under-logged, which drops them from the 28-day
+      // intake average behind the maintenance estimate — so a restore quietly
+      // changed a number the user makes decisions on.
+      daily_overrides: db.prepare('SELECT date, key, value FROM daily_overrides WHERE profile_id = $pid').all({ pid }),
+      // Use counts and last portion sizes. Not data you'd mourn, but it is what
+      // makes logging fast — without it "recent foods" is empty and every
+      // quantity sheet forgets the portion you always take.
+      food_stats:    db.prepare('SELECT food_id, use_count, last_used, last_qty_g FROM profile_food_stats WHERE profile_id = $pid').all({ pid }),
       settings:      allSettings(db, pid),
     };
     const filename = `plated-export-${new Date().toISOString().split('T')[0]}.json`;
@@ -241,6 +256,9 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
     // existed leaves the history you have alone rather than wiping it to match
     // a file that never knew about it.
     const goal_history  = Array.isArray(body.goal_history) ? body.goal_history : null;
+    const measurements  = Array.isArray(body.measurements) ? body.measurements : null;
+    const overrides     = Array.isArray(body.daily_overrides) ? body.daily_overrides : null;
+    const foodStats     = Array.isArray(body.food_stats) ? body.food_stats : null;
     const settings      = (body.settings && typeof body.settings === 'object') ? body.settings : {};
 
     if (!body.exported_at || !Array.isArray(body.meal_sessions)) {
@@ -251,12 +269,17 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
     let entriesImported = 0;
     let batchesImported = 0;
     let goalRowsImported = 0;
+    let measurementsImported = 0;
+    let overridesImported = 0;
     db.exec('BEGIN');
     try {
       const findFood = db.prepare('SELECT id FROM foods WHERE name = $name AND brand IS $brand');
+      // hidden rides along: a deleted batch's backing food is hidden, not
+      // removed, so history keeps rendering. Dropping the flag on import
+      // resurrected those into food search as strays.
       const insertFood = db.prepare(`
-        INSERT INTO foods (name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, serving_size_g, source, created_by_profile)
-        VALUES ($name, $brand, $cal, $pro, $carb, $fat, $fiber, $serv, $source, $pid)
+        INSERT INTO foods (name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, serving_size_g, source, created_by_profile, hidden)
+        VALUES ($name, $brand, $cal, $pro, $carb, $fat, $fiber, $serv, $source, $pid, $hidden)
       `);
       const foodIdMap = new Map();
       for (const f of foods) {
@@ -268,7 +291,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
           cal: f.calories_per_100g ?? null, pro: f.protein_per_100g ?? null,
           carb: f.carbs_per_100g ?? null, fat: f.fat_per_100g ?? null,
           fiber: f.fiber_per_100g ?? null, serv: f.serving_size_g ?? 100,
-          source: f.source || 'custom', pid,
+          source: f.source || 'custom', pid, hidden: f.hidden ? 1 : 0,
         }).lastInsertRowid;
         foodIdMap.set(f.id, newId);
         foodsAdded++;
@@ -338,7 +361,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
             fid = insertFood.run({
               name: b.name, brand: null,
               cal: per('calories'), pro: per('protein'), carb: per('carbs'),
-              fat: per('fat'), fiber: per('fiber'), serv: 100, source: 'batch', pid,
+              fat: per('fat'), fiber: per('fiber'), serv: 100, source: 'batch', pid, hidden: 0,
             }).lastInsertRowid;
           }
           insBatch.run({
@@ -374,6 +397,47 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
         }
       }
 
+      const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v ?? ''));
+
+      if (measurements) {
+        db.prepare('DELETE FROM measurements WHERE profile_id = $pid').run({ pid });
+        const insM = db.prepare(`INSERT OR REPLACE INTO measurements (profile_id, date, waist_cm, logged_at)
+          VALUES ($pid, $d, $w, COALESCE($at, datetime('now')))`);
+        for (const m of measurements) {
+          const w = parseFloat(m.waist_cm);
+          // Same 40-200 cm band the POST route enforces — an import is no more
+          // trusted than a form, and a 32 typed for inches would render a chart
+          // nobody can read.
+          if (!isDate(m.date) || !(w >= 40 && w <= 200)) continue;
+          insM.run({ pid, d: m.date, w: Math.round(w * 10) / 10, at: m.logged_at ?? null });
+          measurementsImported++;
+        }
+      }
+
+      if (overrides) {
+        db.prepare('DELETE FROM daily_overrides WHERE profile_id = $pid').run({ pid });
+        const insO = db.prepare('INSERT OR REPLACE INTO daily_overrides (profile_id, date, key, value) VALUES ($pid, $d, $k, $v)');
+        for (const o of overrides) {
+          if (!isDate(o.date) || !o.key) continue;
+          insO.run({ pid, d: o.date, k: String(o.key), v: o.value == null ? null : String(o.value) });
+          overridesImported++;
+        }
+      }
+
+      if (foodStats) {
+        db.prepare('DELETE FROM profile_food_stats WHERE profile_id = $pid').run({ pid });
+        const insS = db.prepare(`INSERT OR REPLACE INTO profile_food_stats (profile_id, food_id, use_count, last_used, last_qty_g)
+          VALUES ($pid, $fid, $n, $at, $q)`);
+        for (const s of foodStats) {
+          // Food ids are per-database, so these remap the same way meal_entries
+          // do. A stat whose food didn't come across is dropped rather than
+          // pointed at whatever now holds that id.
+          const fid = s.food_id != null ? foodIdMap.get(s.food_id) : null;
+          if (fid == null) continue;
+          insS.run({ pid, fid, n: s.use_count ?? 1, at: s.last_used ?? null, q: s.last_qty_g ?? null });
+        }
+      }
+
       const setSetting = db.prepare('INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)');
       for (const [key, value] of Object.entries(settings)) {
         if (ALLOWED.has(key) && value != null) setSetting.run({ pid, key, value: String(value) });
@@ -392,7 +456,9 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
 
     res.json({
       success: true,
-      imported: { meals: meal_sessions.length, entries: entriesImported, weight: weight_log.length, foods_added: foodsAdded, batches: batchesImported, goal_rows: goalRowsImported },
+      imported: { meals: meal_sessions.length, entries: entriesImported, weight: weight_log.length,
+        foods_added: foodsAdded, batches: batchesImported, goal_rows: goalRowsImported,
+        measurements: measurementsImported, day_notes: overridesImported },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

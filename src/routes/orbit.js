@@ -1,5 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
+const { tzFor } = require('../utils/tz');
 
 const router = express.Router();
 
@@ -9,6 +10,13 @@ const router = express.Router();
 // yesterday's totals as "today" for roughly half of every day. Intl handles
 // NZST/NZDT DST transitions correctly, unlike a fixed UTC+12/+13 offset.
 // Override with ORBIT_TZ if this is ever run for a non-NZ user.
+// Only the FALLBACK now, for a profile that has no timezone of its own. Each
+// profile's rows are read in that profile's zone — this file was missed when
+// timezones went per-profile, and it was the one place left asserting that
+// everybody lives in New Zealand. One profile is in Asia/Bangkok, five hours
+// behind: for those five hours every day the feed labelled her rows with the NZ
+// date, so her "today" read 0 while her real today was still filed under the
+// day the feed was calling yesterday.
 const ORBIT_TZ = process.env.ORBIT_TZ?.trim() || 'Pacific/Auckland';
 const isoInTz = (date, tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(date);
 
@@ -70,8 +78,7 @@ function lastActive(db, pid) {
 router.get('/', (req, res) => {
   try {
     const db = getDb();
-    const today     = isoInTz(new Date(), ORBIT_TZ);
-    const yesterday = isoInTz(new Date(Date.now() - 864e5), ORBIT_TZ);
+    const now = Date.now();
 
     const profiles = db.prepare(
       'SELECT id, name, accent_color, created_at FROM profiles ORDER BY id ASC'
@@ -85,6 +92,10 @@ router.get('/', (req, res) => {
     const users = profiles.map(p => {
       const goalsRows = getGoals.all({ pid: p.id });
       const g = Object.fromEntries(goalsRows.map(r => [r.key, parseFloat(r.value) || null]));
+      // This profile's own day boundary, not the server's and not NZ's.
+      const tz        = tzFor(db, p.id);
+      const today     = isoInTz(new Date(now), tz);
+      const yesterday = isoInTz(new Date(now - 864e5), tz);
       return {
         id:           p.id,
         name:         p.name,
@@ -97,6 +108,7 @@ router.get('/', (req, res) => {
           carbs:    g.carb_goal    ?? null,
           fat:      g.fat_goal     ?? null,
         },
+        timezone:  tz,
         today:     { date: today,     ...dayTotals(db, p.id, today) },
         yesterday: { date: yesterday, ...dayTotals(db, p.id, yesterday) },
       };

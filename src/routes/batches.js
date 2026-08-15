@@ -130,35 +130,58 @@ router.post('/:id/portion', (req, res) => {
       const own = db.prepare('SELECT 1 FROM meal_sessions WHERE id = $s AND profile_id = $p').get({ s: sid, p: req.profileId });
       if (!own) sid = null;
     }
-    if (!sid) {
-      const idx = db.prepare('SELECT COALESCE(MAX(meal_index), -1) + 1 AS i FROM meal_sessions WHERE date = $d AND profile_id = $p').get({ d: date, p: req.profileId }).i;
-      sid = db.prepare('INSERT INTO meal_sessions (date, name, meal_index, profile_id) VALUES ($d, $n, $i, $p)')
-        .run({ d: date, n: b.name, i: idx, p: req.profileId }).lastInsertRowid;
-    }
-
     const r = grams / b.cooked_g;
     const m = k => round1((b[k] || 0) * r);
-    db.prepare(`INSERT INTO meal_entries (meal_session_id, food_id, quantity_g, calories, protein, carbs, fat, fiber)
-      VALUES ($s, $f, $q, $cal, $p, $c, $ft, $fb)`).run({
-      s: sid, f: b.food_id, q: round1(grams), cal: m('calories'), p: m('protein'), c: m('carbs'), ft: m('fat'), fb: m('fiber'),
-    });
-
     const remaining = Math.max(0, round1(b.remaining_g - grams));
-    db.prepare('UPDATE batches SET remaining_g = $r WHERE id = $id').run({ r: remaining, id: b.id });
 
-    // Every other entry-creation path bumps use_count/last_used (meals.js) —
-    // batch portions skipped it, so a food you eat from a batch weekly never
-    // showed up under "recent" the way the same food logged manually would.
-    if (b.food_id) {
-      db.prepare(`
-        INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used, last_qty_g)
-        VALUES ($pid, $fid, 1, datetime('now'), $qty)
-        ON CONFLICT(profile_id, food_id)
-        DO UPDATE SET use_count = use_count + 1, last_used = datetime('now'),
-                      last_qty_g = excluded.last_qty_g
-      `).run({ pid: req.profileId, fid: b.food_id, qty: round1(grams) });
+    // Creating the meal, logging the entry, taking the stock off and recording
+    // the use are one act. Ungrouped, a failure partway left the portion logged
+    // against a batch that still claimed to hold the food — free calories, and
+    // a stock number nobody would think to doubt — or an empty meal session with
+    // nothing in it. PATCH on this same resource already worked this way.
+    //
+    // ponytail: safe from double-spend only because this handler is fully
+    // synchronous. node:sqlite is sync and nothing awaits between reading
+    // remaining_g and writing it, so two taps cannot interleave. Introduce an
+    // await in here and that stops being true — the fix then is
+    // `remaining_g = MAX(0, remaining_g - $g)` computed in SQL rather than an
+    // absolute value derived from a stale read.
+    db.exec('BEGIN');
+    try {
+      if (!sid) {
+        const idx = db.prepare('SELECT COALESCE(MAX(meal_index), -1) + 1 AS i FROM meal_sessions WHERE date = $d AND profile_id = $p').get({ d: date, p: req.profileId }).i;
+        sid = db.prepare('INSERT INTO meal_sessions (date, name, meal_index, profile_id) VALUES ($d, $n, $i, $p)')
+          .run({ d: date, n: b.name, i: idx, p: req.profileId }).lastInsertRowid;
+      }
+
+      db.prepare(`INSERT INTO meal_entries (meal_session_id, food_id, quantity_g, calories, protein, carbs, fat, fiber)
+        VALUES ($s, $f, $q, $cal, $p, $c, $ft, $fb)`).run({
+        s: sid, f: b.food_id, q: round1(grams), cal: m('calories'), p: m('protein'), c: m('carbs'), ft: m('fat'), fb: m('fiber'),
+      });
+
+      db.prepare('UPDATE batches SET remaining_g = $r WHERE id = $id').run({ r: remaining, id: b.id });
+
+      // Every other entry-creation path bumps use_count/last_used (meals.js) —
+      // batch portions skipped it, so a food you eat from a batch weekly never
+      // showed up under "recent" the way the same food logged manually would.
+      if (b.food_id) {
+        db.prepare(`
+          INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used, last_qty_g)
+          VALUES ($pid, $fid, 1, datetime('now'), $qty)
+          ON CONFLICT(profile_id, food_id)
+          DO UPDATE SET use_count = use_count + 1, last_used = datetime('now'),
+                        last_qty_g = excluded.last_qty_g
+        `).run({ pid: req.profileId, fid: b.food_id, qty: round1(grams) });
+      }
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
     }
 
+    // logged_g is the CLAMPED amount, which can be less than what was asked for
+    // when the batch is nearly empty. The client shows this figure rather than
+    // the request, so "log 300g" from a batch with 90g left reads as 90g.
     res.status(201).json({ logged_g: round1(grams), remaining_g: remaining });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
