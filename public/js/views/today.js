@@ -462,7 +462,6 @@ export function renderToday(container) {
         mealsList.appendChild(renderMealCard(session, viewDate, {
           showTime: true,
           showMoveToday: false,   // always today — nothing to "move to today"
-          showPullIn: true,
           showQuickLog: true,
         }, () => load()));
       });

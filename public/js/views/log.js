@@ -7,6 +7,11 @@ import { getFoodIcon }                    from '../utils/foodIcon.js';
 import { openPortion }                    from './batches.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+// Move: an arrow travelling into a wall. Stroked at 1.7 to match the nav and
+// ring icons rather than adding another emoji to a row that has two already —
+// and shaped to say "send this away", where the ⧉ beside it says "duplicate".
+const ICON_MOVE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M4 12h11M11 7.5l4.5 4.5L11 16.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M19.5 5v14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 const fmt = (n, dec = 0) => n == null ? '–' : Number(n).toFixed(dec);
 
 function formatTime(iso) {
@@ -223,75 +228,69 @@ export function openRenameSession(sessionId, currentName, onSuccess) {
   });
 }
 
-// ── Copy past meal (pull foods from a meal in the last 7 days) ─
-export function openCopyPastMeal(targetSessionId, onSuccess) {
-  showSheet(async content => {
-    content.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-muted)">Loading past meals…</div>`;
+// ── Move a meal to another day ────────────────────────────────
+// A move, not a copy: the session keeps its id, name and entries and simply
+// stops being on this date. The server recalculates meal_index on the target
+// day so it can't collide with what is already there.
+//
+// Its own sheet rather than destinationSheet's: that one is copy-shaped —
+// forward-only dates and a "Copy into" target list — and a move needs the
+// opposite emphasis. The reason to move a meal is almost always that it landed
+// on the wrong day, so the past is what matters and stays open-ended, while
+// forward stops at +7 like every other date picker here.
+export function openMoveMeal(session, viewDate, onDone) {
+  showSheet(content => {
+    const today = localDate();
+    const n = (session.entries || []).length;
+    // Yesterday first: "I logged this on the wrong day" is the case this exists
+    // for, and the wrong day is usually the one just gone.
+    const choices = [addDaysIso(today, -1), today, addDaysIso(today, 1), addDaysIso(today, -2), addDaysIso(today, -3)]
+      .filter(d => d !== viewDate);     // moving it to where it already is does nothing
+    const label = iso => iso === today ? 'Today'
+      : iso === addDaysIso(today, -1) ? 'Yesterday'
+      : iso === addDaysIso(today, 1)  ? 'Tomorrow'
+      : new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
-    const days = Array.from({ length: 7 }, (_, i) => addDaysIso(localDate(), -(i + 1)));
-    const dayResults = await Promise.all(days.map(d => api.get(`/api/meals/day/${d}`).catch(() => null)));
-
-    const sessions = [];
-    dayResults.forEach((data, i) => {
-      (data?.sessions || []).forEach(s => {
-        if (s.entries.length > 0) sessions.push({ ...s, date: days[i] });
-      });
-    });
-
-    const ul = unitLabel();
     content.innerHTML = `
       <div class="sheet-header">
-        <span class="sheet-title">♻️ Copy past meal</span>
-        <button class="sheet-close" id="cp-close">✕</button>
+        <span class="sheet-title">Move meal</span>
+        <button class="sheet-close" id="mv-close">✕</button>
       </div>
-      ${sessions.length === 0
-        ? '<div class="empty-state"><div class="empty-text">No past meals to copy from</div></div>'
-        : sessions.map((s, idx) => {
-            const kcal = s.entries.reduce((sum, e) => sum + (e.calories || 0), 0);
-            return `
-              <button class="food-list-item cp-session" data-idx="${idx}"
-                style="width:100%;text-align:left">
-                <div style="font-size:20px;width:36px;text-align:center">🍽</div>
-                <div class="food-list-info">
-                  <div class="food-list-name">${esc(s.name)}</div>
-                  <div style="font-size:12px;color:var(--text-muted)">${s.date} · ${s.entries.length} items · ${fmtE(kcal)} ${ul}</div>
-                </div>
-              </button>`;
-          }).join('')
-      }
-    `;
+      <div style="padding:0 16px">
+        <div style="font-size:15px;font-weight:600">${esc(session.name || 'Meal')}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${n} food${n === 1 ? '' : 's'} · moves off ${esc(viewDate)}, nothing is left behind</div>
+        <label class="form-label">Move to</label>
+        <div style="display:flex;flex-direction:column;gap:6px;margin:6px 0 14px">
+          ${choices.map(d => `<button class="mv-day btn btn-secondary" data-date="${d}" style="justify-content:flex-start">${label(d)}</button>`).join('')}
+        </div>
+        <button type="button" id="mv-custom-toggle" style="font-size:12px;color:var(--accent);font-weight:600;padding:2px 0">Pick another date…</button>
+        <input class="input" id="mv-custom" type="date" max="${addDaysIso(today, 7)}" style="display:none;margin-top:10px"/>
+      </div>`;
 
-    document.getElementById('cp-close').addEventListener('click', hideSheet);
+    document.getElementById('mv-close').addEventListener('click', hideSheet);
 
-    content.querySelectorAll('.cp-session').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const s = sessions[parseInt(btn.dataset.idx)];
-        btn.style.opacity = '0.5';
-        // allSettled, not all — these fire concurrently, so if one entry 404s
-        // (e.g. its food was deleted since this list loaded) the others have
-        // already gone through server-side. Promise.all would reject and show
-        // a plain "failed" toast implying nothing happened, and a user who
-        // retried on that assumption would duplicate the ones that succeeded.
-        const results = await Promise.allSettled(s.entries.map(e =>
-          api.post(`/api/meals/sessions/${targetSessionId}/entries`, {
-            food_id: e.food_id, quantity_g: e.quantity_g,
-          })
-        ));
-        const okCount = results.filter(r => r.status === 'fulfilled').length;
-        const failCount = results.length - okCount;
-        if (failCount === 0) {
-          hideSheet();
-          showToast(`Copied ${okCount} foods from ${s.name}`, 'success');
-          onSuccess?.();
-        } else if (okCount > 0) {
-          hideSheet();
-          showToast(`Copied ${okCount} of ${results.length} — ${failCount} couldn't be copied (may have been removed)`, 'error');
-          onSuccess?.();   // some entries did land — refresh so the view isn't stale
-        } else {
-          showToast('Could not copy any foods from that meal', 'error');
-          btn.style.opacity = '1';
-        }
-      });
+    async function move(date) {
+      if (date === viewDate) { hideSheet(); return; }
+      try {
+        await api.patch(`/api/meals/sessions/${session.id}`, { date });
+        hideSheet();
+        showToast(`"${session.name || 'Meal'}" moved to ${date === today ? 'today' : date}`, 'success');
+        onDone?.();
+      } catch (err) { showToast(err.message, 'error'); }
+    }
+
+    content.querySelectorAll('.mv-day').forEach(b =>
+      b.addEventListener('click', () => move(b.dataset.date)));
+
+    const toggle = document.getElementById('mv-custom-toggle');
+    const custom = document.getElementById('mv-custom');
+    toggle.addEventListener('click', () => {
+      const opening = custom.style.display === 'none';
+      custom.style.display = opening ? 'block' : 'none';
+      if (opening) custom.focus();
+    });
+    custom.addEventListener('change', () => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(custom.value)) move(custom.value);
     });
   });
 }
@@ -714,9 +713,13 @@ function showQuantitySheet(food, sessionId, onSuccess) {
 // ── Shared meal card: header (rename/copy/move/delete) + entry rows
 // (copy/edit/delete) + add-food footer. Used by both Today and History so
 // the two views can't drift into different UX for the same actions.
-//   opts: { showTime, showMoveToday, showPullIn, showQuickLog }
+//   opts: { showTime, showMoveToday, showQuickLog }
+// showMoveToday is the one-tap "→ Today" shortcut History puts on past meals.
+// It is deliberately kept alongside the general Move button: "I logged this on
+// the wrong day" is the reason people move a meal, and today is nearly always
+// where it belongs, so the common case stays one tap.
 export function renderMealCard(session, viewDate, opts = {}, onDone) {
-  const { showTime = false, showMoveToday = false, showPullIn = false, showQuickLog = false } = opts;
+  const { showTime = false, showMoveToday = false, showQuickLog = false } = opts;
   const ul = unitLabel();
   const sessionKcal    = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
   const sessionProtein = Math.round(session.entries.reduce((s, e) => s + (e.protein || 0), 0));
@@ -741,7 +744,7 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
           style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">
           → Today
         </button>` : ''}
-        ${showPullIn ? `<button class="session-copy-btn" title="Pull a past meal in" style="color:var(--text-faint);padding:4px;font-size:15px">♻️</button>` : ''}
+        <button class="session-move-day-btn" title="Move this meal to another day" style="color:var(--text-faint);padding:4px;display:inline-flex;align-items:center">${ICON_MOVE}</button>
         <button class="session-copyout-btn" title="Copy this meal to…" style="color:var(--text-faint);padding:4px;font-size:14px">⧉</button>
         <button class="session-del-btn" title="Delete" style="color:var(--text-faint);padding:4px">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -824,9 +827,7 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
   sessionEl.querySelector('.session-rename-btn').addEventListener('click', () =>
     openRenameSession(session.id, session.name, onDone)
   );
-  if (showPullIn) {
-    sessionEl.querySelector('.session-copy-btn').addEventListener('click', () => openCopyPastMeal(session.id, onDone));
-  }
+  sessionEl.querySelector('.session-move-day-btn').addEventListener('click', () => openMoveMeal(session, viewDate, onDone));
   sessionEl.querySelector('.session-copyout-btn').addEventListener('click', () => openCopyMeal(session, viewDate, onDone));
   sessionEl.querySelector('.session-del-btn').addEventListener('click', async () => {
     if (!confirm(`Delete "${session.name}" and all its entries?`)) return;
