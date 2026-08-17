@@ -27,16 +27,25 @@
      Per THEME rather than one fixed set — light mode's bases are already dark,
      so a single value would come out lighter than the base there and invert the
      whole signal. */
-  --accent-over:  #8b5cf6;   /* vivid violet over the pale lavender (2.4:1 on its base, 4.3:1 on the card) */
-  --success-over: #0f8a52;   /* #15a862 measured only 1.5:1 against its own base — too close to read as a change */
-  --warning-over: #f97316;   /* eaten into the workout allowance */
-  /* The workout ring's TRACK: the allowance you earned. Full-strength --warning
-     sat at 1.6:1 against the orange drawn over it, which is not a difference a
-     low-vision reader can rely on. This is amber composited toward the card
-     (50% in dark, 75% in light — the adjustments run OPPOSITE ways because
-     dimming toward a dark card darkens and toward a white one lightens) and is
-     a token rather than an opacity so the value is the same wherever it lands. */
-  --warning-track: #8b6531;
+  /* ── Calorie rings ──
+     Scoped to the rings on purpose: --accent stays exactly as it is, because
+     it is the app's colour in 28 other places and none of them asked to move.
+     Only the three arcs are tuned, and only relative to each other.
+
+     Built by holding perceptual lightness and chroma CONSTANT and varying only
+     hue, which is what makes different hues read as one family. The old set was
+     three colours that happened to share a card: measured in OKLCH the base
+     arcs spread L 0.286 (lavender at L 0.82, workout track at L 0.54) where a
+     family holds together under about 0.06. This set spreads L 0.001.
+     The hues themselves are untouched — violet, green and orange each mean
+     something here (goal, eat target, burn) and that meaning is the point. */
+  --ring-goal:         #beadfb;   /* L .79 C .11 H 294 */
+  --ring-target:       #7ed09c;   /* L .79 C .11 H 155 */
+  --ring-workout:      #e6af67;   /* L .79 C .11 H  73 — the allowance you earned */
+  /* Past this point: same hues, one step down in lightness and up in chroma. */
+  --ring-goal-over:    #8867da;   /* L .60 C .17 */
+  --ring-target-over:  #009c50;   /* L .61 C .16 */
+  --ring-workout-over: #cd5800;   /* L .60 C .17 — eaten into the allowance */
   --error:        #ff6b6b;
   --on-accent:    #0d0d0f;   /* ink that sits on top of an --accent fill */
   --gold:         #ffd166;   /* favourite star / favourited row edge */
@@ -88,10 +97,14 @@
   --over:         #c2410c;
   /* Darker again, because these bases already are. #8b5cf6 would read LIGHTER
      than light mode's #6b4fd6 accent and say the opposite of what it means. */
-  --accent-over:  #4c1d95;
-  --success-over: #14532d;
-  --warning-over: #9a3412;
-  --warning-track: #b88740;
+  /* Same construction, pitched dark-on-white instead of light-on-dark:
+     bases at L .58, exceeded at L .40. Spread L 0.002. */
+  --ring-goal:         #7f69bf;
+  --ring-target:       #249057;
+  --ring-workout:      #a86c00;
+  --ring-goal-over:    #4f2f8f;
+  --ring-target-over:  #005928;
+  --ring-workout-over: #832000;
   --error:        #d64545;
   --on-accent:    #ffffff;
   --gold:         #a97900;
@@ -315,7 +328,7 @@ img { display: block; max-width: 100%; }
 .ring-bg { fill: none; stroke: var(--surface-2); stroke-width: 10; }
 .ring-fill {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--ring-goal);
   stroke-width: 10;
   stroke-linecap: round;
   /* stroke-dasharray set via inline style= so CSS cannot override it */
@@ -329,8 +342,8 @@ img { display: block; max-width: 100%; }
    (The comment above calRingSvg claimed it used --over. It never did.)
    Still physically thicker so the boundary is findable without relying on
    colour alone — which is the part that has to keep working at 200% zoom. */
-.ring-fill.ring-over         { stroke: var(--accent-over);  stroke-width: 13; filter: drop-shadow(0 0 5px var(--accent-over)); }
-.ring-fill.target.ring-over  { stroke: var(--success-over); stroke-width: 13; filter: drop-shadow(0 0 5px var(--success-over)); }
+.ring-fill.ring-over         { stroke: var(--ring-goal-over);   stroke-width: 13; filter: drop-shadow(0 0 5px var(--ring-goal-over)); }
+.ring-fill.target.ring-over  { stroke: var(--ring-target-over); stroke-width: 13; filter: drop-shadow(0 0 5px var(--ring-target-over)); }
 .ring-center {
   position: absolute;
   top: 50%; left: 50%;
@@ -382,9 +395,13 @@ img { display: block; max-width: 100%; }
    much of it have you eaten" without ever showing how much there was.
    .earned only goes on when a workout actually exists: a full amber circle on
    a rest day would claim calories that were never earned. */
-.ring-bg.earned    { stroke: var(--warning-track); }
-.ring-fill.workout { stroke: var(--warning-over); }
-.ring-fill.target  { stroke: var(--success); }
+/* The earned track no longer needs dimming to separate from the fill it sits
+   under. It did when both were pinned to --warning/#f97316 at nearly the same
+   lightness (1.6:1); with the fill moved a full step down in the family, a
+   proper bright amber clears it at 2.1:1 and joins the other two bases. */
+.ring-bg.earned    { stroke: var(--ring-workout); }
+.ring-fill.workout { stroke: var(--ring-workout-over); }
+.ring-fill.target  { stroke: var(--ring-target); }
 .ring-kcal-sm { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .ring-goal-sm { font-size: 9px; color: var(--text-muted); }
 
