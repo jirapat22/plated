@@ -273,19 +273,57 @@ router.post('/sync', async (req, res) => {
       db.prepare('INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)')
         .run({ pid, key, value: String(value) });
     };
+    const getSetting = key => profileSetting(pid, key);
 
     const updates = {};
 
     if (p.tdee)         { setSetting('tdee',         p.tdee);         updates.tdee         = p.tdee;         }
     if (p.bodyweight)   { setSetting('bodyweight_kg', p.bodyweight);                                         updates.bodyweight_kg = p.bodyweight; }
-    if (p.calorie_goal) { setSetting('calorie_goal',  p.calorie_goal); updates.calorie_goal = p.calorie_goal; }
     if (p.protein_goal) { setSetting('protein_goal',  p.protein_goal); updates.protein_goal = p.protein_goal; }
     if (p.carb_goal)    { setSetting('carb_goal',     p.carb_goal);    updates.carb_goal    = p.carb_goal;    }
     if (p.fat_goal)     { setSetting('fat_goal',      p.fat_goal);     updates.fat_goal     = p.fat_goal;     }
     if (p.fiber_goal)   { setSetting('fiber_goal',    p.fiber_goal);   updates.fiber_goal   = p.fiber_goal;   }
-    if (p.phase && ['cut','maintain','bulk'].includes(p.phase)) {
-      setSetting('phase', p.phase);
-      updates.phase = p.phase;
+
+    // ── Who owns what ───────────────────────────────────────────────────────
+    // IronLog owns TDEE and bodyweight: it measures them. Plated owns phase and
+    // deficit: you choose them here, in the Goal Phase UI, and POST /phase
+    // already derives the calorie goal from tdee + your phase + your deficit
+    // via phaseCalories(). The goal is DERIVED, never stored independently.
+    //
+    // This route used to ignore all of that and write IronLog's phase and
+    // calorie_goal verbatim. Live example: IronLog reported goal "maintain" and
+    // calorie_goal 2043 while this profile was cutting at 1743 with a 300
+    // deficit. One tap on Sync would have flipped the phase to maintain and
+    // raised the goal by 300 — a deliberate cut undone silently, visible only
+    // as a goal_history row nobody was looking at. The scale would have shown
+    // it weeks later.
+    //
+    // So: adopt IronLog's phase only when this profile has never set one, and
+    // recompute the goal locally whenever we have a phase to compute it from.
+    // IronLog's calorie_goal is used only as the fallback for a profile with no
+    // phase of its own — a fresh connection with nothing local to preserve.
+    const localPhase = getSetting('phase');
+    const phase = ['cut', 'maintain', 'bulk'].includes(localPhase) ? localPhase
+      : (['cut', 'maintain', 'bulk'].includes(p.phase) ? p.phase : null);
+    if (phase && phase !== localPhase) { setSetting('phase', phase); updates.phase = phase; }
+
+    const tdeeNow = parseFloat(getSetting('tdee')) || null;
+    if (phase && tdeeNow) {
+      const deficit = parseFloat(getSetting('cut_deficit'))  || 500;
+      const surplus = parseFloat(getSetting('bulk_surplus')) || 300;
+      const goal = phaseCalories(tdeeNow, phase, deficit, surplus);
+      setSetting('calorie_goal', goal);
+      updates.calorie_goal = goal;
+      // Say so, so the Settings panel can show why the number is not the one
+      // IronLog sent — otherwise this reads as the sync quietly disagreeing.
+      updates.calorie_goal_source = 'derived';
+      if (p.calorie_goal && Math.round(p.calorie_goal) !== goal) {
+        updates.ironlog_calorie_goal = Math.round(p.calorie_goal);
+      }
+    } else if (p.calorie_goal) {
+      setSetting('calorie_goal', p.calorie_goal);
+      updates.calorie_goal = p.calorie_goal;
+      updates.calorie_goal_source = 'ironlog';
     }
 
     // Import bodyweight history from IronLog into the weight log (dedupe by date)

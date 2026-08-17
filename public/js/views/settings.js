@@ -846,6 +846,14 @@ export function renderSettings(container) {
         if (u.phase)        lines.push(`Phase: ${u.phase}`);
         if (u.tdee)         lines.push(`TDEE: ${fmtE(u.tdee)} ${unitLabel()}`);
         if (u.calorie_goal) lines.push(`Energy: ${fmtE(u.calorie_goal)} ${unitLabel()}`);
+        // Say where the goal came from. IronLog owns TDEE; your phase and
+        // deficit are yours, so the goal is worked out here rather than taken.
+        // Without this the sync just shows a number that disagrees with the one
+        // IronLog is showing you, and looks like it got it wrong.
+        if (u.calorie_goal_source === 'derived') {
+          lines.push(`<span style="color:var(--text-muted);font-size:11px">…kept your ${u.phase || 'phase'} and deficit${
+            u.ironlog_calorie_goal ? ` — IronLog suggested ${fmtE(u.ironlog_calorie_goal)}` : ''}</span>`);
+        }
         if (u.protein_goal) lines.push(`Protein: ${u.protein_goal}g`);
         if (u.carb_goal)    lines.push(`Carbs: ${u.carb_goal}g`);
         if (u.fat_goal)     lines.push(`Fat: ${u.fat_goal}g`);
