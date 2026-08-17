@@ -42,17 +42,21 @@ function ringTicks(count = 12) {
 }
 
 // Build one calorie ring SVG. variant: '' (goal, accent) | 'workout' | 'target'.
-// overflowPct (0-100): the exceeded portion, drawn on top in the darker --over
-// colour so only the slice past the goal is dark, not the whole ring.
+// overflowPct (0-100): the exceeded portion, drawn on top in that ring's own
+// hue, darker and more saturated (--*-over), so only the slice past the goal
+// changes rather than the whole ring.
 // ticks: draw the dial-bezel graduations — reserved for the primary ring so
 // the two side rings stay clean at their smaller physical size.
-function calRingSvg(pct, variant = '', small = false, overflowPct = 0, ticks = false) {
+// track: an extra class on the unfilled ring. 'earned' paints the workout
+// ring's track amber, which is what turns it from "how much have you eaten"
+// into "here is the allowance, and here is how much of it is gone".
+function calRingSvg(pct, variant = '', small = false, overflowPct = 0, ticks = false, track = '') {
   const base = (Math.min(pct, 100) / 100) * CIRC;
   const over = (Math.min(Math.max(overflowPct, 0), 100) / 100) * CIRC;
   return `
     <svg class="calorie-ring${small ? ' ring-sm' : ''}" viewBox="0 0 140 140">
       ${ticks ? ringTicks() : ''}
-      <circle class="ring-bg" cx="70" cy="70" r="60"/>
+      <circle class="ring-bg ${track}" cx="70" cy="70" r="60"/>
       <circle class="ring-fill ${variant}" cx="70" cy="70" r="60"
         style="stroke-dasharray:${base} ${CIRC}"/>
       ${over > 0 ? `<circle class="ring-fill ${variant} ring-over" cx="70" cy="70" r="60"
@@ -340,7 +344,7 @@ export function renderToday(container) {
             <div class="ring-col">
               <div class="ring-title">Workout</div>
               <div class="ring-wrap-relative">
-                ${calRingSvg(rightPct, 'workout', true, 0)}
+                ${calRingSvg(rightPct, 'workout', true, 0, false, hasWorkout ? 'earned' : '')}
                 <div class="ring-center">
                   <div class="num ring-kcal-sm">${fmtE(burned)} ${icon(ICON_FLAME, 12, -2)}</div>
                   <div class="ring-goal-sm">${hasWorkout ? 'burned' : 'rest day'}</div>

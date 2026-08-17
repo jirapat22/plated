@@ -22,6 +22,21 @@
   --success:      #5dca8a;
   --warning:      #ffb347;
   --over:         #cf6b41;   /* burnt orange — calories exceeded (5.0:1 on --surface) */
+  /* Ring "past this point" shades: a darker, more saturated version of each
+     ring's own hue. One rule for all three, so nothing has to be learned twice.
+     Per THEME rather than one fixed set — light mode's bases are already dark,
+     so a single value would come out lighter than the base there and invert the
+     whole signal. */
+  --accent-over:  #8b5cf6;   /* vivid violet over the pale lavender (2.4:1 on its base, 4.3:1 on the card) */
+  --success-over: #0f8a52;   /* #15a862 measured only 1.5:1 against its own base — too close to read as a change */
+  --warning-over: #f97316;   /* eaten into the workout allowance */
+  /* The workout ring's TRACK: the allowance you earned. Full-strength --warning
+     sat at 1.6:1 against the orange drawn over it, which is not a difference a
+     low-vision reader can rely on. This is amber composited toward the card
+     (50% in dark, 75% in light — the adjustments run OPPOSITE ways because
+     dimming toward a dark card darkens and toward a white one lightens) and is
+     a token rather than an opacity so the value is the same wherever it lands. */
+  --warning-track: #8b6531;
   --error:        #ff6b6b;
   --on-accent:    #0d0d0f;   /* ink that sits on top of an --accent fill */
   --gold:         #ffd166;   /* favourite star / favourited row edge */
@@ -71,6 +86,12 @@
   --success:      #267e4f;
   --warning:      #a05f00;
   --over:         #c2410c;
+  /* Darker again, because these bases already are. #8b5cf6 would read LIGHTER
+     than light mode's #6b4fd6 accent and say the opposite of what it means. */
+  --accent-over:  #4c1d95;
+  --success-over: #14532d;
+  --warning-over: #9a3412;
+  --warning-track: #b88740;
   --error:        #d64545;
   --on-accent:    #ffffff;
   --gold:         #a97900;
@@ -300,15 +321,16 @@ img { display: block; max-width: 100%; }
   /* stroke-dasharray set via inline style= so CSS cannot override it */
   transition: stroke-dasharray 600ms ease-out;
 }
-/* Overflow arc drawn on top of the base fill — only the exceeded slice, in
-   the SAME colour as the ring it's on. A glow alone was too subtle: it's
-   the identical colour drawn right over the base arc, so there was nothing
-   to distinguish besides a faint halo. Now it's also physically thicker
-   (bulges past the ring's own edge) plus a modest brightness bump — a real
-   boundary marker, not just a colour that's barely different. */
-.ring-fill.ring-over         { stroke: var(--accent);  stroke-width: 13; filter: brightness(1.25) drop-shadow(0 0 5px var(--accent)); }
-.ring-fill.target.ring-over  { stroke: var(--success); stroke-width: 13; filter: brightness(1.25) drop-shadow(0 0 5px var(--success)); }
-.ring-fill.workout.ring-over { stroke: var(--warning); stroke-width: 13; filter: brightness(1.25) drop-shadow(0 0 5px var(--warning)); }
+/* Overflow arc drawn on top of the base fill — only the exceeded slice, in a
+   darker, more saturated version of that ring's own hue.
+   It used to be the SAME token plus filter: brightness(1.25), which on a pale
+   #c8b8ff clipped to near-white: the slice that means "you went over" was the
+   lightest thing on the card, and read as a highlight rather than a warning.
+   (The comment above calRingSvg claimed it used --over. It never did.)
+   Still physically thicker so the boundary is findable without relying on
+   colour alone — which is the part that has to keep working at 200% zoom. */
+.ring-fill.ring-over         { stroke: var(--accent-over);  stroke-width: 13; filter: drop-shadow(0 0 5px var(--accent-over)); }
+.ring-fill.target.ring-over  { stroke: var(--success-over); stroke-width: 13; filter: drop-shadow(0 0 5px var(--success-over)); }
 .ring-center {
   position: absolute;
   top: 50%; left: 50%;
@@ -353,7 +375,15 @@ img { display: block; max-width: 100%; }
   margin-bottom: 6px; text-align: center;
 }
 .calorie-ring.ring-sm { width: 82px; height: 82px; }
-.ring-fill.workout { stroke: var(--warning); }
+/* The workout ring reads differently from the other two. Its TRACK is the
+   allowance you earned (amber, full circle) and its FILL is how much of that
+   allowance you have eaten (orange, drawn over it). Before, the earned amount
+   was invisible — a grey track that filled amber — so the ring answered "how
+   much of it have you eaten" without ever showing how much there was.
+   .earned only goes on when a workout actually exists: a full amber circle on
+   a rest day would claim calories that were never earned. */
+.ring-bg.earned    { stroke: var(--warning-track); }
+.ring-fill.workout { stroke: var(--warning-over); }
 .ring-fill.target  { stroke: var(--success); }
 .ring-kcal-sm { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .ring-goal-sm { font-size: 9px; color: var(--text-muted); }
