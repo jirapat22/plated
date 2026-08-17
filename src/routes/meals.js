@@ -292,6 +292,54 @@ router.post('/sessions/:id/copy', (req, res) => {
   }
 });
 
+// POST /api/meals/sessions/:id/merge { target_session_id }
+// Fold this meal's foods into another meal; this one stops existing.
+//
+// The move counterpart of /copy's target_session_id branch, and deliberately a
+// fraction of its size, because a merge CREATES nothing. The entries are
+// re-parented, not duplicated. That is why none of copy's bookkeeping belongs
+// here: no macro recomputation (these rows already exist and keep the values
+// they were logged with), no profile_food_stats bump, and — the one that would
+// actually corrupt data — no adjustBatchStock. Copy has to draw stock down
+// because a copied batch portion is a second helping. Merging is the same
+// helping filed under a different heading, and charging the batch again would
+// invent grams nobody ate.
+//
+// Order matters inside the transaction: re-parent first, then delete. The other
+// way round, meal_entries' ON DELETE CASCADE takes the entries with it.
+router.post('/sessions/:id/merge', (req, res) => {
+  try {
+    const db = getDb();
+    const pid = req.profileId;
+    const src = db.prepare('SELECT * FROM meal_sessions WHERE id = $id AND profile_id = $p')
+      .get({ id: req.params.id, p: pid });
+    if (!src) return res.status(404).json({ error: 'Meal not found' });
+
+    const targetId = parseInt(req.body.target_session_id) || null;
+    if (!targetId) return res.status(400).json({ error: 'target_session_id required' });
+    if (targetId === src.id) return res.status(400).json({ error: 'Pick a different meal to merge into' });
+    const target = db.prepare('SELECT * FROM meal_sessions WHERE id = $s AND profile_id = $p')
+      .get({ s: targetId, p: pid });
+    if (!target) return res.status(404).json({ error: 'Target meal not found' });
+
+    let merged = 0;
+    db.exec('BEGIN');
+    try {
+      merged = db.prepare('UPDATE meal_entries SET meal_session_id = $t WHERE meal_session_id = $s')
+        .run({ t: targetId, s: src.id }).changes;
+      db.prepare('DELETE FROM meal_sessions WHERE id = $s AND profile_id = $p').run({ s: src.id, p: pid });
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+
+    res.json({ session_id: targetId, merged, date: target.date, name: target.name });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/meals/sessions/:id/entries
 router.post('/sessions/:id/entries', (req, res) => {
   try {

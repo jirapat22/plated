@@ -65,13 +65,22 @@ async function dayMeals(viewDate) {
 // "Pick another date" fallback keeps the original's open-ended past-date
 // support (e.g. backfilling a corrected day) for anything outside the
 // 7-day quick-pick window.
-function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOthers, onPick) {
+// opts: { targetLabel, newLabel, days, defaultDate } — Move reuses this whole
+// sheet and only needs different words and a past-leaning day strip, which is
+// cheaper than a second near-identical sheet that then drifts from this one.
+function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOthers, onPick, opts = {}) {
   showSheet(content => {
     const today = localDate();
-    const quickDays = [today, ...Array.from({ length: 7 }, (_, i) => addDaysIso(today, i + 1))];
-    const dayLabel = (iso, i) => i === 0 ? 'Today' : i === 1 ? 'Tomorrow'
+    const quickDays = opts.days || [today, ...Array.from({ length: 7 }, (_, i) => addDaysIso(today, i + 1))];
+    // Compare dates, don't count positions. The index-based version read
+    // "Today/Tomorrow" off the first two slots, which is only true for the copy
+    // strip — hand it any other order and it labels yesterday "Tomorrow". Same
+    // bug the batch portion picker already shipped once.
+    const dayLabel = iso => iso === today ? 'Today'
+      : iso === addDaysIso(today, 1)  ? 'Tomorrow'
+      : iso === addDaysIso(today, -1) ? 'Yesterday'
       : new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    let selectedDate = quickDays[1];   // default: tomorrow — the common case
+    let selectedDate = opts.defaultDate || quickDays[1];   // copy defaults to tomorrow — the common case
 
     content.innerHTML = `
       <div class="sheet-header">
@@ -82,11 +91,11 @@ function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOt
         ${subtitle}
         <label class="form-label">Date</label>
         <div id="cp-days" style="display:flex;gap:6px;overflow-x:auto;padding:6px 0 10px;-webkit-overflow-scrolling:touch">
-          ${quickDays.map((d, i) => `<button type="button" class="fs-chip cp-day${d === selectedDate ? ' active' : ''}" data-date="${d}" style="flex-shrink:0">${dayLabel(d, i)}</button>`).join('')}
+          ${quickDays.map(d => `<button type="button" class="fs-chip cp-day${d === selectedDate ? ' active' : ''}" data-date="${d}" style="flex-shrink:0">${dayLabel(d)}</button>`).join('')}
         </div>
         <button type="button" id="cp-custom-toggle" style="font-size:12px;color:var(--accent);font-weight:600;padding:2px 0;margin-bottom:4px">Pick another date…</button>
         <input class="input" id="cp-date-custom" type="date" max="${addDaysIso(today, 7)}" style="display:none;margin-bottom:14px"/>
-        <label class="form-label">Copy into</label>
+        <label class="form-label">${opts.targetLabel || 'Copy into'}</label>
         <div id="cp-targets" style="display:flex;flex-direction:column;gap:6px;margin:6px 0 16px"></div>
       </div>`;
     document.getElementById('cp-close').addEventListener('click', hideSheet);
@@ -106,7 +115,7 @@ function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOt
       if (selectedDate !== date) return;   // date changed again while this was in flight
       targetsBox.innerHTML = sessions.map(s =>
         `<button class="cp-target btn btn-secondary" data-sid="${s.id}" style="justify-content:flex-start">${esc(s.name || 'Meal')}</button>`
-      ).join('') + `<button class="cp-target btn btn-secondary" data-sid="new" style="justify-content:flex-start;color:var(--accent)">+ New meal</button>`;
+      ).join('') + `<button class="cp-target btn btn-secondary" data-sid="new" style="justify-content:flex-start;color:var(--accent)">${opts.newLabel || '+ New meal'}</button>`;
       targetsBox.querySelectorAll('.cp-target').forEach(btn =>
         btn.addEventListener('click', () => onPick(date, btn.dataset.sid)));
     }
@@ -169,6 +178,48 @@ export async function openCopyMeal(session, viewDate, onDone) {
   });
 }
 
+// ── Move a meal: to its own slot on another day, or into a meal already there ─
+// Two different server calls behind one picker, because they are two different
+// operations wearing the same intent:
+//   "Its own meal"  -> PATCH date. The session survives; meal_index is
+//                      recalculated so it can't collide on the target day.
+//   an existing meal -> POST /merge. The entries are re-parented and this
+//                      session stops existing.
+// Neither duplicates anything, which is the whole difference from Copy — and
+// the reason merge does no batch-stock or use-count bookkeeping.
+//
+// Past-leaning day strip: the reason to move a meal is nearly always that it
+// landed on the wrong day, and the wrong day is usually the one just gone.
+export async function openMoveMeal(session, viewDate, onDone) {
+  const today = localDate();
+  const others = (await dayMeals(viewDate)).filter(s => s.id !== session.id);
+  const n = (session.entries || []).length;
+  const sub = `<div style="font-size:15px;font-weight:600">${esc(session.name || 'Meal')}</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${n} food${n === 1 ? '' : 's'} · moves off ${esc(viewDate)}, nothing is left behind</div>`;
+  const days = [addDaysIso(today, -1), today, addDaysIso(today, 1), addDaysIso(today, -2), addDaysIso(today, -3)];
+  destinationSheet('Move meal', sub, viewDate, session.id, others, async (date, sid) => {
+    // Moving it to the day it is already on, as its own meal, is a no-op —
+    // don't spend a request or claim in a toast that something happened.
+    if (sid === 'new' && date === viewDate) { hideSheet(); return; }
+    try {
+      if (sid === 'new') {
+        await api.patch(`/api/meals/sessions/${session.id}`, { date });
+        showToast(`Moved to ${date === today ? 'today' : date}`, 'success');
+      } else {
+        const r = await api.post(`/api/meals/sessions/${session.id}/merge`, { target_session_id: sid });
+        showToast(`Merged into ${r.name || 'that meal'}`, 'success');
+      }
+      hideSheet();
+      onDone?.();
+    } catch (err) { showToast(err.message, 'error'); }
+  }, {
+    targetLabel: 'Move into',
+    newLabel: 'Its own meal',
+    days,
+    defaultDate: days.find(d => d !== viewDate),
+  });
+}
+
 // ── Meal name presets ────────────────────────────────────────
 const MEAL_PRESETS = [
   { emoji: '🌅', name: 'Breakfast'    },
@@ -224,73 +275,6 @@ export function openRenameSession(sessionId, currentName, onSuccess) {
     document.getElementById('rn-save').addEventListener('click', () => {
       const name = document.getElementById('rn-input').value.trim();
       if (name) doRename(name);
-    });
-  });
-}
-
-// ── Move a meal to another day ────────────────────────────────
-// A move, not a copy: the session keeps its id, name and entries and simply
-// stops being on this date. The server recalculates meal_index on the target
-// day so it can't collide with what is already there.
-//
-// Its own sheet rather than destinationSheet's: that one is copy-shaped —
-// forward-only dates and a "Copy into" target list — and a move needs the
-// opposite emphasis. The reason to move a meal is almost always that it landed
-// on the wrong day, so the past is what matters and stays open-ended, while
-// forward stops at +7 like every other date picker here.
-export function openMoveMeal(session, viewDate, onDone) {
-  showSheet(content => {
-    const today = localDate();
-    const n = (session.entries || []).length;
-    // Yesterday first: "I logged this on the wrong day" is the case this exists
-    // for, and the wrong day is usually the one just gone.
-    const choices = [addDaysIso(today, -1), today, addDaysIso(today, 1), addDaysIso(today, -2), addDaysIso(today, -3)]
-      .filter(d => d !== viewDate);     // moving it to where it already is does nothing
-    const label = iso => iso === today ? 'Today'
-      : iso === addDaysIso(today, -1) ? 'Yesterday'
-      : iso === addDaysIso(today, 1)  ? 'Tomorrow'
-      : new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-
-    content.innerHTML = `
-      <div class="sheet-header">
-        <span class="sheet-title">Move meal</span>
-        <button class="sheet-close" id="mv-close">✕</button>
-      </div>
-      <div style="padding:0 16px">
-        <div style="font-size:15px;font-weight:600">${esc(session.name || 'Meal')}</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${n} food${n === 1 ? '' : 's'} · moves off ${esc(viewDate)}, nothing is left behind</div>
-        <label class="form-label">Move to</label>
-        <div style="display:flex;flex-direction:column;gap:6px;margin:6px 0 14px">
-          ${choices.map(d => `<button class="mv-day btn btn-secondary" data-date="${d}" style="justify-content:flex-start">${label(d)}</button>`).join('')}
-        </div>
-        <button type="button" id="mv-custom-toggle" style="font-size:12px;color:var(--accent);font-weight:600;padding:2px 0">Pick another date…</button>
-        <input class="input" id="mv-custom" type="date" max="${addDaysIso(today, 7)}" style="display:none;margin-top:10px"/>
-      </div>`;
-
-    document.getElementById('mv-close').addEventListener('click', hideSheet);
-
-    async function move(date) {
-      if (date === viewDate) { hideSheet(); return; }
-      try {
-        await api.patch(`/api/meals/sessions/${session.id}`, { date });
-        hideSheet();
-        showToast(`"${session.name || 'Meal'}" moved to ${date === today ? 'today' : date}`, 'success');
-        onDone?.();
-      } catch (err) { showToast(err.message, 'error'); }
-    }
-
-    content.querySelectorAll('.mv-day').forEach(b =>
-      b.addEventListener('click', () => move(b.dataset.date)));
-
-    const toggle = document.getElementById('mv-custom-toggle');
-    const custom = document.getElementById('mv-custom');
-    toggle.addEventListener('click', () => {
-      const opening = custom.style.display === 'none';
-      custom.style.display = opening ? 'block' : 'none';
-      if (opening) custom.focus();
-    });
-    custom.addEventListener('change', () => {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(custom.value)) move(custom.value);
     });
   });
 }
