@@ -39,13 +39,20 @@
      family holds together under about 0.06. This set spreads L 0.001.
      The hues themselves are untouched — violet, green and orange each mean
      something here (goal, eat target, burn) and that meaning is the point. */
-  --ring-goal:         #beadfb;   /* L .79 C .11 H 294 */
-  --ring-target:       #7ed09c;   /* L .79 C .11 H 155 */
-  --ring-workout:      #e6af67;   /* L .79 C .11 H  73 — the allowance you earned */
-  /* Past this point: same hues, one step down in lightness and up in chroma. */
-  --ring-goal-over:    #8867da;   /* L .60 C .17 */
-  --ring-target-over:  #009c50;   /* L .61 C .16 */
-  --ring-workout-over: #cd5800;   /* L .60 C .17 — eaten into the allowance */
+  --ring-goal:         #c7b8ff;   /* L .82 C .10 H 294 */
+  --ring-target:       #8ed8a8;   /* L .82 C .10 H 155 */
+  --ring-workout:      #ecba7a;   /* L .82 C .10 H  73 — the allowance you earned */
+  /* Past this point: same hues, one step down in lightness and up in chroma.
+     The exceeded step used to sit at L .60, which made the workout fill a
+     genuine burnt orange — rusty rather than bright. Lifting the exceeded step
+     to L .66 alone would have dropped the arcs to 1.56:1 against their bases,
+     under the floor; lifting the BASES by the same amount buys that separation
+     back, so the whole family moved up together rather than the orange alone.
+     The fill also moved from hue 48 to 58: 48 is a red-orange, and most of what
+     read as "burnt" was that redness, not the darkness. */
+  --ring-goal-over:    #9a79ef;   /* L .66 C .17 */
+  --ring-target-over:  #00af61;   /* L .66 C .16 */
+  --ring-workout-over: #dc7200;   /* L .66 C .17 H 58 — eaten into the allowance */
   --error:        #ff6b6b;
   --on-accent:    #0d0d0f;   /* ink that sits on top of an --accent fill */
   --gold:         #ffd166;   /* favourite star / favourited row edge */
@@ -99,12 +106,12 @@
      than light mode's #6b4fd6 accent and say the opposite of what it means. */
   /* Same construction, pitched dark-on-white instead of light-on-dark:
      bases at L .58, exceeded at L .40. Spread L 0.002. */
-  --ring-goal:         #7f69bf;
-  --ring-target:       #249057;
-  --ring-workout:      #a86c00;
-  --ring-goal-over:    #4f2f8f;
-  --ring-target-over:  #005928;
-  --ring-workout-over: #832000;
+  --ring-goal:         #856fc6;
+  --ring-target:       #2c965d;
+  --ring-workout:      #ae7200;
+  --ring-goal-over:    #5f41a2;
+  --ring-target-over:  #006c34;
+  --ring-workout-over: #8c3f00;
   --error:        #d64545;
   --on-accent:    #ffffff;
   --gold:         #a97900;
