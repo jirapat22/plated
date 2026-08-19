@@ -179,7 +179,15 @@ export function renderToday(container) {
     // Eaten fills the base goal first, then spills into the workout ring.
     const burned      = ironlog?.calories_burned ?? 0;
     const baseGoal    = goals.cal;                  // phase calorie goal (e.g. 2207)
-    const combined    = baseGoal + burned;          // eat target incl. workout
+    // Whether the TDEE this goal came from already assumed the training. True
+    // at IronLog's moderate/very/athlete activity levels, where the BMR
+    // multiplier bakes sessions into the baseline — adding the burn on top
+    // there counts it twice and quietly hands back a few hundred kcal on every
+    // training day. False at sedentary/light, where a session really is extra.
+    const inTdee      = ironlog?.tdee_includes_workouts === true;
+    // The part of the burn you may eat back. Zero when it is already counted.
+    const eatable     = inTdee ? 0 : burned;
+    const combined    = baseGoal + eatable;         // eat target
     const hasWorkout  = burned > 0;
     const eaten       = t.calories;
     const net         = eaten - burned;
@@ -190,15 +198,22 @@ export function renderToday(container) {
     assert(Number.isFinite(burned) && burned >= 0, 'IronLog burned is not a valid number', { burned });
 
     const midPct   = Math.min(eaten / baseGoal, 1) * 100;            // middle: eaten vs goal
-    const rightFill= Math.max(0, Math.min(eaten - baseGoal, burned)); // overflow into workout
-    const rightPct = burned > 0 ? (rightFill / burned) * 100 : 0;     // right: overflow vs burned
+    // The workout ring fills only when the burn is an allowance you can spend.
+    // When it is already inside the TDEE there is nothing to eat into, so the
+    // ring shows the amber "earned" track alone — the work still happened and
+    // is worth seeing, it just is not extra food.
+    const rightFill= Math.max(0, Math.min(eaten - baseGoal, eatable)); // overflow into workout
+    const rightPct = eatable > 0 ? (rightFill / eatable) * 100 : 0;   // right: overflow vs allowance
     const leftPct  = Math.min(eaten / combined, 1) * 100;            // left: eaten vs combined
     // Exceeded slices — only this portion of the ring is drawn dark.
     const midOver  = baseGoal > 0 ? Math.max(0, (eaten - baseGoal) / baseGoal) * 100 : 0;
     const leftOver = combined > 0 ? Math.max(0, (eaten - combined) / combined) * 100 : 0;
 
-    // Hint speaks to the real budget (combined when a workout exists)
-    const budget    = hasWorkout ? combined : baseGoal;
+    // Hint speaks to the real budget. `combined` already collapses to baseGoal
+    // when there is nothing to eat back — on a rest day, or when the burn is
+    // already inside the TDEE — so the old `hasWorkout ? ... : ...` branch was
+    // saying the same thing twice and would have got the second case wrong.
+    const budget    = combined;
     const remaining = budget - eaten;
     const hintText  = eaten === 0 ? 'nothing yet'
       : remaining > 50  ? `${fmtE(remaining)} left`
@@ -320,6 +335,7 @@ export function renderToday(container) {
       <div style="padding:0 16px 14px">
         <div class="card">
           <div class="tri-rings">
+            ${eatable > 0 ? `
             <div class="ring-col">
               <div class="ring-title">Eat Target</div>
               <div class="ring-wrap-relative">
@@ -329,7 +345,7 @@ export function renderToday(container) {
                   <div class="ring-goal-sm">/ ${fmtE(combined)}</div>
                 </div>
               </div>
-            </div>
+            </div>` : ''}
             <div class="ring-col">
               <div class="ring-title">Daily Goal</div>
               <div class="ring-wrap-relative">
@@ -347,7 +363,7 @@ export function renderToday(container) {
                 ${calRingSvg(rightPct, 'workout', true, 0, false, hasWorkout ? 'earned' : '')}
                 <div class="ring-center">
                   <div class="num ring-kcal-sm">${fmtE(burned)} ${icon(ICON_FLAME, 12, -2)}</div>
-                  <div class="ring-goal-sm">${hasWorkout ? 'burned' : 'rest day'}</div>
+                  <div class="ring-goal-sm">${!hasWorkout ? 'rest day' : inTdee ? 'already counted' : 'burned'}</div>
                 </div>
               </div>
             </div>
@@ -421,6 +437,9 @@ export function renderToday(container) {
               <span class="muted">Net</span>
               <span class="num">${fmtE(net)} ${ul}</span>
             </div>
+            ${hasWorkout ? `<div style="font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.5;border-top:1px solid var(--border);padding-top:8px">${inTdee
+              ? `Your IronLog activity level already assumes regular training, so this burn is inside your ${fmtE(baseGoal)} ${ul} goal — it isn't added on top, or you'd be counting it twice.`
+              : `Added on top of your goal: your IronLog activity level is a baseline without training, so today's session really is extra.`}</div>` : ''}
           </div>
         </div>
       </div>` : ''}

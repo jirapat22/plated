@@ -16,7 +16,23 @@ function extractProfile(profileData) {
     fat_goal:     profileData.fat_g             ?? profileData.fat_goal         ?? null,
     fiber_goal:   profileData.fiber_g           ?? profileData.fiber_goal       ?? null,
     phase:        profileData.goal              ?? profileData.phase            ?? null,
+    // Whether IronLog's tdee_kcal ALREADY contains logged training. True at its
+    // moderate/very/athlete activity levels, where the BMR multiplier assumes
+    // regular sessions; false at sedentary/light, where a workout is genuinely
+    // extra. Plated adds calories_burned on top of the goal, so getting this
+    // wrong is a silent few-hundred-kcal overshoot on every training day.
+    // ?? not ||, because false is the meaningful value here.
+    tdee_includes_workouts: profileData.tdee_includes_workouts ?? null,
   };
+}
+
+// The stored answer to "may I add today's burn to the target?". Absent for a
+// profile that has never synced, or an IronLog too old to send the field — in
+// which case fall back to adding it, which is what Plated did before the field
+// existed and is the safe direction for the sedentary/light users who are the
+// only ones who had it right by accident.
+function tdeeIncludesWorkouts(pid) {
+  return profileSetting(pid, 'tdee_includes_workouts') === '1';
 }
 
 // Mirrors public/js/utils/phase.js's phaseCalorieGoal on the frontend — can't
@@ -204,11 +220,22 @@ router.get('/today', async (req, res) => {
 
     const calorieGoal = parseFloat(profileSetting(pid, 'calorie_goal')) || null;
 
+    // Taken from the profile THIS request already fetched, not the copy stored
+    // at last sync — same data, one round trip newer, and it means a user who
+    // changes their IronLog activity level sees the correct target on the next
+    // app open rather than after they remember to hit Sync.
+    const liveFlag = extractProfile(profileData).tdee_includes_workouts;
+    const includesWorkouts = liveFlag != null ? !!liveFlag : tdeeIncludesWorkouts(pid);
+    // The part of the burn you may actually eat back. Zero when the TDEE the
+    // goal was derived from already assumed the training.
+    const eatable = includesWorkouts ? 0 : burned;
+
     res.json({
       connected:       true,
       profile:         profileData,
       calories_burned: burned,
-      calorie_target:  calorieGoal != null ? Math.round(calorieGoal + burned) : null,
+      tdee_includes_workouts: includesWorkouts,
+      calorie_target:  calorieGoal != null ? Math.round(calorieGoal + eatable) : null,
       bodyweight,
       last_synced:     now,
     });
@@ -278,6 +305,13 @@ router.post('/sync', async (req, res) => {
     const updates = {};
 
     if (p.tdee)         { setSetting('tdee',         p.tdee);         updates.tdee         = p.tdee;         }
+    // Re-read every sync: it tracks the user's IronLog activity level, so it
+    // changes the moment they edit that, and a stale copy silently restores the
+    // double count.
+    if (p.tdee_includes_workouts != null) {
+      setSetting('tdee_includes_workouts', p.tdee_includes_workouts ? '1' : '0');
+      updates.tdee_includes_workouts = !!p.tdee_includes_workouts;
+    }
     if (p.bodyweight)   { setSetting('bodyweight_kg', p.bodyweight);                                         updates.bodyweight_kg = p.bodyweight; }
     if (p.protein_goal) { setSetting('protein_goal',  p.protein_goal); updates.protein_goal = p.protein_goal; }
     if (p.carb_goal)    { setSetting('carb_goal',     p.carb_goal);    updates.carb_goal    = p.carb_goal;    }
