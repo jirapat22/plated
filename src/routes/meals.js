@@ -435,7 +435,19 @@ router.post('/sessions/:id/leftover', (req, res) => {
 
     const rest = 1 - ate;
     const tot = { quantity_g: 0, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
-    for (const e of entries) for (const k in tot) tot[k] += (e[k] || 0) * rest;
+    // Whether ANY food in the meal knew this macro. Summing with (e[k] || 0)
+    // makes an unknown look like a zero, and the leftover then asserts "0g
+    // fiber" about food whose fiber nobody knows — the turning-unknown-into-a-
+    // confident-number this app keeps having to unlearn. The per-entry split
+    // already preserves null via slice(); this path did not, and the two must
+    // agree. Partial knowledge still reports the sum: one food known and one
+    // unknown is "at least this much", which is what sumTotals does elsewhere.
+    const known = { protein: false, carbs: false, fat: false, fiber: false };
+    for (const e of entries) {
+      for (const k in tot) tot[k] += (e[k] || 0) * rest;
+      for (const k in known) if (e[k] != null) known[k] = true;
+    }
+    const kept = k => (known[k] ? round1(tot[k]) : null);
     // Has to round to at least one whole calorie. At ate = 0.999 the remainder
     // was 0.7 kcal, which passed a bare > 0 and produced a leftover displaying
     // as "1 kcal" plus a minted food to back it — a row that costs more to
@@ -469,16 +481,17 @@ router.post('/sessions/:id/leftover', (req, res) => {
       const foodId = db.prepare(`INSERT INTO foods
         (name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, serving_size_g, source, created_by_profile, hidden)
         VALUES ($n, NULL, $cal, $p, $c, $f, $fb, 100, 'leftover', $by, 1)`).run({
-        n: name, cal: per(tot.calories), p: per(tot.protein), c: per(tot.carbs),
-        f: per(tot.fat), fb: per(tot.fiber), by: pid,
+        n: name, cal: per(tot.calories),
+        p: known.protein ? per(tot.protein) : null, c: known.carbs ? per(tot.carbs) : null,
+        f: known.fat ? per(tot.fat) : null, fb: known.fiber ? per(tot.fiber) : null, by: pid,
       }).lastInsertRowid;
 
       leftoverId = db.prepare(`INSERT INTO leftovers (profile_id, name, food_id, quantity_g, calories, protein, carbs, fat, fiber)
         VALUES ($p, $n, $f, $q, $cal, $pr, $c, $ft, $fb)`).run({
         p: pid, n: name, f: foodId,
         q: tot.quantity_g > 0 ? round1(tot.quantity_g) : null,
-        cal: round1(tot.calories), pr: round1(tot.protein), c: round1(tot.carbs),
-        ft: round1(tot.fat), fb: round1(tot.fiber),
+        cal: round1(tot.calories), pr: kept('protein'), c: kept('carbs'),
+        ft: kept('fat'), fb: kept('fiber'),
       }).lastInsertRowid;
       db.exec('COMMIT');
     } catch (e) { db.exec('ROLLBACK'); throw e; }
