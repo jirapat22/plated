@@ -77,12 +77,20 @@ router.post('/:id/log', (req, res) => {
         sid = db.prepare('INSERT INTO meal_sessions (date, name, meal_index, profile_id) VALUES ($d, $n, $i, $p)')
           .run({ d: date, n: l.name, i: idx, p: pid }).lastInsertRowid;
       }
-      // quantity_g falls back to 100 for a Quick Log leftover, matching the
-      // bookkeeping weight Quick Log itself uses so the per-100g maths the rest
-      // of the app runs on still comes out right.
+      // A Quick Log leftover has no weight — that is the honest thing to store
+      // and to show. But the ENTRY it creates needs one that agrees with the
+      // food's per-100g, or anything that later re-derives macros from
+      // food x quantity restores the whole meal instead of this slice. So the
+      // weight is worked out here from the calories rather than defaulted to
+      // the bookkeeping 100g.
+      let q = l.quantity_g;
+      if (q == null) {
+        const per100 = db.prepare('SELECT calories_per_100g FROM foods WHERE id = $id').get({ id: l.food_id })?.calories_per_100g;
+        q = per100 > 0 ? round1((l.calories || 0) / per100 * 100) : 100;
+      }
       db.prepare(`INSERT INTO meal_entries (meal_session_id, food_id, quantity_g, calories, protein, carbs, fat, fiber)
         VALUES ($s, $f, $q, $cal, $p, $c, $ft, $fb)`).run({
-        s: sid, f: l.food_id, q: l.quantity_g == null ? 100 : round1(l.quantity_g),
+        s: sid, f: l.food_id, q: round1(q),
         cal: l.calories, p: l.protein, c: l.carbs, ft: l.fat, fb: l.fiber,
       });
       db.prepare('DELETE FROM leftovers WHERE id = $id AND profile_id = $p').run({ id: l.id, p: pid });

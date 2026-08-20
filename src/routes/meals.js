@@ -344,7 +344,13 @@ router.post('/entries/:id/leftover', (req, res) => {
     const eaten = {
       calories: slice(entry.calories, keepRatio), protein: slice(entry.protein, keepRatio),
       carbs: slice(entry.carbs, keepRatio), fat: slice(entry.fat, keepRatio), fiber: slice(entry.fiber, keepRatio),
-      quantity_g: isQuick ? entry.quantity_g : round1(whole - left),
+      // Scaled for BOTH kinds. For a weighed food this is just whole - left.
+      // For a Quick Log it is the bookkeeping 100g scaled down, and it has to
+      // be: leaving it at 100 while cutting the calories makes the entry
+      // disagree with its own food, and every path that re-derives macros from
+      // food x quantity then restores the full amount. Measured: split an 1,800
+      // Quick Log to 1,200, copy the meal, and the copy came back 1,800.
+      quantity_g: round1((entry.quantity_g || 0) * keepRatio),
     };
     const overRatio = 1 - keepRatio;
     const over = {

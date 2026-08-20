@@ -149,6 +149,10 @@ router.delete('/data', (req, res) => {
       db.prepare(`UPDATE foods SET hidden = 1 WHERE id IN
         (SELECT food_id FROM batches WHERE profile_id = $pid AND food_id IS NOT NULL)`).run({ pid });
       db.prepare('DELETE FROM batches WHERE profile_id = $pid').run({ pid });
+      // Leftovers go with the batches. Same class of thing — food you still
+      // have — and leaving them behind points them at foods just hidden above.
+      // They are in the export, so this is a wipe, not a loss.
+      db.prepare('DELETE FROM leftovers WHERE profile_id = $pid').run({ pid });
       db.prepare('DELETE FROM daily_overrides WHERE profile_id = $pid').run({ pid });
       db.exec('COMMIT');
     } catch (e) {
