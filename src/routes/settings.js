@@ -473,6 +473,27 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
         }
       }
 
+      // Sweep minted leftover foods nothing points at any more.
+      //
+      // Import matches foods by name+brand, and a whole-meal leftover names its
+      // backing food after the meal — so two meals both called "Dinner" mint two
+      // foods called "Dinner", and the restore collapses both leftovers onto the
+      // first. The leftovers are unharmed (their macros live on their own row,
+      // and each still logs its own calories), but the second food is left with
+      // nothing referencing it: one invisible row per collision, forever.
+      //
+      // Swept rather than prevented, because the alternatives are worse. A
+      // unique name would show up in the report, which renders a logged
+      // leftover by its food name, and a unique brand would render there too.
+      // Scoped to this profile's own minted rows, and only ones nothing at all
+      // references.
+      db.prepare(`
+        DELETE FROM foods WHERE source = 'leftover' AND created_by_profile = $pid
+          AND NOT EXISTS (SELECT 1 FROM meal_entries me WHERE me.food_id = foods.id)
+          AND NOT EXISTS (SELECT 1 FROM leftovers l    WHERE l.food_id  = foods.id)
+          AND NOT EXISTS (SELECT 1 FROM batches b      WHERE b.food_id  = foods.id)
+      `).run({ pid });
+
       const setSetting = db.prepare('INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)');
       for (const [key, value] of Object.entries(settings)) {
         if (ALLOWED.has(key) && value != null) setSetting.run({ pid, key, value: String(value) });
