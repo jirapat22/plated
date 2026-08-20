@@ -291,6 +291,70 @@ export function openLeftover(entry, onDone) {
   });
 }
 
+// ── Didn't finish the whole plate ────────────────────────────
+// A fraction rather than a weight: a mixed plate can't be weighed back per
+// food. Every food scales by the same share, which is an approximation and
+// says so — the per-entry 🥡 stays the exact tool for an uneven plate.
+export function openMealLeftover(session, onDone) {
+  const kcal = (session.entries || []).reduce((s, e) => s + (e.calories || 0), 0);
+  const n = (session.entries || []).length;
+  const ul = unitLabel();
+
+  showSheet(content => {
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">🥡 Didn't finish it</span>
+        <button class="sheet-close" id="ml-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        <div style="font-size:15px;font-weight:600">${esc(session.name || 'Meal')}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${n} food${n === 1 ? '' : 's'} · ${fmtE(kcal)} ${ul} logged</div>
+        <label class="form-label">How much did you eat?</label>
+        <div style="display:flex;gap:6px;margin:6px 0 10px">
+          ${[['¼', .25], ['⅓', .34], ['½', .5], ['⅔', .67], ['¾', .75]].map(([l, v]) =>
+            `<button type="button" class="fs-chip ml-frac" data-ate="${v}" style="flex:1">${l}</button>`).join('')}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <input class="input" id="ml-pct" type="text" inputmode="decimal" placeholder="or type a %" style="flex:1"/>
+          <span style="color:var(--text-muted)">%</span>
+        </div>
+        <div id="ml-prev" style="font-size:12px;color:var(--text-faint);min-height:34px;line-height:1.5;margin-bottom:12px"></div>
+        ${n > 1 ? `<div style="font-size:11px;color:var(--text-faint);line-height:1.5;margin-bottom:14px">Scales all ${n} foods equally. If you finished one and left another, use 🥡 on that food instead.</div>` : ''}
+        <button class="btn btn-primary btn-full" id="ml-save">Save the rest</button>
+      </div>`;
+
+    let ate = null;
+    const prev = document.getElementById('ml-prev');
+    const pct  = document.getElementById('ml-pct');
+    const show = () => {
+      prev.textContent = !(ate > 0 && ate < 1) ? ''
+        : `You ate ${fmtE(kcal * ate)} ${ul}, saving ${fmtE(kcal * (1 - ate))} ${ul} as one leftover.`;
+    };
+    const pick = v => {
+      ate = v;
+      content.querySelectorAll('.ml-frac').forEach(b => b.classList.toggle('active', Math.abs(+b.dataset.ate - v) < 1e-9));
+      show();
+    };
+    content.querySelectorAll('.ml-frac').forEach(b => b.addEventListener('click', () => { pct.value = ''; pick(+b.dataset.ate); }));
+    pct.addEventListener('input', () => {
+      const v = parseFloat(pct.value) / 100;
+      content.querySelectorAll('.ml-frac').forEach(b => b.classList.remove('active'));
+      ate = v; show();
+    });
+
+    document.getElementById('ml-close').addEventListener('click', hideSheet);
+    document.getElementById('ml-save').addEventListener('click', async () => {
+      if (!(ate > 0 && ate < 1)) return showToast('Pick how much of it you ate', 'error');
+      try {
+        const r = await api.post(`/api/meals/sessions/${session.id}/leftover`, { ate });
+        hideSheet();
+        showToast(`Saved ${fmtE(r.saved.calories)} ${ul} as a leftover`, 'success');
+        onDone?.();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+  });
+}
+
 // ── Meal name presets ────────────────────────────────────────
 const MEAL_PRESETS = [
   { emoji: '🌅', name: 'Breakfast'    },
@@ -775,6 +839,9 @@ function showQuantitySheet(food, sessionId, onSuccess) {
 // where it belongs, so the common case stays one tap.
 export function renderMealCard(session, viewDate, opts = {}, onDone) {
   const { showTime = false, showMoveToday = false, showQuickLog = false } = opts;
+  // Same window the server enforces, and only when there is something to split.
+  const canLeftoverMeal = (session.entries?.length > 0)
+    && (viewDate === localDate() || viewDate === addDaysIso(localDate(), -1));
   const ul = unitLabel();
   const sessionKcal    = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
   const sessionProtein = Math.round(session.entries.reduce((s, e) => s + (e.protein || 0), 0));
@@ -799,8 +866,14 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
           style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">
           → Today
         </button>` : ''}
-        <button class="session-move-day-btn" title="Move this meal to another day" style="color:var(--text-faint);padding:4px;display:inline-flex;align-items:center">${ICON_MOVE}</button>
-        <button class="session-copyout-btn" title="Copy this meal to…" style="color:var(--text-faint);padding:4px;font-size:14px">⧉</button>
+        <div style="position:relative">
+          <button class="session-more-btn" title="More" style="color:var(--text-faint);padding:4px 6px;font-size:16px;line-height:1">⋮</button>
+          <div class="session-menu" style="display:none;position:absolute;right:0;top:26px;z-index:20;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 8px 24px rgba(0,0,0,.4);min-width:186px;overflow:hidden">
+            ${canLeftoverMeal ? `<button class="sm-left" style="display:block;width:100%;text-align:left;padding:10px 14px;font-size:13px;color:var(--text)">🥡 Didn't finish it</button>` : ''}
+            <button class="sm-move" style="display:block;width:100%;text-align:left;padding:10px 14px;font-size:13px;color:var(--text)">Move to another day</button>
+            <button class="sm-copy" style="display:block;width:100%;text-align:left;padding:10px 14px;font-size:13px;color:var(--text)">Copy to…</button>
+          </div>
+        </div>
         <button class="session-del-btn" title="Delete" style="color:var(--text-faint);padding:4px">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -888,8 +961,22 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
   sessionEl.querySelector('.session-rename-btn').addEventListener('click', () =>
     openRenameSession(session.id, session.name, onDone)
   );
-  sessionEl.querySelector('.session-move-day-btn').addEventListener('click', () => openMoveMeal(session, viewDate, onDone));
-  sessionEl.querySelector('.session-copyout-btn').addEventListener('click', () => openCopyMeal(session, viewDate, onDone));
+  // Overflow menu. The header row was at four buttons on a past day and the
+  // title already loses to them below 430px; the seldom-used actions move
+  // behind ⋮ rather than the row growing a fifth.
+  const menu = sessionEl.querySelector('.session-menu');
+  const closeMenu = () => { menu.style.display = 'none'; };
+  sessionEl.querySelector('.session-more-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    const open = menu.style.display === 'block';
+    // Only ever one open: a second card's menu left the first one hanging.
+    document.querySelectorAll('.session-menu').forEach(m => { m.style.display = 'none'; });
+    menu.style.display = open ? 'none' : 'block';
+  });
+  document.addEventListener('click', closeMenu);
+  menu.querySelector('.sm-move').addEventListener('click', () => { closeMenu(); openMoveMeal(session, viewDate, onDone); });
+  menu.querySelector('.sm-copy').addEventListener('click', () => { closeMenu(); openCopyMeal(session, viewDate, onDone); });
+  menu.querySelector('.sm-left')?.addEventListener('click', () => { closeMenu(); openMealLeftover(session, onDone); });
   sessionEl.querySelector('.session-del-btn').addEventListener('click', async () => {
     if (!confirm(`Delete "${session.name}" and all its entries?`)) return;
     try { await api.delete(`/api/meals/sessions/${session.id}`); showToast('Meal deleted', 'success'); onDone?.(); }

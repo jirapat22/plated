@@ -393,6 +393,95 @@ router.post('/entries/:id/leftover', (req, res) => {
   }
 });
 
+// POST /api/meals/sessions/:id/leftover { ate }  — ate is 0..1
+// "I didn't finish this plate." Scales every food in the meal by the share you
+// ate and saves the rest as ONE leftover, because it went into one container.
+//
+// A fraction, not a weight: you can weigh one food back, but not a mixed plate
+// per-food. The cost is that it assumes you ate the same share of everything —
+// finish the chicken and leave the rice and this will not know. That case is
+// what the per-entry split is for, and it stays the accurate tool.
+//
+// The combined leftover gets a backing food minted for it, the same way a batch
+// does. It has to: loadDay INNER JOINs foods, so an entry with a null food_id
+// does not merely render oddly, it disappears from the day and takes its
+// calories with it. Density comes from the remainder itself, so the entry this
+// eventually creates agrees with its own food.
+router.post('/sessions/:id/leftover', (req, res) => {
+  try {
+    const db = getDb();
+    const pid = req.profileId;
+    const s = db.prepare('SELECT * FROM meal_sessions WHERE id = $id AND profile_id = $p')
+      .get({ id: req.params.id, p: pid });
+    if (!s) return res.status(404).json({ error: 'Meal not found' });
+
+    const today = todayLocal(tzFor(db, pid));
+    const yesterday = new Date(Date.parse(today + 'T00:00:00Z') - 864e5).toISOString().slice(0, 10);
+    if (s.date !== today && s.date !== yesterday) {
+      return res.status(400).json({ error: "Leftovers can only be saved from today or yesterday" });
+    }
+
+    const ate = parseFloat(req.body?.ate);
+    if (!(ate > 0 && ate < 1)) {
+      return res.status(400).json({ error: 'ate must be between 0 and 1 — eating none of it means deleting the meal, and all of it means nothing is left' });
+    }
+
+    const entries = db.prepare('SELECT * FROM meal_entries WHERE meal_session_id = $s').all({ s: s.id });
+    if (!entries.length) return res.status(400).json({ error: 'That meal has no foods in it' });
+
+    const rest = 1 - ate;
+    const tot = { quantity_g: 0, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+    for (const e of entries) for (const k in tot) tot[k] += (e[k] || 0) * rest;
+    if (!(tot.calories > 0)) return res.status(400).json({ error: 'There is nothing measurable left of that meal' });
+
+    const name = String(s.name || 'Meal').slice(0, 80);
+    let leftoverId = null;
+    db.exec('BEGIN');
+    try {
+      const upd = db.prepare(`UPDATE meal_entries SET quantity_g = $q, calories = $cal, protein = $p,
+        carbs = $c, fat = $ft, fiber = $fb WHERE id = $id`);
+      for (const e of entries) {
+        upd.run({
+          id: e.id, q: round1((e.quantity_g || 0) * ate), cal: round1((e.calories || 0) * ate),
+          p: e.protein == null ? null : round1(e.protein * ate),
+          c: e.carbs   == null ? null : round1(e.carbs   * ate),
+          ft: e.fat    == null ? null : round1(e.fat     * ate),
+          fb: e.fiber  == null ? null : round1(e.fiber   * ate),
+        });
+      }
+
+      // Grams can be fictional when the meal contained a Quick Log, so derive
+      // the density from whatever the remainder actually is rather than
+      // assuming a real weight. 100g keeps the per-100g maths coherent when
+      // there is no weight at all.
+      const grams = tot.quantity_g > 0 ? round1(tot.quantity_g) : 100;
+      const per = v => round1(v / grams * 100);
+      const foodId = db.prepare(`INSERT INTO foods
+        (name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, serving_size_g, source, created_by_profile, hidden)
+        VALUES ($n, NULL, $cal, $p, $c, $f, $fb, 100, 'leftover', $by, 1)`).run({
+        n: name, cal: per(tot.calories), p: per(tot.protein), c: per(tot.carbs),
+        f: per(tot.fat), fb: per(tot.fiber), by: pid,
+      }).lastInsertRowid;
+
+      leftoverId = db.prepare(`INSERT INTO leftovers (profile_id, name, food_id, quantity_g, calories, protein, carbs, fat, fiber)
+        VALUES ($p, $n, $f, $q, $cal, $pr, $c, $ft, $fb)`).run({
+        p: pid, n: name, f: foodId,
+        q: tot.quantity_g > 0 ? round1(tot.quantity_g) : null,
+        cal: round1(tot.calories), pr: round1(tot.protein), c: round1(tot.carbs),
+        ft: round1(tot.fat), fb: round1(tot.fiber),
+      }).lastInsertRowid;
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
+
+    res.status(201).json({
+      leftover_id: leftoverId, name, foods: entries.length,
+      saved: { calories: Math.round(tot.calories), quantity_g: tot.quantity_g > 0 ? round1(tot.quantity_g) : null },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/meals/sessions/:id/merge { target_session_id }
 // Fold this meal's foods into another meal; this one stops existing.
 //
