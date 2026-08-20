@@ -8,6 +8,14 @@ import { openPortion }                    from './batches.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
+// Clicking anywhere closes any open meal menu. Registered ONCE for the module,
+// not per card: the per-card version added a document listener for every meal
+// on every render, and nothing ever removed them — scroll through a month of
+// History and you leave hundreds behind. Same leak class as the chart instances
+// that used to survive a view swap.
+const closeAllMenus = () => document.querySelectorAll('.session-menu').forEach(m => { m.style.display = 'none'; });
+document.addEventListener('click', closeAllMenus);
+
 // Move: an arrow travelling into a wall. Stroked at 1.7 to match the nav and
 // ring icons rather than adding another emoji to a row that has two already —
 // and shaped to say "send this away", where the ⧉ beside it says "duplicate".
@@ -970,10 +978,9 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
     e.stopPropagation();
     const open = menu.style.display === 'block';
     // Only ever one open: a second card's menu left the first one hanging.
-    document.querySelectorAll('.session-menu').forEach(m => { m.style.display = 'none'; });
+    closeAllMenus();
     menu.style.display = open ? 'none' : 'block';
   });
-  document.addEventListener('click', closeMenu);
   menu.querySelector('.sm-move').addEventListener('click', () => { closeMenu(); openMoveMeal(session, viewDate, onDone); });
   menu.querySelector('.sm-copy').addEventListener('click', () => { closeMenu(); openCopyMeal(session, viewDate, onDone); });
   menu.querySelector('.sm-left')?.addEventListener('click', () => { closeMenu(); openMealLeftover(session, onDone); });

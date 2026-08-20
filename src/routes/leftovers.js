@@ -45,9 +45,24 @@ router.patch('/:id', (req, res) => {
 // otherwise and put its calories into a day.
 router.delete('/:id', (req, res) => {
   try {
-    const info = getDb().prepare('DELETE FROM leftovers WHERE id = $id AND profile_id = $p')
-      .run({ id: req.params.id, p: req.profileId });
-    if (!info.changes) return res.status(404).json({ error: 'Leftover not found' });
+    const db = getDb();
+    const l = db.prepare('SELECT * FROM leftovers WHERE id = $id AND profile_id = $p')
+      .get({ id: req.params.id, p: req.profileId });
+    if (!l) return res.status(404).json({ error: 'Leftover not found' });
+    db.prepare('DELETE FROM leftovers WHERE id = $id AND profile_id = $p').run({ id: l.id, p: req.profileId });
+    // A whole-meal leftover mints a food of its own, 1:1, hidden from search.
+    // Binning the leftover leaves that food with nothing pointing at it — an
+    // invisible row that accumulates one per binned plate. Only ever removes a
+    // minted one that nothing references; a real food is shared and stays.
+    if (l.food_id) {
+      const f = db.prepare("SELECT source FROM foods WHERE id = $i").get({ i: l.food_id });
+      const used = db.prepare('SELECT COUNT(*) c FROM meal_entries WHERE food_id = $i').get({ i: l.food_id }).c
+        + db.prepare('SELECT COUNT(*) c FROM leftovers WHERE food_id = $i').get({ i: l.food_id }).c
+        + db.prepare('SELECT COUNT(*) c FROM batches WHERE food_id = $i').get({ i: l.food_id }).c;
+      if (f?.source === 'leftover' && used === 0) {
+        db.prepare('DELETE FROM foods WHERE id = $i').run({ i: l.food_id });
+      }
+    }
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -83,14 +98,33 @@ router.post('/:id/log', (req, res) => {
       // food x quantity restores the whole meal instead of this slice. So the
       // weight is worked out here from the calories rather than defaulted to
       // the bookkeeping 100g.
+      // The entry MUST have a food that exists. loadDay INNER JOINs foods, so a
+      // dangling food_id doesn't render oddly — the row is written and then
+      // never shown, and the calories quietly do not count. Belt and braces
+      // alongside the export fix: whatever route left this leftover without a
+      // usable food, mint one now from the macros it is carrying.
+      let foodId = l.food_id;
+      let food = foodId ? db.prepare('SELECT * FROM foods WHERE id = $id').get({ id: foodId }) : null;
+      if (!food) {
+        const grams = l.quantity_g > 0 ? l.quantity_g : 100;
+        const per = v => round1((v || 0) / grams * 100);
+        foodId = db.prepare(`INSERT INTO foods
+          (name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, serving_size_g, source, created_by_profile, hidden)
+          VALUES ($n, NULL, $cal, $p, $c, $f, $fb, 100, 'leftover', $by, 1)`).run({
+          n: l.name, cal: per(l.calories), p: per(l.protein), c: per(l.carbs),
+          f: per(l.fat), fb: per(l.fiber), by: pid,
+        }).lastInsertRowid;
+        food = db.prepare('SELECT * FROM foods WHERE id = $id').get({ id: foodId });
+      }
+
       let q = l.quantity_g;
       if (q == null) {
-        const per100 = db.prepare('SELECT calories_per_100g FROM foods WHERE id = $id').get({ id: l.food_id })?.calories_per_100g;
+        const per100 = food?.calories_per_100g;
         q = per100 > 0 ? round1((l.calories || 0) / per100 * 100) : 100;
       }
       db.prepare(`INSERT INTO meal_entries (meal_session_id, food_id, quantity_g, calories, protein, carbs, fat, fiber)
         VALUES ($s, $f, $q, $cal, $p, $c, $ft, $fb)`).run({
-        s: sid, f: l.food_id, q: round1(q),
+        s: sid, f: foodId, q: round1(q),
         cal: l.calories, p: l.protein, c: l.carbs, ft: l.fat, fb: l.fiber,
       });
       db.prepare('DELETE FROM leftovers WHERE id = $id AND profile_id = $p').run({ id: l.id, p: pid });

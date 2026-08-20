@@ -191,6 +191,15 @@ router.get('/export', (req, res) => {
         SELECT f.* FROM foods f
         JOIN batches b ON b.food_id = f.id
         WHERE b.profile_id = $pid
+        UNION
+        -- A whole-meal leftover mints its own backing food and has no
+        -- meal_entries until it is eaten, so neither branch above reaches it.
+        -- Without this the restored leftover's food_id remaps to null, and
+        -- because loadDay INNER JOINs foods the entry it creates is written and
+        -- then never rendered: measured at 0 of 400 kcal landing on the day.
+        SELECT f.* FROM foods f
+        JOIN leftovers l ON l.food_id = f.id
+        WHERE l.profile_id = $pid
       `).all({ pid }),
       // Batches were absent from every export until now, while "Clear all
       // logged data" deleted them — so export → clear → restore silently lost
