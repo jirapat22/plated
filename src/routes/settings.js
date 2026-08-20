@@ -192,6 +192,9 @@ router.get('/export', (req, res) => {
       // logged data" deleted them — so export → clear → restore silently lost
       // every meal prep you'd saved.
       batches: db.prepare('SELECT * FROM batches WHERE profile_id = $pid').all({ pid }),
+      // Same clear-deletes-it/export-misses-it trap batches and daily_overrides
+      // each fell into once. Carried from the start this time.
+      leftovers: db.prepare('SELECT * FROM leftovers WHERE profile_id = $pid').all({ pid }),
       meal_sessions: db.prepare('SELECT * FROM meal_sessions WHERE profile_id = $pid').all({ pid }),
       meal_entries:  db.prepare(`
         SELECT me.* FROM meal_entries me
@@ -259,6 +262,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
     const measurements  = Array.isArray(body.measurements) ? body.measurements : null;
     const overrides     = Array.isArray(body.daily_overrides) ? body.daily_overrides : null;
     const foodStats     = Array.isArray(body.food_stats) ? body.food_stats : null;
+    const leftovers     = Array.isArray(body.leftovers) ? body.leftovers : null;
     const settings      = (body.settings && typeof body.settings === 'object') ? body.settings : {};
 
     if (!body.exported_at || !Array.isArray(body.meal_sessions)) {
@@ -271,6 +275,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
     let goalRowsImported = 0;
     let measurementsImported = 0;
     let overridesImported = 0;
+    let leftoversImported = 0;
     db.exec('BEGIN');
     try {
       const findFood = db.prepare('SELECT id FROM foods WHERE name = $name AND brand IS $brand');
@@ -438,6 +443,23 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
         }
       }
 
+      if (leftovers) {
+        db.prepare('DELETE FROM leftovers WHERE profile_id = $pid').run({ pid });
+        const insL = db.prepare(`INSERT INTO leftovers (profile_id, name, food_id, quantity_g, calories, protein, carbs, fat, fiber, created_at)
+          VALUES ($pid, $n, $f, $q, $cal, $p, $c, $ft, $fb, COALESCE($at, datetime('now')))`);
+        for (const l of leftovers) {
+          if (!l.name) continue;
+          // Food ids are per-database, so remap like meal_entries do. A leftover
+          // whose food didn't come across keeps its stored macros and loses only
+          // the link — it is still a real portion in a real fridge.
+          const fid = l.food_id != null ? (foodIdMap.get(l.food_id) ?? null) : null;
+          insL.run({ pid, n: String(l.name).slice(0, 80), f: fid, q: l.quantity_g ?? null,
+            cal: l.calories ?? 0, p: l.protein ?? null, c: l.carbs ?? null,
+            ft: l.fat ?? null, fb: l.fiber ?? null, at: l.created_at ?? null });
+          leftoversImported++;
+        }
+      }
+
       const setSetting = db.prepare('INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)');
       for (const [key, value] of Object.entries(settings)) {
         if (ALLOWED.has(key) && value != null) setSetting.run({ pid, key, value: String(value) });
@@ -458,7 +480,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
       success: true,
       imported: { meals: meal_sessions.length, entries: entriesImported, weight: weight_log.length,
         foods_added: foodsAdded, batches: batchesImported, goal_rows: goalRowsImported,
-        measurements: measurementsImported, day_notes: overridesImported },
+        measurements: measurementsImported, day_notes: overridesImported, leftovers: leftoversImported },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

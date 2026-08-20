@@ -151,6 +151,24 @@ function initDb() {
       PRIMARY KEY (profile_id, food_id)
     );
 
+    -- ── Leftovers: the part of a logged meal you didn't actually eat ──
+    -- A batch is food you cooked in bulk and draw down over days. A leftover is
+    -- a single portion you served, didn't finish, and put back — so it is used
+    -- in one go rather than measured out again, and carries no cooked_g divisor.
+    -- Macros are stored as the slice they were at save time rather than being
+    -- re-derived from food_id later: a Quick Log leftover has no per-100g to
+    -- re-derive from, and for the rest the food hasn't changed anyway.
+    -- quantity_g is NULL for a Quick Log leftover, whose size is its calories.
+    CREATE TABLE IF NOT EXISTS leftovers (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id  INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      name        TEXT    NOT NULL,
+      food_id     INTEGER REFERENCES foods(id),
+      quantity_g  REAL,
+      calories    REAL, protein REAL, carbs REAL, fat REAL, fiber REAL,
+      created_at  TEXT    DEFAULT (datetime('now'))
+    );
+
     -- ── Meal-prep batches: totals + cooked weight, drawn down by weight ──
     CREATE TABLE IF NOT EXISTS batches (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,

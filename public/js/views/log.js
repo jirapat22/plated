@@ -220,6 +220,77 @@ export async function openMoveMeal(session, viewDate, onDone) {
   });
 }
 
+// ── Didn't finish it: split an entry into what you ate and what's left ──
+// You type what's LEFT, because that is the number you get from putting the
+// container back on the scale — which is the moment this happens. The log
+// corrects itself to the difference.
+export function openLeftover(entry, onDone) {
+  const isQuick = entry.food_source === 'quick';
+  const whole   = isQuick ? Math.round(entry.calories || 0) : Math.round(entry.quantity_g || 0);
+  const unit    = isQuick ? unitLabel() : 'g';
+  // Only worth asking about the pot when there IS a pot. A batch's backing food
+  // is the only thing this can go back into.
+  const fromBatch = entry.food_source === 'batch';
+
+  showSheet(content => {
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">🥡 Didn't finish it</span>
+        <button class="sheet-close" id="lo-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        <div style="font-size:15px;font-weight:600">${esc(entry.food_name)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${whole} ${unit} logged${
+          isQuick ? ' · typed as calories, so leave calories' : ''}</div>
+        <div class="form-group">
+          <label class="form-label">How much is left over?</label>
+          <div style="position:relative">
+            <input class="input" id="lo-amount" type="text" inputmode="decimal" placeholder="e.g. ${Math.round(whole / 3)}"
+              style="height:48px;font-size:18px;font-weight:700;padding-right:44px"/>
+            <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted)">${unit}</span>
+          </div>
+        </div>
+        <div id="lo-preview" style="font-size:12px;color:var(--text-faint);min-height:18px;margin-bottom:14px"></div>
+        ${fromBatch ? `
+        <label class="form-label">Where does the rest go?</label>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+          <button class="lo-dest btn btn-secondary active" data-batch="1" style="justify-content:flex-start">Back into the batch</button>
+          <button class="lo-dest btn btn-secondary" data-batch="0" style="justify-content:flex-start">Keep as a leftover portion</button>
+        </div>` : ''}
+        <button class="btn btn-primary btn-full" id="lo-save">Save the rest</button>
+      </div>`;
+
+    let toBatch = fromBatch;
+    const input = document.getElementById('lo-amount');
+    const prev  = document.getElementById('lo-preview');
+    const upd = () => {
+      const v = parseFloat(input.value);
+      prev.textContent = !(v > 0) ? ''
+        : v >= whole ? "That's all of it — delete the entry instead."
+        : `You ate ${Math.round(whole - v)} ${unit}, saving ${Math.round(v)} ${unit}.`;
+    };
+    input.addEventListener('input', upd);
+    content.querySelectorAll('.lo-dest').forEach(b => b.addEventListener('click', () => {
+      toBatch = b.dataset.batch === '1';
+      content.querySelectorAll('.lo-dest').forEach(x => x.classList.toggle('active', x === b));
+    }));
+    document.getElementById('lo-close').addEventListener('click', hideSheet);
+    document.getElementById('lo-save').addEventListener('click', async () => {
+      const v = parseFloat(input.value);
+      if (!(v > 0))     return showToast(`Enter how much is left, in ${unit}`, 'error');
+      if (v >= whole)   return showToast("That's the whole thing — delete the entry instead", 'error');
+      try {
+        const body = isQuick ? { left_kcal: v } : { left_g: v, to_batch: toBatch };
+        const r = await api.post(`/api/meals/entries/${entry.id}/leftover`, body);
+        hideSheet();
+        showToast(r.to_batch ? `${Math.round(v)} ${unit} back into the batch` : `Saved ${Math.round(v)} ${unit} as a leftover`, 'success');
+        onDone?.();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+    setTimeout(() => input.focus(), 60);
+  });
+}
+
 // ── Meal name presets ────────────────────────────────────────
 const MEAL_PRESETS = [
   { emoji: '🌅', name: 'Breakfast'    },
@@ -745,6 +816,10 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
     // app runs on comes out right. That 100g is bookkeeping, not something you
     // put on a scale, so showing it invited the obvious question.
     const isQuick = entry.food_source === 'quick';
+    // Only offered on days the food could still plausibly be in the fridge.
+    // The server enforces the same window; this just avoids showing a button
+    // that would come back with an error.
+    const canLeftover = viewDate === localDate() || viewDate === addDaysIso(localDate(), -1);
     const entryEl = document.createElement('div');
     entryEl.className = 'meal-entry';
     entryEl.innerHTML = `
@@ -761,12 +836,14 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
       </div>
       <div class="meal-entry-kcal">${fmtE(entry.calories)}</div>
       <div style="display:flex;gap:4px;flex-shrink:0">
+        ${canLeftover ? `<button class="entry-left-btn" title="Didn't finish it — save the rest" style="width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:13px">🥡</button>` : ''}
         <button class="entry-copy-btn" title="Copy to…" style="width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:13px">⧉</button>
         <button class="entry-edit-btn" title="Edit" style="width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:12px">✏️</button>
         <button class="entry-del-btn" title="Delete" style="width:30px;height:30px;border-radius:50%;background:rgba(255,107,107,.1);color:var(--error);display:flex;align-items:center;justify-content:center;font-size:15px">×</button>
       </div>
     `;
 
+    entryEl.querySelector('.entry-left-btn')?.addEventListener('click', () => openLeftover(entry, onDone));
     entryEl.querySelector('.entry-copy-btn').addEventListener('click', () => openCopyEntry(entry, viewDate, onDone));
     entryEl.querySelector('.entry-edit-btn').addEventListener('click', () => openEditEntry(entry, onDone));
     entryEl.querySelector('.entry-del-btn').addEventListener('click', async () => {

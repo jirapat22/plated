@@ -18,13 +18,16 @@ export function renderBatches(container) {
   load();
 
   async function load() {
-    let batches;
+    let batches, leftovers = [];
     try { batches = await api.get('/api/batches'); }
     catch (err) { container.innerHTML = `<div class="empty-state"><div class="empty-text">${esc(err.message)}</div></div>`; return; }
-    render(batches);
+    // Best-effort: a batch list that renders is worth more than an error page
+    // because the leftovers call failed.
+    try { leftovers = await api.get('/api/leftovers'); } catch { /* leave empty */ }
+    render(batches, leftovers);
   }
 
-  function render(batches) {
+  function render(batches, leftovers) {
     const ul = unitLabel();
     container.innerHTML = `
       <div style="padding:0 16px 12px">
@@ -33,8 +36,31 @@ export function renderBatches(container) {
       </div>
       ${batches.length ? batches.map(b => batchCard(b, ul)).join('')
         : `<div class="empty-state"><div class="empty-icon">🍱</div><div class="empty-text">No batches yet. Cook a big batch, save it once, then log portions by weight.</div></div>`}
+      ${leftoversSection(leftovers, ul)}
     `;
     const find = id => batches.find(x => x.id == id);
+    const findL = id => leftovers.find(x => x.id == id);
+
+    container.querySelectorAll('[data-lo-log]').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const l = findL(btn.dataset.loLog);
+        if (l) openLeftoverLog(l, load);
+      }));
+    container.querySelectorAll('[data-lo-bin]').forEach(btn =>
+      btn.addEventListener('click', async () => {
+        const l = findL(btn.dataset.loBin);
+        if (!confirm(`Bin "${l?.name}"? Nothing gets logged — this is for food you threw out.`)) return;
+        try { await api.delete(`/api/leftovers/${btn.dataset.loBin}`); load(); }
+        catch (err) { showToast(err.message, 'error'); }
+      }));
+    container.querySelectorAll('[data-lo-rename]').forEach(btn =>
+      btn.addEventListener('click', async () => {
+        const l = findL(btn.dataset.loRename);
+        const name = prompt('Name this leftover', l?.name || '');
+        if (!name?.trim()) return;
+        try { await api.patch(`/api/leftovers/${btn.dataset.loRename}`, { name: name.trim() }); load(); }
+        catch (err) { showToast(err.message, 'error'); }
+      }));
     document.getElementById('new-batch').addEventListener('click', () => openBuilder(load));
     container.querySelectorAll('[data-portion]').forEach(btn =>
       btn.addEventListener('click', () => openPortion(find(btn.dataset.portion), load)));
@@ -51,6 +77,49 @@ export function renderBatches(container) {
         try { await api.delete(`/api/batches/${btn.dataset.del}`); load(); }
         catch (err) { showToast(err.message, 'error'); }
       }));
+  }
+
+  // Its own section below the batches. A batch is bulk food measured out over
+  // days; a leftover is one plated portion eaten in one go. Related enough to
+  // share a screen, different enough that one list would put the same food in
+  // twice meaning two different things.
+  function leftoversSection(list, ul) {
+    if (!list.length) return '';
+    // No expiry by choice, so age is the only signal that something has been
+    // sitting there — shown rather than acted on, and a nudge once the list is
+    // long enough that scanning it stops being free.
+    const age = iso => {
+      const d = Math.floor((Date.now() - Date.parse(String(iso).replace(' ', 'T') + 'Z')) / 864e5);
+      return !Number.isFinite(d) ? '' : d <= 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`;
+    };
+    return `
+      <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);font-family:var(--font-display);margin:18px 20px 10px">
+        Leftovers${list.length > 5 ? ` <span style="color:var(--warning);font-weight:600;letter-spacing:0;text-transform:none">· ${list.length} saved, some may be old</span>` : ''}
+      </div>
+      ${list.map(l => `
+      <div style="padding:0 16px 10px">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div style="min-width:0">
+              <div style="font-weight:700;font-size:15px">${esc(l.name)}</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:3px">
+                ${l.quantity_g != null ? `<strong style="color:var(--text)">${g0(l.quantity_g)} g</strong> · ` : ''}${fmtE(l.calories)} ${ul}
+                <span style="color:var(--text-faint)">· ${age(l.created_at)}</span>
+              </div>
+              <div style="display:flex;gap:10px;font-size:12px;font-variant-numeric:tabular-nums;margin-top:5px">
+                <span style="color:var(--protein)">${g0(l.protein)}g P</span>
+                <span style="color:var(--carbs)">${g0(l.carbs)}g C</span>
+                <span style="color:var(--fat)">${g0(l.fat)}g F</span>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-shrink:0">
+              <button data-lo-rename="${l.id}" title="Rename" style="color:var(--text-faint);font-size:13px">✏️</button>
+              <button data-lo-bin="${l.id}" title="Threw it out — logs nothing" style="color:var(--error);font-size:15px">🗑</button>
+            </div>
+          </div>
+          <button data-lo-log="${l.id}" class="btn btn-secondary btn-full" style="margin-top:10px">Log it</button>
+        </div>
+      </div>`).join('')}`;
   }
 
   function batchCard(b, ul) {
@@ -307,6 +376,70 @@ function openBuilder(onDone, batch = null) {
 // opts.sessionId locks the portion to an existing meal (used when this is
 // opened from a meal's Add Food flow) — the day and meal pickers are then
 // redundant, so they're hidden.
+// ── Eat a leftover ────────────────────────────────────────────
+// Same day-and-meal picker portioning uses, because it sits on the same screen
+// and doing the same job differently is how two screens teach two habits.
+// No amount field: a leftover is one portion, used in one go.
+export function openLeftoverLog(l, onDone) {
+  const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return localDate(d); };
+  showSheet(async content => {
+    const today = localDate();
+    const days  = [today, addDays(today, 1), addDays(today, -1), addDays(today, -2)];
+    // Compare dates rather than counting chip positions — the trap that made a
+    // past-leaning strip label yesterday "Tomorrow" elsewhere in this app.
+    const label = iso => iso === today ? 'Today' : iso === addDays(today, 1) ? 'Tomorrow'
+      : iso === addDays(today, -1) ? 'Yesterday'
+      : new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    let date = today;
+
+    content.innerHTML = `
+      <div class="sheet-header">
+        <span class="sheet-title">Log · ${esc(l.name)}</span>
+        <button class="sheet-close" id="lg-close">✕</button>
+      </div>
+      <div style="padding:0 16px">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">${
+          l.quantity_g != null ? `${g0(l.quantity_g)} g · ` : ''}${fmtE(l.calories)} ${unitLabel()} · logged in one go</div>
+        <label class="form-label">Day</label>
+        <div id="lg-days" style="display:flex;gap:6px;overflow-x:auto;padding:6px 0 10px;-webkit-overflow-scrolling:touch">
+          ${days.map(d => `<button type="button" class="fs-chip lg-day${d === today ? ' active' : ''}" data-date="${d}" style="flex-shrink:0">${label(d)}</button>`).join('')}
+        </div>
+        <label class="form-label">Add to</label>
+        <select class="input" id="lg-meal" style="margin-bottom:16px"></select>
+        <button class="btn btn-primary btn-full" id="lg-save">Log it</button>
+      </div>`;
+
+    const sel = document.getElementById('lg-meal');
+    async function loadMeals() {
+      sel.innerHTML = '<option value="new">+ New meal</option>';
+      try {
+        const d = await api.get(`/api/meals/day/${date}`);
+        for (const s of (d.sessions || [])) {
+          const o = document.createElement('option');
+          o.value = s.id; o.textContent = s.name || 'Meal';
+          sel.appendChild(o);
+        }
+      } catch { /* new meal is always available */ }
+    }
+    content.querySelectorAll('.lg-day').forEach(b => b.addEventListener('click', () => {
+      date = b.dataset.date;
+      content.querySelectorAll('.lg-day').forEach(x => x.classList.toggle('active', x === b));
+      loadMeals();
+    }));
+    document.getElementById('lg-close').addEventListener('click', hideSheet);
+    document.getElementById('lg-save').addEventListener('click', async () => {
+      const sid = sel.value;
+      try {
+        await api.post(`/api/leftovers/${l.id}/log`, { date, ...(sid !== 'new' ? { meal_session_id: sid } : {}) });
+        hideSheet();
+        showToast(`${l.name} logged${date === today ? '' : ` to ${date}`}`, 'success');
+        onDone?.();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+    loadMeals();
+  });
+}
+
 export function openPortion(batch, onDone, opts = {}) {
   if (!batch) return;
   const lockedSession = opts.sessionId != null;

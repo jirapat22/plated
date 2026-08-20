@@ -292,6 +292,101 @@ router.post('/sessions/:id/copy', (req, res) => {
   }
 });
 
+// POST /api/meals/entries/:id/leftover { left_g | left_kcal, to_batch? }
+// "I served this and didn't finish it." Splits one logged entry in two: the
+// part you ate stays in the log, and the rest becomes a leftover.
+//
+// You say what is LEFT, not what you ate — that is the number you get by
+// putting the container back on the scale, which is the moment this happens.
+//
+// Today and yesterday only. Older days can still be edited entry-by-entry; what
+// they cannot do is mint a leftover, because a portion you "saved" four days ago
+// is not in the fridge, and marking it would move a day the 28-day average and
+// any exported report have already counted.
+//
+// to_batch decides where the remainder goes when the food backs a batch: into
+// the pot (its remaining_g goes back up) or out as a separate plated portion.
+// The batch move is explicit here rather than inherited: PATCH /entries/:id
+// hands grams back automatically on any shrink, which is right for a correction
+// and wrong for this — the food left the pot and is sitting in a container.
+router.post('/entries/:id/leftover', (req, res) => {
+  try {
+    const db = getDb();
+    const pid = req.profileId;
+    const entry = db.prepare(`
+      SELECT me.*, ms.date, f.name AS food_name, f.source AS food_source
+      FROM meal_entries me
+      JOIN meal_sessions ms ON ms.id = me.meal_session_id
+      LEFT JOIN foods f ON f.id = me.food_id
+      WHERE me.id = $id AND ms.profile_id = $pid
+    `).get({ id: req.params.id, pid });
+    if (!entry) return res.status(404).json({ error: 'Entry not found' });
+
+    const today = todayLocal(tzFor(db, pid));
+    const yesterday = new Date(Date.parse(today + 'T00:00:00Z') - 864e5).toISOString().slice(0, 10);
+    if (entry.date !== today && entry.date !== yesterday) {
+      return res.status(400).json({ error: "Leftovers can only be saved from today or yesterday — edit the entry instead" });
+    }
+
+    // A Quick Log stores the calories you typed against a bookkeeping 100g, so
+    // its size is calories, not weight. Anything else is weighed.
+    const isQuick = entry.food_source === 'quick';
+    const whole = isQuick ? (entry.calories || 0) : (entry.quantity_g || 0);
+    const left  = parseFloat(isQuick ? req.body?.left_kcal : req.body?.left_g);
+    if (!(whole > 0)) return res.status(400).json({ error: 'That entry has nothing to split' });
+    if (!(left > 0))  return res.status(400).json({ error: isQuick ? 'left_kcal must be greater than 0' : 'left_g must be greater than 0' });
+    if (left >= whole) {
+      return res.status(400).json({ error: "That's the whole thing — delete the entry instead of leaving all of it" });
+    }
+
+    const keepRatio = (whole - left) / whole;          // the share you actually ate
+    const slice = (v, r) => (v == null ? null : round1(v * r));
+    const eaten = {
+      calories: slice(entry.calories, keepRatio), protein: slice(entry.protein, keepRatio),
+      carbs: slice(entry.carbs, keepRatio), fat: slice(entry.fat, keepRatio), fiber: slice(entry.fiber, keepRatio),
+      quantity_g: isQuick ? entry.quantity_g : round1(whole - left),
+    };
+    const overRatio = 1 - keepRatio;
+    const over = {
+      calories: slice(entry.calories, overRatio), protein: slice(entry.protein, overRatio),
+      carbs: slice(entry.carbs, overRatio), fat: slice(entry.fat, overRatio), fiber: slice(entry.fiber, overRatio),
+      quantity_g: isQuick ? null : round1(left),
+    };
+
+    const toBatch = req.body?.to_batch === true && !!entry.food_id
+      && !!db.prepare('SELECT 1 FROM batches WHERE food_id = $f AND profile_id = $p').get({ f: entry.food_id, p: pid });
+
+    let leftoverId = null;
+    db.exec('BEGIN');
+    try {
+      db.prepare(`UPDATE meal_entries SET quantity_g = $q, calories = $cal, protein = $p,
+        carbs = $c, fat = $ft, fiber = $fb WHERE id = $id`).run({
+        id: entry.id, q: eaten.quantity_g, cal: eaten.calories, p: eaten.protein,
+        c: eaten.carbs, ft: eaten.fat, fb: eaten.fiber,
+      });
+
+      if (toBatch) {
+        adjustBatchStock(db, pid, entry.food_id, left);   // straight back in the pot
+      } else {
+        leftoverId = db.prepare(`INSERT INTO leftovers (profile_id, name, food_id, quantity_g, calories, protein, carbs, fat, fiber)
+          VALUES ($p, $n, $f, $q, $cal, $pr, $c, $ft, $fb)`).run({
+          p: pid, n: String(entry.food_name || 'Leftover').slice(0, 80), f: entry.food_id,
+          q: over.quantity_g, cal: over.calories, pr: over.protein, c: over.carbs, ft: over.fat, fb: over.fiber,
+        }).lastInsertRowid;
+      }
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
+
+    res.status(201).json({
+      entry_id: entry.id, leftover_id: leftoverId, to_batch: toBatch,
+      ate: isQuick ? { calories: eaten.calories } : { quantity_g: eaten.quantity_g },
+      saved: isQuick ? { calories: over.calories } : { quantity_g: over.quantity_g },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/meals/sessions/:id/merge { target_session_id }
 // Fold this meal's foods into another meal; this one stops existing.
 //
