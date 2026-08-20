@@ -439,6 +439,22 @@ router.delete('/me', requireProfile, (req, res) => {
     db.prepare(`UPDATE foods SET hidden = 1 WHERE id IN
       (SELECT food_id FROM batches WHERE profile_id = $id AND food_id IS NOT NULL)`).run({ id });
     db.prepare('DELETE FROM batches WHERE profile_id = $id').run({ id });
+    // Leftovers cascade away with the profile row, but the backing foods a
+    // whole-meal split minted for them do not — created_by_profile is a plain
+    // column, not a foreign key. Left alone they survive with nothing pointing
+    // at them: the same orphan the bin and the import each had to learn to
+    // sweep. Delete before the cascade runs, while the leftovers are still
+    // here to identify them, and only ones nothing else references.
+    // Leftovers BEFORE their foods: leftovers.food_id is a real foreign key, so
+    // deleting a minted food while a leftover still points at it fails the
+    // constraint and takes the whole delete down with it. Found by running it.
+    db.prepare('DELETE FROM leftovers WHERE profile_id = $id').run({ id });
+    db.prepare(`
+      DELETE FROM foods WHERE source = 'leftover' AND created_by_profile = $id
+        AND NOT EXISTS (SELECT 1 FROM meal_entries me WHERE me.food_id = foods.id)
+        AND NOT EXISTS (SELECT 1 FROM batches b      WHERE b.food_id  = foods.id)
+        AND NOT EXISTS (SELECT 1 FROM leftovers l    WHERE l.food_id  = foods.id)
+    `).run({ id });
     db.prepare('DELETE FROM daily_overrides   WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM profile_settings  WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM profile_food_stats WHERE profile_id = $id').run({ id });
