@@ -527,6 +527,13 @@ const escCsv  = v => {
   const s = String(v);
   return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
+// Markdown tables are pipe-delimited, so a name containing a pipe splits the
+// row into extra columns and the table stops being a table. HTML escapes these
+// cells and CSV escapes them; Markdown was the one renderer that did not — and
+// meal names are typed by the user, food names arrive from Open Food Facts,
+// and a whole-meal leftover names its backing food after the meal. A newline
+// ends the row outright, so those collapse to a space.
+const escMd = v => String(v ?? '').replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ');
 const round1 = n => Math.round(n * 10) / 10;
 // A food with no data for a macro is unknown, not zero — render it as a dash
 // so a reader doesn't mistake "not recorded" for "contains none".
@@ -1030,7 +1037,7 @@ function toMarkdown(report) {
       '|---|---|--:|--:|--:|--:|--:|--:|');
     for (const meal of day.meals) {
       meal.entries.forEach((e, i) => {
-        lines.push(`| ${i === 0 ? meal.name : ''} | ${foodName(e)} | ${g(e.quantity_g)} g | ${kcal(e.calories)} | ${g(e.protein)} | ${g(e.carbs)} | ${g(e.fat)} | ${g(e.fiber)} |`);
+        lines.push(`| ${i === 0 ? escMd(meal.name) : ''} | ${escMd(foodName(e))} | ${g(e.quantity_g)} g | ${kcal(e.calories)} | ${g(e.protein)} | ${g(e.carbs)} | ${g(e.fat)} | ${g(e.fiber)} |`);
       });
     }
   }
