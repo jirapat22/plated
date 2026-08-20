@@ -283,17 +283,22 @@ export function openLeftover(entry, onDone) {
       content.querySelectorAll('.lo-dest').forEach(x => x.classList.toggle('active', x === b));
     }));
     document.getElementById('lo-close').addEventListener('click', hideSheet);
-    document.getElementById('lo-save').addEventListener('click', async () => {
+    document.getElementById('lo-save').addEventListener('click', async e => {
       const v = parseFloat(input.value);
       if (!(v > 0))     return showToast(`Enter how much is left, in ${unit}`, 'error');
       if (v >= whole)   return showToast("That's the whole thing — delete the entry instead", 'error');
+      const btn = e.currentTarget;
+      btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const body = isQuick ? { left_kcal: v } : { left_g: v, to_batch: toBatch };
         const r = await api.post(`/api/meals/entries/${entry.id}/leftover`, body);
         hideSheet();
         showToast(r.to_batch ? `${Math.round(v)} ${unit} back into the batch` : `Saved ${Math.round(v)} ${unit} as a leftover`, 'success');
         onDone?.();
-      } catch (err) { showToast(err.message, 'error'); }
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Save the rest';
+      }
     });
     setTimeout(() => input.focus(), 60);
   });
@@ -351,14 +356,22 @@ export function openMealLeftover(session, onDone) {
     });
 
     document.getElementById('ml-close').addEventListener('click', hideSheet);
-    document.getElementById('ml-save').addEventListener('click', async () => {
+    document.getElementById('ml-save').addEventListener('click', async e => {
       if (!(ate > 0 && ate < 1)) return showToast('Pick how much of it you ate', 'error');
+      // Disabled while in flight, like every other save in this app. Without it
+      // a double-tap splits the meal twice — the second request halves what the
+      // first one left, and both succeed.
+      const btn = e.currentTarget;
+      btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const r = await api.post(`/api/meals/sessions/${session.id}/leftover`, { ate });
         hideSheet();
         showToast(`Saved ${fmtE(r.saved.calories)} ${ul} as a leftover`, 'success');
         onDone?.();
-      } catch (err) { showToast(err.message, 'error'); }
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Save the rest';
+      }
     });
   });
 }
@@ -874,20 +887,25 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
           style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);padding:3px 9px;border-radius:999px;border:1px solid rgba(200,184,255,.2);white-space:nowrap">
           → Today
         </button>` : ''}
-        <div style="position:relative">
-          <button class="session-more-btn" title="More" style="color:var(--text-faint);padding:4px 6px;font-size:16px;line-height:1">⋮</button>
-          <div class="session-menu" style="display:none;position:absolute;right:0;top:26px;z-index:20;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 8px 24px rgba(0,0,0,.4);min-width:186px;overflow:hidden">
-            ${canLeftoverMeal ? `<button class="sm-left" style="display:block;width:100%;text-align:left;padding:10px 14px;font-size:13px;color:var(--text)">🥡 Didn't finish it</button>` : ''}
-            <button class="sm-move" style="display:block;width:100%;text-align:left;padding:10px 14px;font-size:13px;color:var(--text)">Move to another day</button>
-            <button class="sm-copy" style="display:block;width:100%;text-align:left;padding:10px 14px;font-size:13px;color:var(--text)">Copy to…</button>
-          </div>
-        </div>
+        <button class="session-more-btn" title="More" style="color:var(--text-faint);padding:4px 6px;font-size:16px;line-height:1">⋮</button>
         <button class="session-del-btn" title="Delete" style="color:var(--text-faint);padding:4px">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
           </svg>
         </button>
       </div>
+    </div>
+    <!-- An expanding row, not a floating dropdown. .meal-session is
+         overflow:hidden to clip its rounded corners, so an absolutely
+         positioned menu was being cut off — worst on a one-item meal, where the
+         card is shorter than the menu. Escaping the clip would have meant
+         position:fixed and hand-computed coordinates, which then has to fight
+         the zoom: var(--ui-scale) the text-scaling feature puts on the scroll
+         container. A row in normal flow just makes the card taller. -->
+    <div class="session-menu" style="display:none;border-bottom:1px solid var(--border);background:var(--surface-2)">
+      ${canLeftoverMeal ? `<button class="sm-left" style="display:block;width:100%;text-align:left;padding:12px 16px;font-size:13px;color:var(--text)">🥡 Didn't finish it</button>` : ''}
+      <button class="sm-move" style="display:block;width:100%;text-align:left;padding:12px 16px;font-size:13px;color:var(--text)">Move to another day</button>
+      <button class="sm-copy" style="display:block;width:100%;text-align:left;padding:12px 16px;font-size:13px;color:var(--text)">Copy to…</button>
     </div>
   `;
 

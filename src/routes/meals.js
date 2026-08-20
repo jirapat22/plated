@@ -338,6 +338,10 @@ router.post('/entries/:id/leftover', (req, res) => {
     if (left >= whole) {
       return res.status(400).json({ error: "That's the whole thing — delete the entry instead of leaving all of it" });
     }
+    // And enough of it has to survive rounding to be worth a row on the list.
+    if (Math.round((entry.calories || 0) * (left / whole)) < 1) {
+      return res.status(400).json({ error: "That's too little to save — it rounds to nothing" });
+    }
 
     const keepRatio = (whole - left) / whole;          // the share you actually ate
     const slice = (v, r) => (v == null ? null : round1(v * r));
@@ -432,7 +436,13 @@ router.post('/sessions/:id/leftover', (req, res) => {
     const rest = 1 - ate;
     const tot = { quantity_g: 0, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
     for (const e of entries) for (const k in tot) tot[k] += (e[k] || 0) * rest;
-    if (!(tot.calories > 0)) return res.status(400).json({ error: 'There is nothing measurable left of that meal' });
+    // Has to round to at least one whole calorie. At ate = 0.999 the remainder
+    // was 0.7 kcal, which passed a bare > 0 and produced a leftover displaying
+    // as "1 kcal" plus a minted food to back it — a row that costs more to
+    // clear than it describes.
+    if (!(Math.round(tot.calories) >= 1)) {
+      return res.status(400).json({ error: 'There is nothing measurable left of that meal' });
+    }
 
     const name = String(s.name || 'Meal').slice(0, 80);
     let leftoverId = null;
