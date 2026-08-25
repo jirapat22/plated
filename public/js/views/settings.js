@@ -306,9 +306,16 @@ export function renderSettings(container) {
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
         <div class="sec-head">📦 Data &amp; Export<span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
-          <button class="btn btn-secondary btn-full" id="open-report" style="margin-bottom:8px">📋 Detailed nutrition report</button>
-          <button class="btn btn-secondary btn-full" id="export-json" style="margin-bottom:8px">📦 Export all data as JSON</button>
-          <button class="btn btn-secondary btn-full" id="import-backup">📥 Restore from backup</button>
+          <!-- Two of these used to read as the same offer: "report" and "export"
+               both sound like "get my data out", and nothing said which file the
+               third one eats. The hint line is the whole point — the label says
+               what it is, the hint says who it is for. Left-aligned because a
+               centred two-line button reads as one wrapped sentence.
+               .btn-label is a separate span so the in-flight "Restoring…" text
+               can replace the label without wiping the hint under it. -->
+          ${dataBtn('open-report',   '📋', 'Nutrition report',   'a document to read or share')}
+          ${dataBtn('export-json',   '📦', 'Full backup (JSON)', 'everything, for restoring later')}
+          ${dataBtn('import-backup', '📥', 'Restore from a backup', 'needs the JSON file above')}
           <input type="file" id="import-file" accept="application/json" style="display:none">
         </div>
       </div>
@@ -1028,7 +1035,11 @@ export function renderSettings(container) {
       if (prompt('Type RESTORE to confirm:') !== 'RESTORE') return showToast('Cancelled', 'info');
 
       const btn = document.getElementById('import-backup');
-      btn.disabled = true; btn.textContent = 'Restoring…';
+      // Swap only the label span, so the hint under it survives the round trip.
+      // btn.textContent would flatten the whole button to one string and the
+      // hint would never come back.
+      const lbl = btn.querySelector('.btn-label');
+      btn.disabled = true; lbl.textContent = 'Restoring…';
       try {
         const result = await api.post('/api/settings/import', data);
         const im = result.imported;
@@ -1045,7 +1056,7 @@ export function renderSettings(container) {
       } catch (err) {
         showToast(err.message, 'error');
       } finally {
-        btn.disabled = false; btn.textContent = '📥 Restore from backup';
+        btn.disabled = false; lbl.textContent = '📥 Restore from a backup';
       }
     });
 
@@ -1198,6 +1209,17 @@ function openTdeeEstimator(s, onUse) {
       onUse(current);
     });
   });
+}
+
+// A Data & Export button: emoji + label on one line, a quiet hint under it.
+// height:auto because .btn is a fixed 48px centred row, which cannot hold two
+// lines without clipping the second.
+function dataBtn(id, emoji, label, hint) {
+  return `<button class="btn btn-secondary btn-full" id="${id}"
+    style="margin-bottom:8px;height:auto;padding:10px 16px;flex-direction:column;align-items:flex-start;gap:2px;text-align:left">
+    <span class="btn-label">${emoji} ${label}</span>
+    <span style="font-size:11px;font-weight:500;color:var(--text-faint)">${hint}</span>
+  </button>`;
 }
 
 // ── Detailed nutrition report ──────────────────────────────────
