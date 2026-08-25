@@ -1,7 +1,7 @@
 import { api }                            from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
 import { renderFoodSearch }               from '../components/foodSearch.js';
-import { fmtE, unitLabel, wireEnergyUnitToggle } from '../utils/energy.js';
+import { fmtE, unitLabel, toKcal, wireEnergyUnitToggle } from '../utils/energy.js';
 import { localDate }                      from '../utils/date.js';
 import { getFoodIcon }                    from '../utils/foodIcon.js';
 import { openPortion }                    from './batches.js';
@@ -234,8 +234,16 @@ export async function openMoveMeal(session, viewDate, onDone) {
 // corrects itself to the difference.
 export function openLeftover(entry, onDone) {
   const isQuick = entry.food_source === 'quick';
+  // `whole` stays CANONICAL — kcal for a Quick Log, grams for anything weighed
+  // — and only crosses into display units at the edges. A Quick Log's size is
+  // energy, and this app can be set to kJ: showing a raw kcal number under a
+  // "kJ" label understates it by 4.184x, and taking a typed kJ figure straight
+  // into left_kcal saves a leftover four times the size the user meant.
+  // disp()/canon() are the boundary; grams pass through both untouched.
   const whole   = isQuick ? Math.round(entry.calories || 0) : Math.round(entry.quantity_g || 0);
   const unit    = isQuick ? unitLabel() : 'g';
+  const disp    = v => (isQuick ? fmtE(v) : String(Math.round(v)));
+  const canon   = v => (isQuick ? toKcal(v) : v);
   // Only worth asking about the pot when there IS a pot. A batch's backing food
   // is the only thing this can go back into.
   const fromBatch = entry.food_source === 'batch';
@@ -248,12 +256,12 @@ export function openLeftover(entry, onDone) {
       </div>
       <div style="padding:0 16px">
         <div style="font-size:15px;font-weight:600">${esc(entry.food_name)}</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${whole} ${unit} logged${
-          isQuick ? ' · typed as calories, so leave calories' : ''}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${disp(whole)} ${unit} logged${
+          isQuick ? ` · typed as energy, so leave ${unit}` : ''}</div>
         <div class="form-group">
           <label class="form-label">How much is left over?</label>
           <div style="position:relative">
-            <input class="input" id="lo-amount" type="text" inputmode="decimal" placeholder="e.g. ${Math.round(whole / 3)}"
+            <input class="input" id="lo-amount" type="text" inputmode="decimal" placeholder="e.g. ${disp(whole / 3)}"
               style="height:48px;font-size:18px;font-weight:700;padding-right:44px"/>
             <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted)">${unit}</span>
           </div>
@@ -272,10 +280,13 @@ export function openLeftover(entry, onDone) {
     const input = document.getElementById('lo-amount');
     const prev  = document.getElementById('lo-preview');
     const upd = () => {
-      const v = parseFloat(input.value);
-      prev.textContent = !(v > 0) ? ''
-        : v >= whole ? "That's all of it — delete the entry instead."
-        : `You ate ${Math.round(whole - v)} ${unit}, saving ${Math.round(v)} ${unit}.`;
+      // Typed value -> canonical before ANY comparison or arithmetic. Comparing
+      // a kJ figure against a kcal `whole` is how "that's all of it" fires on a
+      // quarter of the meal.
+      const c = canon(parseFloat(input.value));
+      prev.textContent = !(c > 0) ? ''
+        : c >= whole ? "That's all of it — delete the entry instead."
+        : `You ate ${disp(whole - c)} ${unit}, saving ${disp(c)} ${unit}.`;
     };
     input.addEventListener('input', upd);
     content.querySelectorAll('.lo-dest').forEach(b => b.addEventListener('click', () => {
@@ -284,16 +295,17 @@ export function openLeftover(entry, onDone) {
     }));
     document.getElementById('lo-close').addEventListener('click', hideSheet);
     document.getElementById('lo-save').addEventListener('click', async e => {
-      const v = parseFloat(input.value);
-      if (!(v > 0))     return showToast(`Enter how much is left, in ${unit}`, 'error');
-      if (v >= whole)   return showToast("That's the whole thing — delete the entry instead", 'error');
+      const c = canon(parseFloat(input.value));
+      if (!(c > 0))     return showToast(`Enter how much is left, in ${unit}`, 'error');
+      if (c >= whole)   return showToast("That's the whole thing — delete the entry instead", 'error');
       const btn = e.currentTarget;
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
-        const body = isQuick ? { left_kcal: v } : { left_g: v, to_batch: toBatch };
+        // left_kcal is kcal by name and by contract — the server stores kcal.
+        const body = isQuick ? { left_kcal: c } : { left_g: c, to_batch: toBatch };
         const r = await api.post(`/api/meals/entries/${entry.id}/leftover`, body);
         hideSheet();
-        showToast(r.to_batch ? `${Math.round(v)} ${unit} back into the batch` : `Saved ${Math.round(v)} ${unit} as a leftover`, 'success');
+        showToast(r.to_batch ? `${disp(c)} ${unit} back into the batch` : `Saved ${disp(c)} ${unit} as a leftover`, 'success');
         onDone?.();
       } catch (err) {
         showToast(err.message, 'error');
