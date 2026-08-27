@@ -219,13 +219,26 @@ export function renderSettings(container) {
             </button>
           </div>
         </div>
-        ${goalRow('calorie_goal',      'Energy',        eIn(s.calorie_goal), unitLabel())}
+        ${(() => {
+          // Two controls used to own calorie_goal: this field, and refreshGoal()
+          // in Goal Phase, which recomputes from TDEE + phase and PATCHes over
+          // whatever you typed here on the next deficit or phase change. Type
+          // 1800, nudge the deficit, watch it silently become 2176.
+          // Locked only when the phase math can actually produce a number —
+          // without a TDEE, phaseCalorieGoal returns null, refreshGoal is a
+          // no-op, and typing a goal straight in is the only way to set one.
+          const { tdee, phase, deficit, surplus } = parsePhaseSettings(s);
+          const owned = phaseCalorieGoal(tdee, phase, deficit, surplus) != null;
+          return goalRow('calorie_goal', 'Energy', eIn(s.calorie_goal), unitLabel(), false, owned);
+        })()}
         <div id="msplit-box"></div>
-        ${goalRow('protein_goal',      'Protein',       s.protein_goal,      'g')}
-        ${goalRow('carb_goal',         'Carbs',         s.carb_goal,         'g')}
-        ${goalRow('fat_goal',          'Fat',           s.fat_goal,          'g')}
+        ${goalRow('protein_goal',      'Protein',       s.protein_goal,      'g', false, s.macro_mode === 'gkg')}
+        ${goalRow('carb_goal',         'Carbs',         s.carb_goal,         'g', false, s.macro_mode === 'gkg')}
+        ${goalRow('fat_goal',          'Fat',           s.fat_goal,          'g', false, s.macro_mode === 'gkg')}
         ${goalRow('fiber_goal',        'Fiber',         s.fiber_goal,        'g')}
-        <div style="padding:10px 16px 14px;font-size:11px;color:var(--text-faint)">These update automatically when you sync from IronLog.</div>
+        <div style="padding:10px 16px 14px;font-size:11px;color:var(--text-muted)">${s.macro_mode === 'gkg'
+          ? 'Protein, carbs and fat come from your g/kg split above — they follow your weigh-ins, so they aren’t typed here. Fiber is yours to set.'
+          : 'These update automatically when you sync from IronLog.'}</div>
       </div>
 
       <!-- IronLog -->
@@ -248,40 +261,7 @@ export function renderSettings(container) {
             <button class="btn btn-secondary" id="ironlog-test" style="flex:1;min-width:100px">Test</button>
           </div>
           <div style="font-size:11px;color:var(--text-faint);margin-top:6px">Pulling fresh goals from IronLog happens in Goal Phase above (① Maintenance).</div>
-          <button class="btn btn-secondary btn-full" id="ironlog-inspect" style="margin-top:8px;font-size:12px;height:36px">
-            🔍 Inspect raw IronLog data
-          </button>
           <div id="ironlog-status" style="margin-top:10px;font-size:12px;color:var(--text-muted);user-select:text;-webkit-user-select:text"></div>
-          <pre id="ironlog-raw-box" style="display:none;margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;user-select:text;-webkit-user-select:text;max-height:300px;overflow-y:auto"></pre>
-        </div>
-      </div>
-
-      <!-- How it works. A collapsed section costs one line of heading and
-           nothing else, which is why the explanations live here rather than as
-           tooltips scattered over features that mostly explain themselves at
-           the point you use them. -->
-      <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
-        <div class="sec-head">❓ How Plated works<span class="sec-chevron">▾</span></div>
-        <div style="padding:4px 16px 16px;font-size:12px;color:var(--text-muted);line-height:1.6">
-          ${[
-            ['🍽️', 'Logging a meal',
-             'Today → <b>Add Food</b>. Search, pick, set the grams. Portions remember themselves: log rice at 150 g once and it offers 150 g next time.'],
-            ['⚡', 'Quick Log',
-             "For food you can't weigh — a restaurant plate, someone else's cooking. Type a description and a rough calorie figure and it goes straight into the day. It never enters your food database, so it can't clutter search."],
-            ['🍱', 'Batches',
-             'For cooking once and eating five times. Enter the ingredients and the finished cooked weight; Plated works out the calories per gram. Then weigh your bowl and log a portion, and the batch counts down. Delete a portion and the grams go back.'],
-            ['⚡', 'IronLog',
-             'If you use IronLog for training, connecting it pulls your workout burn, your bodyweight, and your goals across. Burn is added <i>on top</i> of your daily target, so a training day lets you eat more without touching your settings.'],
-            ['📈', 'Trends',
-             "The verdict card answers one question: is this actually working? It compares what you ate against what the scale did and works out your <i>real</i> maintenance — which is usually not the estimate you started with. It needs about four weeks of weigh-ins before it means anything."],
-          ].map(([icon, title, body]) => `
-            <div style="display:flex;gap:10px;padding:10px 0;border-top:1px solid var(--border)">
-              <span style="font-size:15px;flex-shrink:0;line-height:1.3">${icon}</span>
-              <div style="min-width:0">
-                <div style="font-weight:700;color:var(--text);font-size:12px;margin-bottom:2px">${title}</div>
-                <div>${body}</div>
-              </div>
-            </div>`).join('')}
         </div>
       </div>
 
@@ -899,28 +879,6 @@ export function renderSettings(container) {
       }
     });
 
-    // IronLog inspect — shows raw JSON, stays on screen, fully selectable
-    document.getElementById('ironlog-inspect').addEventListener('click', async () => {
-      const box = document.getElementById('ironlog-raw-box');
-      const btn = document.getElementById('ironlog-inspect');
-      if (box.style.display !== 'none') {
-        box.style.display = 'none';
-        btn.textContent = '🔍 Inspect raw IronLog data';
-        return;
-      }
-      btn.textContent = 'Loading…';
-      try {
-        const data = await api.get('/api/ironlog/raw');
-        box.textContent = JSON.stringify(data, null, 2);
-        box.style.display = 'block';
-        btn.textContent = '✕ Hide raw data';
-      } catch (err) {
-        box.textContent = err.message;
-        box.style.display = 'block';
-        btn.textContent = '✕ Hide';
-      }
-    });
-
     // IronLog
     document.getElementById('ironlog-save').addEventListener('click', async () => {
       const url = document.getElementById('ironlog-url').value.trim();
@@ -1436,7 +1394,7 @@ const a11yRow = (key, label, hint, s) => `
       style="flex-shrink:0">${s[key] === '1' ? 'On' : 'Off'}</button>
   </div>`;
 
-function goalRow(key, label, value, unit, compact = false) {
+function goalRow(key, label, value, unit, compact = false, locked = false) {
   if (compact) {
     return `
       <div class="form-group" style="margin-bottom:0">
@@ -1448,11 +1406,17 @@ function goalRow(key, label, value, unit, compact = false) {
       </div>
     `;
   }
+  // `locked` marks a goal that something else computes. The field still shows
+  // the live number — you need to see it — but it can't be typed into, because
+  // typing there did nothing: recalcMacroGoals rewrites protein/fat/carbs from
+  // the multipliers on the next weigh-in, calorie change or IronLog sync, so a
+  // hand-typed 175 g reverted silently and looked like the app losing data.
   return `
     <div class="settings-row">
       <span class="settings-row-label">${label}</span>
       <div style="display:flex;align-items:center;gap:6px">
-        <input class="settings-row-input" type="text" inputmode="decimal" value="${value || ''}" data-key="${key}" step="${unit === '×' ? '0.1' : '1'}" />
+        <input class="settings-row-input" type="text" inputmode="decimal" value="${value || ''}" data-key="${key}"
+          step="${unit === '×' ? '0.1' : '1'}"${locked ? ' readonly tabindex="-1" aria-readonly="true" style="opacity:.55;cursor:not-allowed"' : ''} />
         <span style="font-size:12px;color:var(--text-muted)">${unit}</span>
       </div>
     </div>

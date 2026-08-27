@@ -1,6 +1,12 @@
 /**
  * Returns an emoji icon for a food based on its name.
  * Priority order matters — more specific rules first.
+ *
+ * FIRST MATCH WINS, so a pattern repeated further down the list can never fire.
+ * 18 such rules had accumulated (tahini, pavlova, sausage roll, miso…), every
+ * one of them shadowed by an identical earlier rule mapping to the same emoji —
+ * dead weight that read like coverage. Before adding a rule, check the term
+ * isn't already matched above.
  */
 const RULES = [
   // ── Must come first — specific combos that would match general rules ──
@@ -287,7 +293,6 @@ const RULES = [
   [/harissa|dukkah|za.?atar|romesco/i,                                                 '🫙'],
   [/gochujang|doenjang|sambal\b/i,                                                     '🌶️'],
   [/xo.sauce|black.bean.sauce/i,                                                       '🫙'],
-  [/tahini/i,                                                                            '🥜'],
   [/miso\b/i,                                                                           '🍜'],
   [/kimchi/i,                                                                            '🥬'],
   [/sauerkraut/i,                                                                        '🥬'],
@@ -307,7 +312,6 @@ const RULES = [
   // ── Spices ──────────────────────────────────────────────────
   [/cinnamon/i,                                                                          '🫙'],
   [/cumin|turmeric|paprika|cardamom|clove\b|nutmeg|allspice|star.anise|sumac|saffron|fenugreek/i, '🫙'],
-  [/ginger\b/i,                                                                          '🫚'],
   [/chilli.flake|chilli.powder|cayenne/i,                                               '🌶️'],
   [/black.pepper|white.pepper|peppercorn/i,                                             '🧂'],
   [/\bspice\b|\bspices\b/i,                                                             '🫙'],
@@ -339,7 +343,6 @@ const RULES = [
   [/stir.fry|stir-fry|pad.thai/i,                                                       '🥘'],
   [/fried.rice/i,                                                                        '🍚'],
   [/chips\b|french.fries\b|wedges/i,                                                    '🍟'],
-  [/fish.and.chips/i,                                                                    '🐟'],
   [/roast\b|sunday.roast/i,                                                              '🍖'],
   [/schnitzel|crumbed/i,                                                                 '🍽'],
   [/pie\b|quiche/i,                                                                      '🥧'],
@@ -391,40 +394,25 @@ const RULES = [
   [/vegemite|marmite/i,                                                                  '🫙'],
 
   // ── NZ-specific foods ────────────────────────────────────────
-  [/pavlova/i,                                                                            '🎂'],
-  [/lamington/i,                                                                          '🍰'],
-  [/afghan.biscuit|anzac/i,                                                              '🍪'],
   [/hangi\b/i,                                                                            '🍖'],
   [/rewena/i,                                                                             '🍞'],
-  [/poke.bowl/i,                                                                          '🥗'],
 
   // ── Biltong & jerky ──────────────────────────────────────────
-  [/biltong|jerky|dried.meat|beef.stick/i,                                               '🥩'],
   [/pork.crackling|pork.rind|crackling/i,                                                '🥓'],
 
   // ── Bubble tea & specialty drinks ────────────────────────────
-  [/bubble.tea|boba|pearl.milk.tea/i,                                                    '🧋'],
   [/cold.brew|nitro.coffee|iced.coffee/i,                                                '☕'],
   [/hot.chocolate|drinking.chocolate|cacao.drink/i,                                      '☕'],
-  [/turmeric.latte|golden.milk/i,                                                        '☕'],
   [/protein.coffee|proffee/i,                                                             '☕'],
 
   // ── Specific sauces not yet covered ──────────────────────────
   [/peri.peri|nandos/i,                                                                   '🌶️'],
-  [/tahini/i,                                                                             '🥜'],
-  [/bone.broth/i,                                                                         '🦴'],
 
   // ── Wraps & rolls ─────────────────────────────────────────────
-  [/sushi.roll|california.roll|dragon.roll/i,                                             '🍣'],
-  [/rice.paper.roll|summer.roll|fresh.roll/i,                                             '🌯'],
-  [/meat.pie|steak.pie|mince.pie/i,                                                       '🥧'],
-  [/sausage.roll/i,                                                                       '🌭'],
   [/poke.bowl\b/i,                                                                        '🥗'],
 
   // ── Fermented & specialty ─────────────────────────────────────
   [/tempeh/i,                                                                             '🧊'],
-  [/miso\b/i,                                                                             '🍜'],
-  [/natto/i,                                                                              '🫘'],
 
   // ── Misc ─────────────────────────────────────────────────────
   [/nutritional.yeast/i,                                                                  '🌱'],

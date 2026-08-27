@@ -24,7 +24,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
             style="padding-left:38px;padding-right:36px" />
           <button id="fs-clear" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-faint);font-size:18px;padding:4px">×</button>
         </div>
-        <button id="fs-barcode" title="Scan barcode"
+        ${opts.reopen ? `<button id="fs-barcode" title="Scan barcode"
           style="width:48px;height:48px;flex-shrink:0;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:var(--text-muted)">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
             <rect x="1"  y="4" width="2"  height="12" fill="currentColor" rx="0.5"/>
@@ -34,7 +34,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
             <rect x="15" y="4" width="2"  height="12" fill="currentColor" rx="0.5"/>
             <rect x="18" y="4" width="1"  height="12" fill="currentColor"/>
           </svg>
-        </button>
+        </button>` : ''}
       </div>
 
       <!-- Quick filter chips. Batches only appear when the caller can handle
@@ -407,9 +407,16 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
   });
 
   // ── Barcode ──────────────────────────────────────────────────
-  container.querySelector('#fs-barcode').addEventListener('click', () => {
-    openBarcodeScanner(handleBarcode);
-  });
+  // The scanner opens through showSheet, which empties the one shared sheet —
+  // so whatever embedded this search is destroyed by the scan. Callers that can
+  // rebuild themselves hand us `reopen`; the rest don't get a scan button at
+  // all, because tapping it silently ate their work. The batch builder was the
+  // live case: scan a tin mid-recipe and the name, the ingredient list and the
+  // cooked weight went with it, then the success path threw looking for #b-list.
+  // ponytail: hiding the button is the small fix. Give batches.js a `reopen`
+  // that re-seeds the builder if scanning into a recipe turns out to matter.
+  const barcodeBtn = container.querySelector('#fs-barcode');
+  if (barcodeBtn) barcodeBtn.addEventListener('click', () => openBarcodeScanner(handleBarcode));
 
   async function handleBarcode(barcode) {
     try {
@@ -419,7 +426,13 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
       const notFound = /not found|404/i.test(String(err.message || ''));
       // The scanner opened over this search sheet, so re-open a fresh one with
       // the quick-add form prefilled for this barcode (the old DOM is gone).
-      if (opts.reopen) { opts.reopen({ pendingBarcode: barcode }); return; }
+      // Carry WHY the lookup failed. Reopening always used to announce "barcode
+      // not found", so a dead connection or an Open Food Facts outage sent you
+      // off to hand-type a label the database already had.
+      if (opts.reopen) {
+        opts.reopen({ pendingBarcode: barcode, barcodeError: notFound ? '' : err.message });
+        return;
+      }
       // Legacy in-place fallback
       pendingBarcode = barcode;
       query = ''; input.value = ''; clearBtn.style.display = 'none';
@@ -434,7 +447,8 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
     pendingBarcode = opts.pendingBarcode;
     results.innerHTML = '';
     appendQuickAdd('');
-    showToast('Barcode not found — add it below to save it for next time', 'info');
+    if (opts.barcodeError) showToast(`${opts.barcodeError} — you can still add it by hand below`, 'error');
+    else showToast('Barcode not found — add it below to save it for next time', 'info');
   } else {
     setTimeout(() => input.focus(), 100);
     search();

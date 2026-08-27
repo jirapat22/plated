@@ -256,7 +256,11 @@ router.get('/bodyweight', async (req, res) => {
   }
 });
 
-// GET /api/ironlog/raw — shows exactly what IronLog sends (for debugging)
+// GET /api/ironlog/raw — shows exactly what IronLog sends (for debugging).
+// No longer reachable from Settings: a raw JSON dump is not something anyone
+// in this household needs on a phone. Still here because it is the fastest way
+// to see what the other side actually returned — hit it directly when a sync
+// looks wrong.
 router.get('/raw', async (req, res) => {
   try {
     const pid = req.profileId;
