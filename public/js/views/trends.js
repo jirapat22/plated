@@ -1,6 +1,6 @@
 import { api }                       from '../api.js';
 import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
-import { localDate }                  from '../utils/date.js';
+import { localDate, addDaysIso }      from '../utils/date.js';
 import { showToast, navigateTo }      from '../app.js';
 import { openFoodEntry, lazySession } from './log.js';
 import { classifyDay, isFlagged, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY, LOG_TODAY } from '../utils/logCheck.js';
@@ -157,15 +157,39 @@ function linFitStdErr(xs, ys, slope) {
   return Math.sqrt(ssRes / (n - 2) / sxx);
 }
 
+// Charts asked for before Chart.js has arrived. render() now runs without
+// waiting for the CDN, so this is the normal path on a cold load, not an error
+// path — the canvas is left untouched and filled in by drawPendingCharts()
+// once the library lands. Only when the load definitively fails does
+// markChartsUnavailable() swap in the placeholder, because replacing the canvas
+// is one-way: do it early and there is nothing left to draw into.
+let pendingCharts = [];
+
+function drawPendingCharts() {
+  const queued = pendingCharts;
+  pendingCharts = [];
+  for (const args of queued) makeChart(...args);
+}
+
+function markChartsUnavailable() {
+  const queued = pendingCharts;
+  pendingCharts = [];
+  for (const [id] of queued) {
+    const ctx = document.getElementById(id);
+    if (!ctx) continue;
+    ctx.replaceWith(Object.assign(document.createElement('div'), {
+      className: 'chart-offline',
+      textContent: 'Chart needs a connection',
+    }));
+  }
+}
+
 function makeChart(id, labels, data, color, yLabel, opts = {}) {
   destroyChart(id);
   const ctx = document.getElementById(id);
   if (!ctx) return;
   if (!haveChart()) {
-    ctx.replaceWith(Object.assign(document.createElement('div'), {
-      className: 'chart-offline',
-      textContent: 'Chart needs a connection',
-    }));
+    pendingCharts.push([id, labels, data, color, yLabel, opts]);
     return;
   }
 
@@ -382,11 +406,27 @@ export function renderTrends(container) {
           .then(d => d.entries || (Array.isArray(d) ? d : []))
           .catch(() => []),
         api.get('/api/measurements?limit=400').catch(() => []),   // waist — never fails the view
-        ensureChartLib(),   // last, result unused — just has to be here before render
       ]);
 
       if (!document.getElementById('trends-body')) return;  // left the view during fetch
       render(summary, weights, ironlogWeights, settings, waistRows);
+      // Chart.js is NOT awaited above. It loads from a CDN, and `onerror` only
+      // fires on a hard failure — a request that merely stalls (bad mobile data,
+      // captive portal) hung the whole await and left the skeleton up forever.
+      // The verdict, the streak and every stat tile are plain DOM and need no
+      // chart library, so they now paint first and the canvases fill in behind
+      // them, so a CDN that never answers costs you the graphs and nothing else.
+      //
+      // The deadline is not belt-and-braces: ensureChartLib() RESOLVES rather
+      // than rejects on error, and a stalled request never settles at all, so
+      // neither a .catch nor the resolve on its own can tell us we have given
+      // up. Race it, then ask haveChart() what actually happened.
+      Promise.race([ensureChartLib(), new Promise(r => setTimeout(r, 8000))])
+        .then(() => {
+          if (!document.getElementById('trends-body')) return;   // left during load
+          if (haveChart()) drawPendingCharts();
+          else markChartsUnavailable();
+        });
     } catch (err) {
       const el = document.getElementById('trends-body');
       if (el) el.innerHTML =
@@ -409,7 +449,13 @@ export function renderTrends(container) {
     // not what's planned.
     const fullRows = summary.filter(r => r.date <= todayISO)
       .map(r => ({ ...r, status: classifyDay(r, goal, todayISO) }));
-    const rows = fullRows.slice(-days);
+    // Cut by DATE, not by row count. The summary only returns days that have a
+    // meal session, so slice(-days) meant "the last N logged days" — weigh in
+    // weekly and "30d" plotted seven months of weigh-ins under a "· 30 days"
+    // caption. Every range chip in this view was describing a window it wasn't
+    // showing as soon as you had a gap.
+    const cutoffISO = days === Infinity ? '0000-01-01' : addDaysIso(todayISO, -(days - 1));
+    const rows = fullRows.filter(r => r.date >= cutoffISO);
     // Today is still filling up, so it is not evidence about whether you log
     // fully — it is a day in progress. Counting it as finished is how a day
     // holding one pre-logged meal made the card read "100% fully logged".
@@ -472,12 +518,12 @@ export function renderTrends(container) {
       .map(w => [w.date, Number(w.waist_cm)])
       .sort((a, b) => a[0].localeCompare(b[0]));
     const waistLatest  = waistAll.length ? waistAll[waistAll.length - 1] : null;
-    const waistEntries = waistAll.slice(-days);
+    const waistEntries = waistAll.filter(([d]) => d >= cutoffISO);
     const waistChange  = waistEntries.length >= 2
       ? waistEntries[waistEntries.length - 1][1] - waistEntries[0][1] : null;
 
     const weightSorted  = Object.entries(weightMap).sort((a, b) => a[0].localeCompare(b[0]));
-    const weightEntries = weightSorted.slice(-days);   // charts reflect the range
+    const weightEntries = weightSorted.filter(([d]) => d >= cutoffISO);   // by date, see cutoffISO
     const wLabels = weightEntries.map(([d]) => { const dt = new Date(d + 'T00:00:00'); return `${dt.getMonth()+1}/${dt.getDate()}`; });
     const wVals   = weightEntries.map(([, v]) => v);
     const wTrend  = movingAvg(wVals, 7);
@@ -901,7 +947,7 @@ export function renderTrends(container) {
               <span style="position:absolute;right:11px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text-muted);pointer-events:none">kg</span>
             </div>
             <button class="btn btn-primary" id="wt-add-save" style="height:38px;padding:0 16px;font-size:13px;flex-shrink:0;order:3">Add</button>
-            <input class="input" id="wt-add-date" type="date" max="${todayISO}"
+            <input class="input" id="wt-add-date" type="date" max="${todayISO}" value="${todayISO}"
               style="flex:0 1 138px;height:38px;min-width:0;font-size:12px;color:var(--text-muted)"/>
           </div>
           <div id="wt-log-list" style="margin-top:4px"></div>

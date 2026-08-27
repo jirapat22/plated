@@ -1572,7 +1572,13 @@ function goalResult(s) {
   }
   const off = computed != null && saved != null && Math.abs(computed - saved) >= 1;
   const ul  = unitLabel();
-  const math = off ? 'set by IronLog'
+  // A divergence only means "IronLog overrode the phase math" if IronLog is
+  // actually wired up. On a profile with no connection the same gap comes from
+  // typing a goal by hand, and blaming a service they've never configured
+  // reads as a bug in the app.
+  const viaIronlog = !!(s.ironlog_api_url || '').trim();
+  const source = viaIronlog ? 'IronLog' : 'you';
+  const math = off ? `set by ${viaIronlog ? 'IronLog' : 'hand'}`
     : tdee != null
     ? (phase === 'cut'  ? `${fmtE(tdee)} TDEE − ${fmtE(deficit)} deficit`
      : phase === 'bulk' ? `${fmtE(tdee)} TDEE + ${fmtE(surplus)} surplus`
@@ -1582,5 +1588,5 @@ function goalResult(s) {
     <div class="phase-goal-label">Your daily energy goal</div>
     <div class="phase-goal-num">${fmtE(goal)}<span> ${ul}</span></div>
     <div class="phase-goal-sub">${math}</div>
-    ${off ? `<div class="phase-goal-warn">Your phase math above works out to <strong>${fmtE(computed)} ${ul}</strong> — IronLog set ${fmtE(saved)} directly. Tap <strong>Apply</strong> next to Maintenance to switch to ${fmtE(computed)}.</div>` : ''}`;
+    ${off ? `<div class="phase-goal-warn">Your phase math above works out to <strong>${fmtE(computed)} ${ul}</strong> — ${source} set ${fmtE(saved)} directly. Tap <strong>Apply</strong> next to Maintenance to switch to ${fmtE(computed)}.</div>` : ''}`;
 }

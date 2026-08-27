@@ -235,7 +235,10 @@ img { display: block; max-width: 100%; }
   align-items: center;
   justify-content: center;
   gap: 4px;
-  color: var(--text-faint);
+  /* --text-faint is 2.06:1 on dark and 2.84:1 on light — well under the 4.5:1
+     floor, on the most-tapped control in the app. --text-muted is 5.31:1 and
+     still reads as "not the active tab" next to --accent. */
+  color: var(--text-muted);
   font-size: calc(10px * var(--ui-scale));
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -1266,7 +1269,14 @@ img { display: block; max-width: 100%; }
   justify-content: center;
   gap: 30px;
   padding: 24px 24px calc(24px + var(--safe-bottom));
-  z-index: 1000;
+  /* Above the nav (100) and the app, but BELOW the sheet (201), the toasts
+     (500) and both banners (1000/1100). At 1000 this opaque full-screen layer
+     swallowed all three: "Forgot your passcode?" opened a sheet nobody could
+     see, "that code is taken" was an invisible toast — so people retried until
+     rate-limiting locked out the whole household — and an offline launch showed
+     no offline banner. Everything the lock screen needs to say lives in a layer
+     above it, so it cannot be the top of the stack. */
+  z-index: 150;
   overflow-y: auto;
 }
 .lock-brand { text-align: center; }

@@ -213,6 +213,14 @@ export function renderToday(container) {
     // when there is nothing to eat back — on a rest day, or when the burn is
     // already inside the TDEE — so the old `hasWorkout ? ... : ...` branch was
     // saying the same thing twice and would have got the second case wrong.
+    //
+    // Because it is measured against `combined`, it has to be RENDERED against
+    // `combined` too. It used to sit inside the Daily Goal ring, whose
+    // denominator is baseGoal, so a training day read "1,450 / 2,207" with
+    // "1,207 left" underneath — two numbers on one ring that don't subtract.
+    // It now sits in the Eat Target ring, and falls back to Daily Goal only
+    // when there is no Eat Target ring, which is exactly when the two budgets
+    // are equal anyway.
     const budget    = combined;
     const remaining = budget - eaten;
     const hintText  = eaten === 0 ? 'nothing yet'
@@ -343,6 +351,7 @@ export function renderToday(container) {
                 <div class="ring-center">
                   <div class="num ring-kcal-sm">${fmtE(eaten)}</div>
                   <div class="ring-goal-sm">/ ${fmtE(combined)}</div>
+                  <div class="ring-hint" style="color:${hintColor}">${hintText}</div>
                 </div>
               </div>
             </div>` : ''}
@@ -353,7 +362,7 @@ export function renderToday(container) {
                 <div class="ring-center">
                   <div class="num ring-kcal">${fmtE(eaten)}</div>
                   <div class="ring-goal muted">/ ${fmtE(baseGoal)} ${ul}</div>
-                  <div class="ring-hint" style="color:${hintColor}">${hintText}</div>
+                  ${eatable > 0 ? '' : `<div class="ring-hint" style="color:${hintColor}">${hintText}</div>`}
                 </div>
               </div>
             </div>

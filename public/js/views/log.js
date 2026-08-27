@@ -2,7 +2,7 @@ import { api }                            from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
 import { renderFoodSearch }               from '../components/foodSearch.js';
 import { fmtE, unitLabel, toKcal, wireEnergyUnitToggle } from '../utils/energy.js';
-import { localDate }                      from '../utils/date.js';
+import { localDate, addDaysIso }          from '../utils/date.js';
 import { getFoodIcon }                    from '../utils/foodIcon.js';
 import { openPortion }                    from './batches.js';
 
@@ -26,12 +26,6 @@ function formatTime(iso) {
   if (!iso) return '';
   const d = new Date(iso + (iso.includes('Z') ? '' : 'Z'));
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-}
-
-function addDaysIso(iso, n) {
-  const d = new Date(iso + 'T00:00:00');
-  d.setDate(d.getDate() + n);
-  return localDate(d);
 }
 
 // ── Deferred meal creation ───────────────────────────────────
