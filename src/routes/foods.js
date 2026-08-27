@@ -126,9 +126,15 @@ router.get('/search', (req, res) => {
     // terms so a pasted paragraph can't build a monstrous query.
     const words = q.trim().split(/\s+/).filter(Boolean).slice(0, 6);
     const params = { pid: req.profileId, limit: Math.min(parseInt(limit) || 20, 50) };
+    // % and _ are LIKE wildcards, and this data is full of them: "Yoghurt,
+    // natural, greek style (~10% fat)", "Milk, 2%". Unescaped, searching
+    // "10% fat" asked for "10", then anything, then " fat" — so it matched
+    // things that have nothing to do with 10% fat. Backslash first, or it
+    // would escape the escapes we just added.
+    const lit = w => w.replace(/[\\%_]/g, c => '\\' + c);
     const clauses = words.map((w, i) => {
-      params[`t${i}`] = `%${w}%`;
-      return `(f.name LIKE $t${i} OR f.brand LIKE $t${i})`;
+      params[`t${i}`] = `%${lit(w)}%`;
+      return `(f.name LIKE $t${i} ESCAPE '\\' OR f.brand LIKE $t${i} ESCAPE '\\')`;
     }).join(' AND ');
     // Deliberately NO bonus for matching the typed phrase contiguously. It
     // sounds right and measures wrong on this data: the seed names things
