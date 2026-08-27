@@ -910,6 +910,7 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
          container. A row in normal flow just makes the card taller. -->
     <div class="session-menu" style="display:none;border-bottom:1px solid var(--border);background:var(--surface-2)">
       ${canLeftoverMeal ? `<button class="sm-left" style="display:block;width:100%;text-align:left;padding:12px 16px;font-size:13px;color:var(--text)">🥡 Didn't finish it</button>` : ''}
+      ${showMoveToday ? `<button class="sm-copy-today" style="display:block;width:100%;text-align:left;padding:12px 16px;font-size:13px;color:var(--text)">↻ Eat this again today</button>` : ''}
       <button class="sm-move" style="display:block;width:100%;text-align:left;padding:12px 16px;font-size:13px;color:var(--text)">Move to another day</button>
       <button class="sm-copy" style="display:block;width:100%;text-align:left;padding:12px 16px;font-size:13px;color:var(--text)">Copy to…</button>
     </div>
@@ -1004,6 +1005,20 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
     // Only ever one open: a second card's menu left the first one hanging.
     closeAllMenus();
     menu.style.display = open ? 'none' : 'block';
+  });
+  // Repeating a meal you've eaten before is the common reason to look at a past
+  // day at all, and it was the long way round: ⋮ → Copy to… → pick today →
+  // confirm. Copy already accepts a date, so the whole thing collapses to one
+  // tap. Deliberately NOT the same as the "→ Today" button beside it — that one
+  // MOVES, for when a meal landed on the wrong day, and taking yesterday's
+  // dinner off yesterday is the opposite of what you want here.
+  menu.querySelector('.sm-copy-today')?.addEventListener('click', async () => {
+    closeMenu();
+    try {
+      await api.post(`/api/meals/sessions/${session.id}/copy`, { date: localDate() });
+      showToast(`${session.name || 'Meal'} added to today`, 'success');
+      onDone?.();
+    } catch (err) { showToast(err.message, 'error'); }
   });
   menu.querySelector('.sm-move').addEventListener('click', () => { closeMenu(); openMoveMeal(session, viewDate, onDone); });
   menu.querySelector('.sm-copy').addEventListener('click', () => { closeMenu(); openCopyMeal(session, viewDate, onDone); });

@@ -43,17 +43,38 @@ export function renderHistory(container) {
   // and, early in the morning, opened on a blank page. The day strip makes the
   // selection obvious and today is one tap away.
   let selectedDate = localDate(addDays(new Date(), -1));
+  // The day the strip's 37-day window hangs off. Normally today — the last few
+  // days are what people actually come here for — but the date field moves it
+  // so nothing is out of reach.
+  let anchor = localDate();
   let summary = [];
   let connections = [];
   let viewed = null;   // { id, name, accent_color } — null means viewing yourself
 
   container.innerHTML = `
-    <div class="today-header"><div class="today-date">History</div></div>
+    <div class="today-header" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <div class="today-date">History</div>
+      <input type="date" id="hist-jump" max="${localDate(addDays(new Date(), 7))}"
+        aria-label="Jump to a date"
+        style="height:34px;padding:0 8px;font-size:12px;color:var(--text-muted);background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);min-width:0;max-width:150px"/>
+    </div>
     <div id="conn-switcher"></div>
     <div id="viewing-banner"></div>
     <div id="cal-strip-root" class="cal-strip"></div>
     <div id="history-day" style="padding:0 16px"></div>
   `;
+
+  // Native input rather than a bespoke calendar: it is one tap, it inherits the
+  // phone's own accessibility settings instead of fighting the in-app zoom, and
+  // Trends already owns the "how consistent have I been" question, so a month
+  // grid here would be a second answer to it.
+  const jump = document.getElementById('hist-jump');
+  jump.value = selectedDate;
+  jump.addEventListener('change', () => {
+    if (!jump.value) return;
+    anchor = jump.value;      // slide the window onto the chosen date
+    selectDate(jump.value);
+  });
 
   // Query suffix threaded onto every read while viewing someone else's data —
   // never used for writes, and never sent to /api/weight, so those stay
@@ -114,8 +135,13 @@ export function renderHistory(container) {
     }
   }
 
+  // days=all, not days=30. The strip can now sit on any date, so a 30-day
+  // window would leave the dots blank the moment you jumped further back than
+  // the fetch. This route returns one row per LOGGED day — a few hundred rows
+  // for a multi-year account — so asking for everything is cheaper than paging
+  // and removes the cap without a second request.
   async function loadSummary() {
-    summary = await api.get(`/api/meals/summary?days=30${viewed ? `&profile=${viewed.id}` : ''}`);
+    summary = await api.get(`/api/meals/summary?days=all${viewed ? `&profile=${viewed.id}` : ''}`);
     renderStrip();
   }
 
@@ -126,10 +152,16 @@ export function renderHistory(container) {
     const summaryByDate = Object.fromEntries(summary.map(r => [r.date, r]));
     const todayIso = isoDate(new Date());
 
-    // 30 days back through 7 days ahead — future days let you pre-log planned
-    // meals (they render dimmer so "the future" reads at a glance).
+    // A 37-day window — 29 back, 7 forward — that used to be nailed to today,
+    // which made any day older than 30 simply unreachable: there was no date
+    // picker, and the strip ended. It now hangs off `anchor`, so the date field
+    // slides the whole window anywhere in your history. Future days let you
+    // pre-log planned meals (they render dimmer so "the future" reads at a
+    // glance) — "future" stays measured against the real today, not the anchor,
+    // so sliding the window back doesn't repaint half your history as planned.
+    const anchorDate = new Date(anchor + 'T00:00:00');
     for (let i = 29; i >= -7; i--) {
-      const d   = addDays(new Date(), -i);
+      const d   = addDays(anchorDate, -i);
       const iso = isoDate(d);
       const has = !!summaryByDate[iso];
 
@@ -151,6 +183,10 @@ export function renderHistory(container) {
 
   function selectDate(date) {
     selectedDate = date;
+    // Keep the field showing where you are, however you got here — tapping a
+    // day in the strip should leave the picker agreeing with it.
+    const jumpEl = document.getElementById('hist-jump');
+    if (jumpEl) jumpEl.value = date;
     renderStrip();
     loadDay(date);
   }

@@ -119,7 +119,24 @@ router.get('/search', (req, res) => {
   try {
     const { q = '', limit = 20 } = req.query;
     if (!q.trim()) return res.json([]);
-    const term = `%${q.trim()}%`;
+    // Every word has to appear, in either the name or the brand, in any order.
+    // One LIKE over the whole phrase meant "greek yoghurt" missed "Yoghurt,
+    // Greek style" — the seeded names are mostly "Ingredient, qualifier", so
+    // typing them the way anyone says them out loud found nothing. Capped at 6
+    // terms so a pasted paragraph can't build a monstrous query.
+    const words = q.trim().split(/\s+/).filter(Boolean).slice(0, 6);
+    const params = { pid: req.profileId, limit: Math.min(parseInt(limit) || 20, 50) };
+    const clauses = words.map((w, i) => {
+      params[`t${i}`] = `%${w}%`;
+      return `(f.name LIKE $t${i} OR f.brand LIKE $t${i})`;
+    }).join(' AND ');
+    // Deliberately NO bonus for matching the typed phrase contiguously. It
+    // sounds right and measures wrong on this data: the seed names things
+    // "Ingredient, qualifier", so the literal phrase turns up almost only in
+    // composite dish names. Boosting it put "Watercress, sautéed with olive
+    // oil" above "Oil, olive", and "Chicken wrap, chicken breast, with salad"
+    // above "Chicken, breast, lean, raw" — worse on 4 of 7 common searches and
+    // better on none. LENGTH(name) ASC below is the heuristic that works here.
     const rows = getDb().prepare(`
       SELECT ${FCOLS},
              COALESCE(pfs.is_favourite, 0) AS is_favourite,
@@ -127,7 +144,7 @@ router.get('/search', (req, res) => {
              pfs.last_qty_g
       FROM foods f
       LEFT JOIN profile_food_stats pfs ON pfs.food_id = f.id AND pfs.profile_id = $pid
-      WHERE (f.name LIKE $term OR f.brand LIKE $term)
+      WHERE (${clauses})
         AND f.source NOT IN ('quick', 'batch')
         AND f.hidden = 0
       ORDER BY
@@ -138,7 +155,7 @@ router.get('/search', (req, res) => {
         LENGTH(f.name) ASC,
         f.name ASC
       LIMIT $limit
-    `).all({ term, pid: req.profileId, limit: Math.min(parseInt(limit) || 20, 50) });
+    `).all(params);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
