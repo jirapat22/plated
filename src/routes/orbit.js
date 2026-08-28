@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const { getDb } = require('../db');
 const { tzFor } = require('../utils/tz');
 
@@ -37,8 +38,21 @@ function requireOrbitKey(req, res, next) {
   const auth = req.headers['authorization'];
   const key = req.headers['x-api-key']
     || (auth?.startsWith('Bearer ') ? auth.slice(7) : null);
-  if (key?.trim() === required) return next();
+  if (sameKey(key, required)) return next();
   return res.status(401).json({ error: 'invalid or missing Orbit key' });
+}
+
+// Constant-time compare. `===` on strings short-circuits at the first differing
+// byte, so response time leaks how much of the key a guess got right and the
+// secret can be walked out one character at a time. auth.js already does this
+// properly for passcodes (timingSafeEqual in verifyCode); the two API-key gates
+// were the pair still using a plain comparison. Lengths are compared first
+// because timingSafeEqual throws on a mismatch — that leaks the length, which
+// is a far cheaper thing to give away than the bytes.
+function sameKey(given, required) {
+  const a = Buffer.from(String(given ?? '').trim());
+  const b = Buffer.from(required);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 router.use(requireOrbitKey);
 
@@ -127,3 +141,6 @@ router.get('/', (req, res) => {
 
 module.exports = router;
 module.exports.requireOrbitKey = requireOrbitKey;
+// bugReports.js hand-rolled its own copy of this gate; one implementation of a
+// key check is enough, and this is the one that compares in constant time.
+module.exports.sameKey = sameKey;

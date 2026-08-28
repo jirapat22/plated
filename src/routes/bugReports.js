@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDb } = require('../db');
 const { rateLimit } = require('../middleware/rateLimit');
+const { sameKey } = require('./orbit');
 
 const router = express.Router();
 const APP_NAME = 'plated';
@@ -127,7 +128,7 @@ router.get('/status', (req, res, next) => {
   if (!required) return res.status(503).json({ error: 'Diagnostics not configured (ORBIT_API_KEY unset)' });
   const auth = req.headers['authorization'];
   const key = req.headers['x-api-key'] || (auth?.startsWith('Bearer ') ? auth.slice(7) : null);
-  if (key?.trim() !== required) return res.status(401).json({ error: 'invalid or missing Orbit key' });
+  if (!sameKey(key, required)) return res.status(401).json({ error: 'invalid or missing Orbit key' });
   next();
 }, (req, res) => {
   try {

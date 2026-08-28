@@ -34,7 +34,7 @@ export function renderSettings(container) {
     } catch (err) {
       const el = document.getElementById('settings-body');   // may be gone if tab switched
       if (el) el.innerHTML =
-        `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
+        `<div class="empty-state"><div class="empty-text">${esc(err.message)}</div></div>`;
     }
   }
 
@@ -449,7 +449,7 @@ export function renderSettings(container) {
           });
         });
       } catch (err) {
-        box.innerHTML = `<div style="font-size:12px;color:var(--error)">${err.message}</div>`;
+        box.innerHTML = `<div style="font-size:12px;color:var(--error)">${esc(err.message)}</div>`;
       }
     }
     loadConnections();
@@ -602,7 +602,35 @@ export function renderSettings(container) {
       }
       if (goalEl) goalEl.innerHTML = goalResult(s);
       renderRateRow();
-      renderMacroSplit();
+      renderMacroSplit();   // ends in syncGoalLocks()
+    }
+
+    // Which goal fields are typeable, re-evaluated from the CURRENT settings.
+    //
+    // The lock used to be decided once, while building the HTML, and never
+    // revisited — so setting a TDEE for the first time, or switching to the
+    // g/kg split, left the fields it should have locked still editable for the
+    // rest of the session. You could type into them, they would save, and then
+    // the next weigh-in or phase change would silently overwrite what you typed,
+    // which is the exact bug locking them was meant to close. Any path that can
+    // change who owns a goal calls this.
+    function syncGoalLocks() {
+      const { tdee, phase, deficit, surplus } = parsePhaseSettings(s);
+      const locked = {
+        calorie_goal: phaseCalorieGoal(tdee, phase, deficit, surplus) != null,
+        protein_goal: s.macro_mode === 'gkg',
+        carb_goal:    s.macro_mode === 'gkg',
+        fat_goal:     s.macro_mode === 'gkg',
+      };
+      for (const [key, isLocked] of Object.entries(locked)) {
+        const el = body.querySelector(`[data-key="${key}"]`);
+        if (!el) continue;
+        el.readOnly = isLocked;
+        el.tabIndex = isLocked ? -1 : 0;
+        el.setAttribute('aria-readonly', String(isLocked));
+        el.style.opacity = isLocked ? '.55' : '';
+        el.style.cursor  = isLocked ? 'not-allowed' : '';
+      }
     }
 
     // Rate-of-change goal input — an alternate way to fill in ③ Adjustment:
@@ -647,7 +675,7 @@ export function renderSettings(container) {
     // TDEE apply / phase / rate-of-change / a direct edit all update `s` in
     // place without a full reload, so this must re-read s.calorie_goal fresh
     // each time rather than trusting a `cal` captured once at initial render.
-    function renderMacroSplit() {
+    function renderMacroSplitInner() {
       const box = document.getElementById('msplit-box');
       if (!box) return;
       box.innerHTML = macroSplitBox(s);
@@ -743,6 +771,16 @@ export function renderSettings(container) {
           showToast(err.message, 'error');
         }
       });
+    }
+
+    // Wrapper, not a line at the bottom of renderMacroSplitInner: that function
+    // returns early in two places (no box, no macro inputs), and those are
+    // exactly the states — no calorie goal, no bodyweight yet — where the locks
+    // still need to be right. Every path that can change who owns a goal calls
+    // this, so the locks are re-evaluated whether or not the split card renders.
+    function renderMacroSplit() {
+      renderMacroSplitInner();
+      syncGoalLocks();
     }
     renderMacroSplit();
 

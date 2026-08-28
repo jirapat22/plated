@@ -431,7 +431,7 @@ export function renderTrends(container) {
     } catch (err) {
       const el = document.getElementById('trends-body');
       if (el) el.innerHTML =
-        `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
+        `<div class="empty-state"><div class="empty-text">${esc(err.message)}</div></div>`;
     }
   }
 

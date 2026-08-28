@@ -91,7 +91,7 @@ export function renderFoods(container) {
       }
       renderList(list, rows);
     } catch (err) {
-      list.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
+      list.innerHTML = `<div class="empty-state"><div class="empty-text">${esc(err.message)}</div></div>`;
     }
   }
 

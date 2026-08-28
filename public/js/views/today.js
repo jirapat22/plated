@@ -134,7 +134,7 @@ export function renderToday(container) {
       render(mealData, settings, ironlog, todayWeight, weightHistory);
     } catch (err) {
       if (myGen !== loadGen) return;
-      container.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
+      container.innerHTML = `<div class="empty-state"><div class="empty-text">${esc(err.message)}</div></div>`;
     }
   }
 

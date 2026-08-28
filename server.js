@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const path = require('path');
 const fs = require('fs');
 
@@ -42,6 +43,13 @@ const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 
 app.use(cors({ origin: true, credentials: true }));
+// Everything below this line goes out gzipped. Nothing was compressed at all,
+// so a cold load shipped ~550kb of JS and CSS uncompressed — settings.js 83kb,
+// trends.js 81kb, style.css 59kb — over cellular, to a phone, on a codebase
+// that is ~90% mobile. Text compresses about 4x. Mounted before the routes so
+// it covers JSON bodies too, which matters most for the summary feed History
+// pulls and the full-history export.
+app.use(compression());
 app.use(express.json({ limit: '256kb' }));
 
 // Dashboard tile for Orbit. Two things were wrong with this: it was public, and

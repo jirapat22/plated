@@ -109,7 +109,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
 
       renderResults(rows, q, fetchRemote);
     } catch (err) {
-      results.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
+      results.innerHTML = `<div class="empty-state"><div class="empty-text">${esc(err.message)}</div></div>`;
     }
   }
 

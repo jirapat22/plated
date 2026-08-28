@@ -79,13 +79,19 @@ router.post('/', (req, res) => {
     }
     const db = getDb();
     const logDate = date || todayLocal(tzFor(db, req.profileId));
+    // Store what was VALIDATED, not what was sent. badWeight checks
+    // parseFloat(v) but the raw body value used to go into the INSERT, and
+    // SQLite's loose typing accepts it — so "70abc" passed the 20-400 range
+    // check and landed as text in a REAL column, where it then poisons every
+    // average, trend and macro recalculation that reads the row back.
+    const kg = parseFloat(weight_kg);
     const result = db.prepare(
       "INSERT INTO weight_log (date, weight_kg, note, profile_id, source) VALUES ($date, $weight_kg, $note, $pid, 'manual')"
-    ).run({ date: logDate, weight_kg, note: note || null, pid: req.profileId });
+    ).run({ date: logDate, weight_kg: kg, note: note || null, pid: req.profileId });
     const entry = db.prepare('SELECT * FROM weight_log WHERE id = $id')
       .get({ id: result.lastInsertRowid });
 
-    pushBodyweight(db, req.profileId, logDate, weight_kg);  // sync up to IronLog (best-effort)
+    pushBodyweight(db, req.profileId, logDate, kg);  // sync up to IronLog (best-effort)
     const macros = recalcMacroGoals(db, req.profileId);     // g/kg goals follow the trend
     // In g/kg mode a weigh-in moves the macro goals, so it is a goal change.
     snapshotGoals(db, req.profileId, todayLocal(tzFor(db, req.profileId)));

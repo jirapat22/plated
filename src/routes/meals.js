@@ -237,6 +237,14 @@ router.post('/sessions', (req, res) => {
   try {
     const db = getDb();
     const pid = req.profileId;
+    // The one write route that took its date on trust. Every other one
+    // format-checks, and for good reason: meal_sessions.date is the key every
+    // read is looked up by, so a junk string creates a meal that no day view,
+    // summary or export can ever reach again — invisible, undeletable, and
+    // still counted by anything that aggregates without a date filter.
+    if (req.body.date != null && !/^\d{4}-\d{2}-\d{2}$/.test(req.body.date)) {
+      return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
+    }
     const date = req.body.date || todayLocal(tzFor(db, pid));
 
     const { max_idx } = db.prepare(`

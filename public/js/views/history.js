@@ -71,7 +71,9 @@ export function renderHistory(container) {
   const jump = document.getElementById('hist-jump');
   jump.value = selectedDate;
   jump.addEventListener('change', () => {
-    if (!jump.value) return;
+    // Clearing the field must not leave the picker blank while a day is still
+    // selected below it — put it back to where you actually are.
+    if (!jump.value) { jump.value = selectedDate; return; }
     anchor = jump.value;      // slide the window onto the chosen date
     selectDate(jump.value);
   });
@@ -160,9 +162,14 @@ export function renderHistory(container) {
     // glance) — "future" stays measured against the real today, not the anchor,
     // so sliding the window back doesn't repaint half your history as planned.
     const anchorDate = new Date(anchor + 'T00:00:00');
+    // Never past the app's own pre-logging horizon. Anchoring at today+7 would
+    // otherwise run the window out to today+14, and tapping one of those days
+    // wrote a date into the picker beyond its own `max`, leaving it :invalid.
+    const maxIso = isoDate(addDays(new Date(), 7));
     for (let i = 29; i >= -7; i--) {
       const d   = addDays(anchorDate, -i);
       const iso = isoDate(d);
+      if (iso > maxIso) continue;
       const has = !!summaryByDate[iso];
 
       const el = document.createElement('button');
@@ -206,7 +213,7 @@ export function renderHistory(container) {
       if (!document.getElementById('history-day')) return;   // navigated away during fetch
       renderDay(dayEl, mealData, settings, date, dayWeight);
     } catch (err) {
-      dayEl.innerHTML = `<div class="empty-state"><div class="empty-text">${err.message}</div></div>`;
+      dayEl.innerHTML = `<div class="empty-state"><div class="empty-text">${esc(err.message)}</div></div>`;
     }
   }
 
