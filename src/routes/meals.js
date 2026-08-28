@@ -114,7 +114,11 @@ router.get('/day/:date', (req, res) => {
     res.json({
       date, sessions, totals: sumTotals(sessions),
       log_status: logStatus(db, date, pid),
-      goals: goalsOn(db, pid, date),
+      // Goals only for your own day. History tells the viewer in as many words
+      // that someone else's goals stay private, and then renders their meals
+      // without a goal bar — but the payload carried the goals regardless, so
+      // the promise held only as far as the UI. One curl went round it.
+      goals: pid === req.profileId ? goalsOn(db, pid, date) : null,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

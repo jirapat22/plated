@@ -332,6 +332,16 @@ export function applyProfile(profile) {
 }
 
 function showScreen(which) {
+  // Close any open sheet before leaving the app. #sheet and #sheet-overlay are
+  // siblings of #app, not children, so hiding #app does not hide them — and
+  // since the lock screen dropped to z-index 150 (so it stops burying the
+  // toasts and the passcode-recovery sheet) the sheet at 201 now paints OVER
+  // it. Without this, a session that expires while a sheet is open — or
+  // another device signing this one out — leaves the previous profile's meal
+  // data sitting on top of a locked screen, with the numpad unreachable behind
+  // the overlay. The lock screen is the one place where "still mounted" and
+  // "still visible" stopped being the same thing.
+  if (which !== 'app') hideSheet();
   document.getElementById('lock-screen').classList.toggle('hidden', which !== 'lock');
   document.getElementById('create-screen').classList.toggle('hidden', which !== 'create');
   document.getElementById('app').classList.toggle('hidden', which !== 'app');

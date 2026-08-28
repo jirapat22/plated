@@ -323,7 +323,18 @@ router.get('/barcode/:barcode', async (req, res) => {
   }
 });
 
-// Get one food
+// Get one food.
+//
+// The shared library is genuinely shared — every profile can read a seeded or
+// custom food, and the batch editor fetches ingredients through here. But three
+// sources are NOT library entries: 'quick' stores the free text you typed for a
+// meal you couldn't weigh, 'batch' the name of something you cooked, 'leftover'
+// what you saved for later. Those are private notes that happen to live in the
+// foods table for bookkeeping, and every other route excludes them — search
+// (`source NOT IN ('quick','batch')`), the by-source list, the dedup lookup.
+// This route filtered on nothing but the id, so walking /api/foods/1..N read
+// every household member's meal descriptions straight out. PATCH and DELETE
+// already gate on created_by_profile; this is the same gate on the read.
 router.get('/:id', (req, res) => {
   try {
     const food = getDb().prepare(`
@@ -331,6 +342,8 @@ router.get('/:id', (req, res) => {
       FROM foods f
       LEFT JOIN profile_food_stats pfs ON pfs.food_id = f.id AND pfs.profile_id = $pid
       WHERE f.id = $id
+        AND (f.source NOT IN ('quick', 'batch', 'leftover')
+             OR f.created_by_profile = $pid)
     `).get({ id: req.params.id, pid: req.profileId });
     if (!food) return res.status(404).json({ error: 'Food not found' });
     res.json(food);

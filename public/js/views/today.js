@@ -185,8 +185,14 @@ export function renderToday(container) {
     // there counts it twice and quietly hands back a few hundred kcal on every
     // training day. False at sedentary/light, where a session really is extra.
     const inTdee      = ironlog?.tdee_includes_workouts === true;
-    // The part of the burn you may eat back. Zero when it is already counted.
-    const eatable     = inTdee ? 0 : burned;
+    // The part of the burn you may eat back. Zero when it is already counted,
+    // and never negative: IronLog passes a burn straight through as
+    // `Number(...) || 0`, so a bad reading can arrive below zero, and a
+    // negative `eatable` makes `combined` smaller than `baseGoal` while still
+    // failing the `eatable > 0` test that decides which ring shows the hint.
+    // That is precisely the two-numbers-that-don't-subtract bug, wearing a
+    // minus sign. Clamping here keeps the ring and its hint on one budget.
+    const eatable     = inTdee ? 0 : Math.max(0, burned);
     const combined    = baseGoal + eatable;         // eat target
     const hasWorkout  = burned > 0;
     const eaten       = t.calories;

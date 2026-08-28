@@ -224,7 +224,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
         <div class="food-list-name">${esc(b.name)}</div>
         <div style="font-size:12px;color:var(--text-muted);margin-top:2px;font-variant-numeric:tabular-nums">
           ${Math.round(b.remaining_g)} g left
-          <span style="color:var(--text-faint)"> · ${b.kcal_per_100g} ${ul}/100g${
+          <span style="color:var(--text-faint)"> · ${fmtE(b.kcal_per_100g)} ${ul}/100g${
             P.protein != null ? ` · ${P.protein.toFixed(1)}P · ${(P.carbs ?? 0).toFixed(1)}C · ${(P.fat ?? 0).toFixed(1)}F` : ''}</span>
         </div>
       </div>

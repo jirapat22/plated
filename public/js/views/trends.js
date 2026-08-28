@@ -535,7 +535,11 @@ export function renderTrends(container) {
     // consumer off 'complete'. It feeds avgLine on the calorie chart: measured
     // at 1,732 against a true 1,788, and ~155 out first thing in the morning —
     // least accurate exactly when someone opens the app to check it.
-    const recent7  = rows.slice(-7);
+    // By date, like the range cut above it. `rows` holds only days that have a
+    // meal session, so slice(-7) meant "the last seven days you logged" — which
+    // after a fortnight's gap is a three-week window presented as a week.
+    const sevenAgo = addDaysIso(todayISO, -6);
+    const recent7  = rows.filter(r => r.date >= sevenAgo);
     const valid7   = recent7.filter(r => (r.meal_count || 0) > 0 && !isFlagged(r.status) && r.status !== LOG_TODAY);
     const weeklyAvgKcal = valid7.length
       ? valid7.reduce((s, r) => s + (r.calories ?? 0), 0) / valid7.length

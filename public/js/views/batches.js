@@ -151,7 +151,7 @@ export function renderBatches(container) {
             <span style="color:var(--text-faint);margin-left:auto">still left</span>
           </div>
           <div style="font-size:11px;color:var(--text-faint);margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">
-            Per 100 g: ${b.kcal_per_100g} ${ul} · ${g1(P.protein)}P · ${g1(P.carbs)}C · ${g1(P.fat)}F${P.fiber ? ` · ${g1(P.fiber)} fib` : ''}
+            Per 100 g: ${fmtE(b.kcal_per_100g)} ${ul} · ${g1(P.protein)}P · ${g1(P.carbs)}C · ${g1(P.fat)}F${P.fiber ? ` · ${g1(P.fiber)} fib` : ''}
           </div>
           <div style="display:flex;gap:8px;margin-top:10px">
             <button data-portion="${b.id}" class="btn btn-secondary" style="flex:1">Log a portion</button>
@@ -266,7 +266,7 @@ function openBuilder(onDone, batch = null) {
     function updTotals() {
       const tot = ingredients.reduce((s, it) => s + it.cal * it.grams / 100, 0);
       totalsEl().textContent = ingredients.length
-        ? `≈ ${Math.round(tot)} ${unitLabel()} from ${ingredients.length} ingredient${ingredients.length === 1 ? '' : 's'}`
+        ? `≈ ${fmtE(tot)} ${unitLabel()} from ${ingredients.length} ingredient${ingredients.length === 1 ? '' : 's'}`
         : '';
     }
 
@@ -468,7 +468,7 @@ export function openPortion(batch, onDone, opts = {}) {
         <button class="sheet-close" id="p-close">✕</button>
       </div>
       <div style="padding:0 16px">
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">${g0(batch.remaining_g)} g left · ${batch.kcal_per_100g} ${unitLabel()}/100g</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">${g0(batch.remaining_g)} g left · ${fmtE(batch.kcal_per_100g)} ${unitLabel()}/100g</div>
         ${lockedSession ? `
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">
           Adding to <strong style="color:var(--text)">${esc(opts.sessionName || 'this meal')}</strong>

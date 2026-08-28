@@ -236,9 +236,20 @@ export function renderSettings(container) {
         ${goalRow('carb_goal',         'Carbs',         s.carb_goal,         'g', false, s.macro_mode === 'gkg')}
         ${goalRow('fat_goal',          'Fat',           s.fat_goal,          'g', false, s.macro_mode === 'gkg')}
         ${goalRow('fiber_goal',        'Fiber',         s.fiber_goal,        'g')}
-        <div style="padding:10px 16px 14px;font-size:11px;color:var(--text-muted)">${s.macro_mode === 'gkg'
-          ? 'Protein, carbs and fat come from your g/kg split above — they follow your weigh-ins, so they aren’t typed here. Fiber is yours to set.'
-          : 'These update automatically when you sync from IronLog.'}</div>
+        <div style="padding:10px 16px 14px;font-size:11px;color:var(--text-muted)">${[
+          // A locked field with no signpost is just a field that stopped working.
+          // Energy is still reachable to any value you like — it's TDEE minus
+          // your deficit, so the deficit box sets it — but you have to be told
+          // that, or "greyed out" reads as "broken".
+          (() => {
+            const { tdee, phase, deficit, surplus } = parsePhaseSettings(s);
+            return phaseCalorieGoal(tdee, phase, deficit, surplus) != null
+              ? 'Energy is worked out in Goal Phase above — change your TDEE or your deficit to move it.' : '';
+          })(),
+          s.macro_mode === 'gkg'
+            ? 'Protein, carbs and fat come from your g/kg split above — they follow your weigh-ins, so they aren’t typed here. Fiber is yours to set.'
+            : 'These update automatically when you sync from IronLog.',
+        ].filter(Boolean).join(' ')}</div>
       </div>
 
       <!-- IronLog -->
