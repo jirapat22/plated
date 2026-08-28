@@ -39,6 +39,14 @@ function tdeeIncludesWorkouts(pid) {
 // share a module across the fetch boundary without a build step, so keep the
 // two in sync by hand if this formula ever changes.
 function phaseCalories(tdee, phase, deficit, surplus) {
+  // The frontend twin returns null here and this one didn't, so the two had
+  // quietly stopped being the same function: with no TDEE, a cut came out as
+  // Math.round(null - 500) = -500, a calorie goal of minus five hundred, where
+  // the client showed nothing at all. Both call sites below happen to guard on
+  // tdee already, so nothing reaches it that way today — this is closing the
+  // trap before the third caller finds it, and restoring the parity the comment
+  // above claims.
+  if (!tdee) return null;
   if (phase === 'cut')  return Math.round(tdee - deficit);
   if (phase === 'bulk') return Math.round(tdee + surplus);
   return Math.round(tdee);

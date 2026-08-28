@@ -1,4 +1,4 @@
-const CACHE_NAME = 'plated-v208';
+const CACHE_NAME = 'plated-v209';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -71,8 +71,12 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // CDN resources: network-first (don't cache externally)
-  if (!url.origin.includes(self.location.origin)) {
+  // CDN resources: network-first (don't cache externally).
+  // Compared with !== rather than .includes(): an origin merely CONTAINING ours
+  // is not ours. "https://plated.up.railway.app.evil.com" contains
+  // "https://plated.up.railway.app", so the substring test called it same-origin
+  // and fell through to the app-shell branch below, which caches what it gets.
+  if (url.origin !== self.location.origin) {
     event.respondWith(fetch(request).catch(() => new Response('', { status: 503 })));
     return;
   }
@@ -83,7 +87,16 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     fetch(request)
       .then(resp => {
-        if (resp.ok) {
+        // Only cache a response whose KIND matches what was asked for. The
+        // server answers any unmatched non-/api path with index.html and a 200
+        // (server.js's SPA fallback), so a request for a module that a deploy
+        // renamed or removed comes back as HTML — and this used to store that
+        // HTML under the .js URL. The module then failed to parse on every
+        // subsequent load, and the poisoned entry outlived the deploy that
+        // caused it, because only a CACHE_NAME bump clears it.
+        const isHtml   = (resp.headers.get('content-type') || '').includes('text/html');
+        const wantsHtml = request.destination === 'document' || request.mode === 'navigate';
+        if (resp.ok && request.method === 'GET' && isHtml === wantsHtml) {
           const clone = resp.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
         }
