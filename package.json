@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "node --experimental-sqlite server.js",
-    "dev": "node --experimental-sqlite server.js"
+    "dev": "node --experimental-sqlite server.js",
+    "test": "node --experimental-sqlite --test \"test/**/*.test.mjs\""
   },
   "dependencies": {
     "cors": "^2.8.5",

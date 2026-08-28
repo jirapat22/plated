@@ -6,7 +6,7 @@ import { fmtE, unitLabel } from '../utils/energy.js';
 import { localDate }                       from '../utils/date.js';
 import { classifyDay, isFlagged, LOG_STRONG } from '../utils/logCheck.js';
 import { assert } from '../utils/bugReport.js';
-import { movingAvg } from '../utils/stats.js';
+import { trendWeightNow } from '../utils/stats.js';
 import { openOnboarding } from '../components/onboarding.js';
 
 const CIRC = 2 * Math.PI * 60;
@@ -284,9 +284,9 @@ export function renderToday(container) {
     // so a same-day re-log doesn't double-count that day in the window.
     const weightByDate = {};
     for (const w of weightHistory) weightByDate[w.date] = w.weight_kg;
-    const weightsAsc  = Object.keys(weightByDate).sort().map(d => weightByDate[d]);
-    const trendSeries = weightsAsc.length >= 2 ? movingAvg(weightsAsc, 7) : null;
-    const trendWeight = trendSeries ? trendSeries[trendSeries.length - 1] : null;
+    const weightPairs = Object.keys(weightByDate).sort().map(d => [d, weightByDate[d]]);
+    const trendWeight = weightPairs.length >= 2
+      ? trendWeightNow(weightPairs, { today: localDate() }) : null;
     // Trend leads by default now; 'raw' only when explicitly chosen. A single
     // weigh-in swings ~2kg on water — this user went 77.2 → 75.25 in two days —
     // and the headline number is what gets reacted to. The trend is the one

@@ -96,4 +96,26 @@ function goalsOn(db, pid, date) {
   return { recorded: false, effective_from: null, ...currentGoals(db, pid) };
 }
 
-module.exports = { snapshotGoals, goalsOn, currentGoals, GOAL_KEYS: KEYS };
+// Stamps each row of an ASCENDING list of dated rows with the calorie goal in
+// force on that date, given an ASCENDING goal_history. Both lists are already
+// sorted, so one pointer walks them together — the alternative, calling goalsOn
+// per row, is a query per day and the summary route serves years of them.
+//
+// Rows before the first recorded goal get null, not the earliest goal: the
+// honest answer is "we don't know what you were aiming at", and the client
+// falls back to the current goal for those.
+//
+// `effective_from <= date` is what makes the changeover day itself take the NEW
+// goal — the same boundary goalsOn uses, so the two can't disagree about which
+// side of a change a day falls on.
+function stampGoals(rows, hist) {
+  if (!hist.length) return rows;
+  let i = -1;
+  for (const r of rows) {
+    while (i + 1 < hist.length && hist[i + 1].effective_from <= r.date) i++;
+    r.goal = i >= 0 ? hist[i].calorie_goal : null;
+  }
+  return rows;
+}
+
+module.exports = { snapshotGoals, goalsOn, currentGoals, stampGoals, GOAL_KEYS: KEYS };

@@ -44,6 +44,30 @@ function trendAsOf(entries, iso, windowStart, win) {
   return upto.length ? upto.reduce((s, [, kg]) => s + kg, 0) / upto.length : null;
 }
 
+// Your trend weight RIGHT NOW: the mean of up to `win` weigh-ins, counting
+// only those inside `maxAgeDays`. Null when nothing is recent enough, because
+// "no recent data" and "you weigh X" are different claims and only one of them
+// is safe to print next to a goal.
+//
+// movingAvg alone cannot answer this. It slices by array INDEX, and the array
+// holds one entry per weigh-in, not per day — so six readings from January plus
+// one from today averages all seven and calls the result a 7-day trend. Worked:
+// 80.0 ×6 in January, 74.2 today, gives 79.2 kg. That number led the Today card,
+// fed etaWeeks (20.6 weeks to target instead of 4.0) and inflated the
+// maintenance estimate by ~50 kcal. The server twin has guarded this all along
+// with TREND_MAX_AGE_DAYS in src/utils/macros.js, and trendAsOf above guards it
+// with windowStart; these two call sites were the pair that never got it.
+//
+// `entries` is [[isoDate, kg]] ascending, one row per date.
+export function trendWeightNow(entries, { win = 7, maxAgeDays = 30, today } = {}) {
+  if (!entries?.length || !today) return null;
+  const cutoff = shift(today, -maxAgeDays);
+  const recent = entries.filter(([d]) => d >= cutoff);
+  if (!recent.length) return null;
+  const slice = recent.slice(-win);
+  return slice.reduce((s, [, v]) => s + v, 0) / slice.length;
+}
+
 // How much trend weight moved across the Mon–Sun week beginning `monday`,
 // measured against the end of the previous CALENDAR week (not the previous row
 // of whatever list is being rendered — weeks with no logged meals are missing

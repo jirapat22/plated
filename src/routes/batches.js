@@ -4,6 +4,9 @@ const { todayLocal, tzFor } = require('../utils/tz');
 
 const router = express.Router();
 const round1 = n => Math.round(n * 10) / 10;
+// round1 that keeps a null a null. Plain round1(null) is 0, which is exactly
+// the confident-zero this file now goes out of its way to avoid.
+const r1n = n => (n == null ? null : round1(n));
 const safeParse = s => { try { return s ? JSON.parse(s) : []; } catch { return []; } };
 
 // Sum whole-batch nutrition from ingredients, using the foods table as the
@@ -12,6 +15,13 @@ function computeTotals(db, items) {
   const get = db.prepare(`SELECT name, calories_per_100g, protein_per_100g, carbs_per_100g,
     fat_per_100g, fiber_per_100g FROM foods WHERE id = $id`);
   const t = { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+  // Which macros ANY ingredient actually knew. Summing `|| 0` alone cannot tell
+  // "every ingredient had 0 g fiber" from "nothing in this pot recorded fiber",
+  // and the difference gets frozen: the batch writes a backing food declaring
+  // 0 g/100 g, and every portion logged from it stamps fiber: 0 into
+  // meal_entries permanently. The session-split path in meals.js already tracks
+  // this; computeTotals never did.
+  const known = { protein: false, carbs: false, fat: false, fiber: false };
   const ing = [];
   for (const it of (items || [])) {
     const g = parseFloat(it.quantity_g);
@@ -23,19 +33,30 @@ function computeTotals(db, items) {
     t.carbs    += (f.carbs_per_100g    || 0) * r;
     t.fat      += (f.fat_per_100g      || 0) * r;
     t.fiber    += (f.fiber_per_100g    || 0) * r;
+    for (const k of ['protein', 'carbs', 'fat', 'fiber']) {
+      if (f[`${k}_per_100g`] != null) known[k] = true;
+    }
     // food_id is kept so the batch can be re-opened for editing later; older
     // rows stored name+grams only and get resolved by name on read.
     ing.push({ food_id: it.food_id, name: f.name, grams: g });
   }
-  return { t, ing };
+  // Collapse anything nothing knew to NULL before it leaves here, so callers
+  // can't accidentally persist a summed zero. Calories are exempt: a batch with
+  // no calorie data is rejected outright by the routes below.
+  for (const k of ['protein', 'carbs', 'fat', 'fiber']) if (!known[k]) t[k] = null;
+  return { t, ing, known };
 }
 
 // Shape a batch row for the client. Nutrition is stored as whole-batch totals,
 // so both the per-100g density (what you need to pick a portion size) and the
 // what's-left figures are derived here rather than re-done in the frontend.
 function shapeBatch(b, db = null, pid = null) {
-  const per100 = k => round1((b[k] || 0) / b.cooked_g * 100);
-  const left   = k => round1((b[k] || 0) * b.remaining_g / b.cooked_g);
+  // A stored NULL means no ingredient in this pot recorded that macro. Kept as
+  // null all the way to the client so the UI can omit it rather than print a 0
+  // it can't stand behind. (Rows written before computeTotals tracked this hold
+  // a real 0 and are indistinguishable — only new batches get the honest null.)
+  const per100 = k => (b[k] == null ? null : round1(b[k] / b.cooked_g * 100));
+  const left   = k => (b[k] == null ? null : round1(b[k] * b.remaining_g / b.cooked_g));
 
   // Batches created before ingredients carried food_id can still be edited —
   // resolve those by name, since that's where the name came from.
@@ -89,7 +110,8 @@ router.post('/', (req, res) => {
     const { t, ing } = computeTotals(db, items);
     if (t.calories <= 0) return res.status(400).json({ error: 'those ingredients have no calorie data' });
 
-    const per = k => round1(t[k] / cg * 100);   // per-100g of the cooked batch
+    // null in, null out — an unknown macro must not become a 0 in the food row.
+    const per = k => (t[k] == null ? null : round1(t[k] / cg * 100));   // per-100g of the cooked batch
     const foodId = db.prepare(`INSERT INTO foods
       (name, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, serving_size_g, source, created_by_profile)
       VALUES ($n, $cal, $p, $c, $f, $fb, 100, 'batch', $by)`).run({
@@ -100,7 +122,10 @@ router.post('/', (req, res) => {
       (profile_id, name, food_id, calories, protein, carbs, fat, fiber, cooked_g, remaining_g, ingredients)
       VALUES ($p, $n, $fid, $cal, $pr, $cb, $ft, $fb, $cg, $cg, $ing)`).run({
       p: req.profileId, n: name.trim(), fid: foodId,
-      cal: round1(t.calories), pr: round1(t.protein), cb: round1(t.carbs), ft: round1(t.fat), fb: round1(t.fiber),
+      // round1(null) is 0 — Math.round(null * 10) / 10 — so a bare round1 here
+      // would undo the null tracking above at the last step, writing confident
+      // zeros into the batch row itself.
+      cal: round1(t.calories), pr: r1n(t.protein), cb: r1n(t.carbs), ft: r1n(t.fat), fb: r1n(t.fiber),
       cg, ing: JSON.stringify(ing),
     }).lastInsertRowid;
 
@@ -241,7 +266,7 @@ router.patch('/:id', (req, res) => {
         ing: ingredients, id: b.id,
       });
       if (b.food_id) {
-        const per = k => round1((totals[k] || 0) / cooked * 100);
+        const per = k => (totals[k] == null ? null : round1(totals[k] / cooked * 100));
         db.prepare(`UPDATE foods SET name = $n, calories_per_100g = $cal, protein_per_100g = $p,
           carbs_per_100g = $c, fat_per_100g = $f, fiber_per_100g = $fb WHERE id = $fid`).run({
           n: name, cal: per('calories'), p: per('protein'), c: per('carbs'), f: per('fat'), fb: per('fiber'),
@@ -273,3 +298,8 @@ router.delete('/:id', (req, res) => {
 });
 
 module.exports = router;
+// Exported for tests only. The null-vs-zero rule here is the kind that is
+// invisible by inspection and expensive when wrong — it writes a backing food
+// that every future portion copies from — so the test needs to exercise THIS
+// function, not a hand-copied reimplementation of it that can drift silently.
+module.exports.computeTotals = computeTotals;

@@ -4,7 +4,7 @@ import { localDate, addDaysIso }      from '../utils/date.js';
 import { showToast, navigateTo }      from '../app.js';
 import { openFoodEntry, lazySession } from './log.js';
 import { classifyDay, isFlagged, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY, LOG_TODAY } from '../utils/logCheck.js';
-import { movingAvg, weeklyTrendChange, etaWeeks, maintenanceShortfall } from '../utils/stats.js';
+import { movingAvg, trendWeightNow, weeklyTrendChange, etaWeeks, maintenanceShortfall } from '../utils/stats.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -312,7 +312,8 @@ function calcStreak(summary, goal, todayISO) {
     const d = new Date(todayD);
     d.setDate(d.getDate() - i);
     const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    const status = classifyDay(byDate[iso] || { date: iso, calories: 0, meal_count: 0 }, goal, todayISO);
+    const row = byDate[iso] || { date: iso, calories: 0, meal_count: 0 };
+    const status = classifyDay(row, row.goal ?? goal, todayISO);
     // Today counts toward the streak the moment anything is logged — it is a
     // "did you show up" number, not a "was the day complete" one. LOG_TODAY has
     // to be included explicitly now that today no longer arrives as 'complete',
@@ -448,7 +449,10 @@ export function renderTrends(container) {
     // (pre-logged planned meals) are excluded — Trends reads what happened,
     // not what's planned.
     const fullRows = summary.filter(r => r.date <= todayISO)
-      .map(r => ({ ...r, status: classifyDay(r, goal, todayISO) }));
+      // r.goal is what you were actually aiming at on that date, from
+      // goal_history via the summary route. Falls back to today's goal only for
+      // days older than your first recorded goal, where there is nothing better.
+      .map(r => ({ ...r, status: classifyDay(r, r.goal ?? goal, todayISO) }));
     // Cut by DATE, not by row count. The summary only returns days that have a
     // meal session, so slice(-days) meant "the last N logged days" — weigh in
     // weekly and "30d" plotted seven months of weigh-ins under a "· 30 days"
@@ -660,8 +664,7 @@ export function renderTrends(container) {
     const phase        = settings.phase || 'maintain';
     // Trend weight, not the last raw reading: one weigh-in carries the whole
     // day-to-day water swing, and this feeds the ETA.
-    const curWeight    = weightSorted.length
-      ? movingAvg(weightSorted.map(([, v]) => v), 7).at(-1) : null;
+    const curWeight    = trendWeightNow(weightSorted, { today: todayISO });
     // The verdict spans 4 weeks but never said how much of that had weigh-ins.
     const lastWeighIn  = weightSorted.length ? weightSorted[weightSorted.length - 1][0] : null;
     const staleDays    = lastWeighIn

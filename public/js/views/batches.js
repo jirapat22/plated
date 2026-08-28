@@ -7,7 +7,11 @@ import { localDate }                  from '../utils/date.js';
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const g0  = n => Math.round(n || 0);                                    // whole grams
 const g1  = n => {                                                      // 1dp, trimmed
-  const v = Math.round((n || 0) * 10) / 10;
+  // A dash for unknown, not a zero. The server now sends null for a macro no
+  // ingredient in the pot recorded, and `n || 0` would have printed that as a
+  // confident "0P" — undoing at the last inch the whole point of tracking it.
+  if (n == null) return '–';
+  const v = Math.round(n * 10) / 10;
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 };
 

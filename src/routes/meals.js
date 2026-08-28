@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDb, canView } = require('../db');
 const { todayLocal, tzFor } = require('../utils/tz');
-const { goalsOn } = require('../utils/goals');
+const { goalsOn, stampGoals } = require('../utils/goals');
 
 const router = express.Router();
 
@@ -177,7 +177,24 @@ router.get('/summary', (req, res) => {
       GROUP BY ms.date
       ORDER BY ms.date ASC
     `).all(all ? { pid } : { offset: `-${days} days`, today: todayLocal(tzFor(getDb(), pid)), pid });
-    res.json(rows);
+
+    // The calorie goal that was in force on each date, so Trends can judge a
+    // day by what you were aiming at THEN. It only had today's goal, so after
+    // the 4 Aug change from 2100 to 1760 every June day was scored against a
+    // target that did not exist yet — days eaten on plan at 2100 counted as
+    // under-logged, held streaks together, and drew the weekly goal marker at
+    // the wrong height. The day route has always done this properly through
+    // goalsOn; the one view that spans a goal change was the one flying blind.
+    //
+    // Resolved in JS from a single ordered read rather than calling goalsOn per
+    // row: that is one query per day, and this route serves five years of them.
+    // Both lists are ascending, so one pointer walks them together.
+    const hist = getDb().prepare(
+      `SELECT effective_from, calorie_goal FROM goal_history
+       WHERE profile_id = $pid AND calorie_goal IS NOT NULL
+       ORDER BY effective_from ASC`
+    ).all({ pid });
+    res.json(stampGoals(rows, hist));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

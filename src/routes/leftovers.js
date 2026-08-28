@@ -10,12 +10,20 @@ const round1 = n => Math.round(n * 10) / 10;
 // goes back in the fridge and gets eaten in one go. That is why there is no
 // remaining_g here — logging a leftover consumes all of it.
 
+// NULL survives the round trip. The split that creates a leftover goes to real
+// trouble to write NULL when no food in the meal knew a macro (see the `known`
+// map in meals.js), and this turned every one of them straight back into a
+// confident 0.0 — so a meal whose fiber was simply unknown came back asserting
+// zero fiber, and the minted food below then published that as fact. Two halves
+// of one feature disagreeing about what NULL means. `quantity_g` on the line
+// above always had this right; the macros now match it.
+const n1 = v => (v == null ? null : round1(v));
 const shape = r => ({
   id: r.id, name: r.name, food_id: r.food_id,
-  quantity_g: r.quantity_g == null ? null : round1(r.quantity_g),
-  calories: Math.round(r.calories || 0),
-  protein: round1(r.protein || 0), carbs: round1(r.carbs || 0),
-  fat: round1(r.fat || 0), fiber: round1(r.fiber || 0),
+  quantity_g: n1(r.quantity_g),
+  calories: r.calories == null ? null : Math.round(r.calories),
+  protein: n1(r.protein), carbs: n1(r.carbs),
+  fat: n1(r.fat), fiber: n1(r.fiber),
   created_at: r.created_at,
 });
 
@@ -107,7 +115,12 @@ router.post('/:id/log', (req, res) => {
       let food = foodId ? db.prepare('SELECT * FROM foods WHERE id = $id').get({ id: foodId }) : null;
       if (!food) {
         const grams = l.quantity_g > 0 ? l.quantity_g : 100;
-        const per = v => round1((v || 0) / grams * 100);
+        // An unknown macro stays unknown in the minted food too. `(v || 0)`
+        // turned "we never knew this meal's fiber" into a food declaring
+        // 0 g fiber per 100 g — which then counts as fact on every day it is
+        // logged to, and in every average built on those days. Calories are the
+        // one field a leftover always has; the rest may legitimately be NULL.
+        const per = v => (v == null ? null : round1(v / grams * 100));
         foodId = db.prepare(`INSERT INTO foods
           (name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, serving_size_g, source, created_by_profile, hidden)
           VALUES ($n, NULL, $cal, $p, $c, $f, $fb, 100, 'leftover', $by, 1)`).run({
