@@ -193,6 +193,28 @@ function initDb() {
       orbit_sent INTEGER DEFAULT 0,
       created_at TEXT    DEFAULT (datetime('now'))
     );
+
+    -- Replay protection for writes. The client stamps a one-off id on a write;
+    -- if the same id arrives again the stored response is handed back instead of
+    -- the work being done twice.
+    --
+    -- This is not only for the offline queue. It is already possible today: when
+    -- a response is lost but the server committed, the phone reports "that
+    -- didn't save" and the obvious move is to tap again — and logging a food
+    -- both inserts an entry AND draws down batch stock, so the second tap eats
+    -- 200g of a batch that only lost 100.
+    --
+    -- Keyed by profile as well as client_id: two profiles cannot collide, and a
+    -- replay under a different profile can never read back someone else's
+    -- response body.
+    CREATE TABLE IF NOT EXISTS idempotency (
+      client_id  TEXT    NOT NULL,
+      profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      status     INTEGER NOT NULL,
+      response   TEXT    NOT NULL,
+      created_at TEXT    DEFAULT (datetime('now')),
+      PRIMARY KEY (profile_id, client_id)
+    );
   `);
 
   migrateSchema(db);
@@ -200,6 +222,10 @@ function initDb() {
   ensureIndexes(db);
 
   dedupeWeightLog(db);
+
+  // Drop replay records older than the retention window. Once at boot: the
+  // table holds one short row per write and nothing here justifies a timer.
+  require('./utils/idempotency').pruneIdempotency(db);
 
   seedNzFoods(db);
 

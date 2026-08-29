@@ -3,6 +3,7 @@ const { getDb } = require('../db');
 const { todayLocal, tzFor } = require('../utils/tz');
 const { recalcMacroGoals } = require('../utils/macros');
 const { snapshotGoals } = require('../utils/goals');
+const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
 
 const router = express.Router();
 
@@ -68,7 +69,13 @@ router.get('/day/:date', (req, res) => {
 
 router.post('/', (req, res) => {
   try {
-    const { weight_kg, note, date } = req.body;
+    const { weight_kg, note, date, client_id } = req.body;
+    // A replayed weigh-in inserts a second row for the same day. dedupeWeightLog
+    // and the "one per date" reads paper over it, but it also re-pushes to
+    // IronLog and re-snapshots goals, so the duplicate is not free.
+    const cid = isValidClientId(client_id) ? client_id : null;
+    const prior = replayOf(getDb(), req.profileId, cid);
+    if (prior) return res.status(prior.status).json(prior.body);
     const bad = badWeight(weight_kg);
     if (bad) return res.status(400).json({ error: bad });
     // Every other write route format-checks its date; this one took whatever it
@@ -95,7 +102,9 @@ router.post('/', (req, res) => {
     const macros = recalcMacroGoals(db, req.profileId);     // g/kg goals follow the trend
     // In g/kg mode a weigh-in moves the macro goals, so it is a goal change.
     snapshotGoals(db, req.profileId, todayLocal(tzFor(db, req.profileId)));
-    res.status(201).json(macros ? { ...entry, macros } : entry);
+    const body = macros ? { ...entry, macros } : entry;
+    remember(db, req.profileId, cid, 201, body);
+    res.status(201).json(body);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

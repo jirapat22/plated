@@ -2,6 +2,7 @@ const express = require('express');
 const { getDb, canView } = require('../db');
 const { todayLocal, tzFor } = require('../utils/tz');
 const { goalsOn, stampGoals } = require('../utils/goals');
+const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
 
 const router = express.Router();
 
@@ -237,6 +238,10 @@ router.post('/sessions', (req, res) => {
   try {
     const db = getDb();
     const pid = req.profileId;
+    // Replayed, this would mint "Meal 2", "Meal 3" for the same intent.
+    const cid = isValidClientId(req.body.client_id) ? req.body.client_id : null;
+    const prior = replayOf(db, pid, cid);
+    if (prior) return res.status(prior.status).json(prior.body);
     // The one write route that took its date on trust. Every other one
     // format-checks, and for good reason: meal_sessions.date is the key every
     // read is looked up by, so a junk string creates a meal that no day view,
@@ -260,7 +265,9 @@ router.post('/sessions', (req, res) => {
 
     const session = db.prepare('SELECT * FROM meal_sessions WHERE id = $id')
       .get({ id: result.lastInsertRowid });
-    res.status(201).json({ ...session, entries: [] });
+    const created = { ...session, entries: [] };
+    remember(db, pid, cid, 201, created);
+    res.status(201).json(created);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -587,7 +594,15 @@ router.post('/sessions/:id/entries', (req, res) => {
   try {
     const db = getDb();
     const { id } = req.params;
-    const { food_id, quantity_g } = req.body;
+    const { food_id, quantity_g, client_id } = req.body;
+
+    // Before anything else: has this exact write already been done? This route
+    // is the sharpest case for it — it inserts an entry, draws down batch stock
+    // and bumps a use count, and only the first of those is visible enough to
+    // notice and undo.
+    const cid = isValidClientId(client_id) ? client_id : null;
+    const prior = replayOf(db, req.profileId, cid);
+    if (prior) return res.status(prior.status).json(prior.body);
 
     if (!food_id || !quantity_g || quantity_g <= 0) {
       return res.status(400).json({ error: 'food_id and quantity_g > 0 required' });
@@ -632,6 +647,7 @@ router.post('/sessions/:id/entries', (req, res) => {
       WHERE me.id = $id
     `).get({ id: result.lastInsertRowid });
 
+    remember(db, req.profileId, cid, 201, entry);
     res.status(201).json(entry);
   } catch (err) {
     res.status(500).json({ error: err.message });

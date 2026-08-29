@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDb } = require('../db');
 const { todayLocal, tzFor } = require('../utils/tz');
+const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
 
 const router = express.Router();
 const round1 = n => Math.round(n * 10) / 10;
@@ -138,6 +139,12 @@ router.post('/', (req, res) => {
 router.post('/:id/portion', (req, res) => {
   try {
     const db = getDb();
+    // Draws down stock, so a replay eats the pot twice — the same hazard as
+    // logging a food, and for the same reason.
+    const cid = isValidClientId(req.body.client_id) ? req.body.client_id : null;
+    const prior = replayOf(db, req.profileId, cid);
+    if (prior) return res.status(prior.status).json(prior.body);
+
     const b = db.prepare('SELECT * FROM batches WHERE id = $id AND profile_id = $p')
       .get({ id: req.params.id, p: req.profileId });
     if (!b) return res.status(404).json({ error: 'Batch not found' });
@@ -207,7 +214,9 @@ router.post('/:id/portion', (req, res) => {
     // logged_g is the CLAMPED amount, which can be less than what was asked for
     // when the batch is nearly empty. The client shows this figure rather than
     // the request, so "log 300g" from a batch with 90g left reads as 90g.
-    res.status(201).json({ logged_g: round1(grams), remaining_g: remaining });
+    const body = { logged_g: round1(grams), remaining_g: remaining };
+    remember(db, req.profileId, cid, 201, body);
+    res.status(201).json(body);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
