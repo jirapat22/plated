@@ -186,6 +186,10 @@ export function renderToday(container) {
       fiber:  parseFloat(settings.fiber_goal)      || 30,
     };
     const t         = mealData.totals;
+    // Which of those totals are floors rather than measurements (an entry in the
+    // day recorded no macros). Absent on a cached payload taken before the field
+    // existed, so treat missing as "everything known" — the old behaviour.
+    const partial   = mealData.totals_partial || null;
 
     // ── "Did you fully log this day?" check (past days only) ──
     const mealCount = (mealData.sessions || []).filter(s => (s.entries?.length || 0) > 0).length;
@@ -383,7 +387,7 @@ export function renderToday(container) {
 
       <!-- Calorie ring(s) -->
       <div style="padding:0 16px 14px">
-        <div class="card">
+        <div class="card" id="goal-card">
           <div class="tri-rings">
             ${eatable > 0 ? `
             <div class="ring-col">
@@ -402,7 +406,7 @@ export function renderToday(container) {
               <div class="ring-wrap-relative">
                 ${calRingSvg(midPct, '', false, midOver, true)}
                 <div class="ring-center">
-                  <div class="num ring-kcal">${fmtE(eaten)}</div>
+                  <div class="num ring-kcal">${fmtE(eaten)}${partial?.calories ? '+' : ''}</div>
                   <div class="ring-goal muted">/ ${fmtE(baseGoal)} ${ul}</div>
                   ${eatable > 0 ? '' : `<div class="ring-hint" style="color:${hintColor}">${hintText}</div>`}
                 </div>
@@ -521,7 +525,7 @@ export function renderToday(container) {
     `;
 
     // Render macro bar
-    renderMacroBar(document.getElementById('macro-bar-root'), t, goals);
+    renderMacroBar(document.getElementById('macro-bar-root'), t, goals, true, partial);
 
     // Render sessions
     const mealsList = document.getElementById('meals-list');
@@ -613,25 +617,72 @@ export function renderToday(container) {
       } catch (err) { showToast(err.message, 'error'); }
     });
 
-    // The FAB is right-aligned and fixed, and the New Meal / Quick Log row is
-    // the last thing on the page — so scrolling to the bottom parked "+ Log"
-    // directly on top of "Quick Log", covering a button with a button that
-    // does nearly the same thing. The FAB earns its place while you're scrolled
-    // up, past the rings and cards; down here that row already is the answer.
-    // So it tucks away while the row is on screen and comes back when it isn't.
+    // The FAB is fixed in the bottom-right corner, so whatever sits under that
+    // corner is hidden with nothing to say so. Two cases need it out of the way.
+    //
+    // The New Meal / Quick Log row is the last thing on the page, so scrolling
+    // to the bottom parked "+ Log" on top of "Quick Log" — a button covering a
+    // button that does nearly the same thing. The FAB earns its place while
+    // you're scrolled up; down here that row already is the answer.
+    //
+    // The Daily Goal card is the one that was still wrong. At Largest text it
+    // grows tall enough that its last macro row lands in the FAB's band on first
+    // paint, and the fiber row read "Fiber 9 / 3" — goal and remaining grams
+    // behind the button, on the screen the app opens on, for exactly the reader
+    // the text-size setting exists for. Nothing marks a number as hidden, so
+    // scrolling is not a fix anyone would think to try.
+    //
+    // Deliberately NOT tucking for an entry's own buttons mid-list: those move
+    // as you scroll, which is ordinary for a floating button, and reacting to
+    // every row would flicker it down the length of the page.
     fabObserver?.disconnect();
+    fabDetach?.();
     const row = document.getElementById('new-meal-btn')?.parentElement;
     const fab = document.getElementById('fab-log');
-    if (row && fab && 'IntersectionObserver' in window) {
-      fabObserver = new IntersectionObserver(
-        ([e]) => fab.classList.toggle('tucked', e.isIntersecting),
-        { root: document.getElementById('view-container'), threshold: 0.15 },
-      );
-      fabObserver.observe(row);
+    const goalCard = document.getElementById('goal-card');
+    if (fab) {
+      let rowVisible = false;
+      // Measured from the CENTRE outwards using offsetWidth/offsetHeight, which
+      // ignore transforms. The tucked state scales the FAB down, so reading its
+      // live rect would shrink the band, untuck it, grow the band and tuck it
+      // again — a loop. scale() leaves the centre where it is, so this is the
+      // untucked footprint whatever state it is in.
+      const goalUnderFab = () => {
+        if (!goalCard) return false;
+        const r = fab.getBoundingClientRect();
+        const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        const w = fab.offsetWidth / 2, h = fab.offsetHeight / 2;
+        const g = goalCard.getBoundingClientRect();
+        return g.bottom > cy - h && g.top < cy + h && g.right > cx - w && g.left < cx + w;
+      };
+      const applyTuck = () => fab.classList.toggle('tucked', rowVisible || goalUnderFab());
+      let queued = false;
+      const onScroll = () => {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => { queued = false; applyTuck(); });
+      };
+      const vc = document.getElementById('view-container');
+      vc?.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', onScroll);
+      fabDetach = () => {
+        vc?.removeEventListener('scroll', onScroll);
+        window.removeEventListener('resize', onScroll);
+        fabDetach = null;
+      };
+      if (row && 'IntersectionObserver' in window) {
+        fabObserver = new IntersectionObserver(
+          ([e]) => { rowVisible = e.isIntersecting; applyTuck(); },
+          { root: vc, threshold: 0.15 },
+        );
+        fabObserver.observe(row);
+      }
+      applyTuck();
     }
   }
 
   let fabObserver = null;
+  let fabDetach = null;
   const onSettingsChanged = () => load();
   window.addEventListener('plated:settings-changed', onSettingsChanged);
   container.innerHTML = buildSkeleton();
@@ -640,6 +691,7 @@ export function renderToday(container) {
   return () => {
     window.removeEventListener('plated:settings-changed', onSettingsChanged);
     fabObserver?.disconnect();   // it holds a node from a view that's being torn down
+    fabDetach?.();               // and the scroll/resize listeners hold the same
   };
 }
 

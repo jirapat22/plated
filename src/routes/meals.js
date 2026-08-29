@@ -48,20 +48,32 @@ function calcMacros(food, qty) {
   };
 }
 
+const MACRO_KEYS = ['calories', 'protein', 'carbs', 'fat', 'fiber'];
+
+// Day totals, plus which of them are missing something.
+//
+// A null macro contributes nothing to the sum — it has to, there is no other
+// number to add — so the total is a LOWER BOUND, not a measurement. That was
+// invisible: a day holding one Quick Log with calories only still reported
+// "Protein 202 / 166g · +36g over", a verdict on a figure that 900 kcal of the
+// day never contributed to. The entry itself has said "-P -C -F" for a while;
+// this is the same honesty one level up.
+//
+// `partial` names the ones that are incomplete so the UI can mark the number as
+// a minimum and drop the claims it can no longer stand behind — "36g over" is
+// still true when the floor is already past the goal, "21g left" never is.
 function sumTotals(sessions) {
-  return sessions.reduce(
-    (acc, s) => {
-      for (const e of s.entries) {
-        acc.calories += e.calories || 0;
-        acc.protein  += e.protein  || 0;
-        acc.carbs    += e.carbs    || 0;
-        acc.fat      += e.fat      || 0;
-        acc.fiber    += e.fiber    || 0;
+  const totals  = { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+  const partial = { calories: false, protein: false, carbs: false, fat: false, fiber: false };
+  for (const s of sessions) {
+    for (const e of s.entries) {
+      for (const k of MACRO_KEYS) {
+        if (e[k] == null) partial[k] = true;
+        else totals[k] += e[k];
       }
-      return acc;
-    },
-    { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 }
-  );
+    }
+  }
+  return { totals, partial };
 }
 
 // A batch portion is stored as an ordinary meal_entry pointing at the batch's
@@ -123,11 +135,15 @@ router.get('/day/:date', (req, res) => {
     if (pid == null) return;
     const db = getDb();
     const sessions = loadDay(db, date, pid);
+    const dayTotals = sumTotals(sessions);
     // The goals that were live on THIS date, not the ones live now. Scrolling
     // back through History used to judge a day in July against a goal set in
     // August, turning an on-plan day into a blowout after the fact.
     res.json({
-      date, sessions, totals: sumTotals(sessions),
+      date, sessions, totals: dayTotals.totals,
+      // Which totals above are minimums rather than measurements, because an
+      // entry in the day didn't record that macro.
+      totals_partial: dayTotals.partial,
       log_status: logStatus(db, date, pid),
       // Goals only for your own day. History tells the viewer in as many words
       // that someone else's goals stay private, and then renders their meals

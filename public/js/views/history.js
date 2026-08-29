@@ -260,9 +260,22 @@ export function renderHistory(container) {
     const n = weekRows.length;
     const wAvg = k => n ? Math.round(weekRows.reduce((s, r) => s + (r[k] ?? 0), 0) / n) : 0;
 
+    // A day with nothing on it is not a day you ate nothing. It used to lead
+    // with "0 of 1,760 kcal", "0.0g protein" and four bars pinned at zero —
+    // every one of them a measurement the app never took — with "No meals
+    // logged" sitting far below, after the 7-day average. The strip already
+    // marks these days (no dot) and the 7-day average already excludes them
+    // ("6 of 7 days logged"); the card was the last place still claiming it.
+    const nothingLogged = mealData.sessions.length === 0;
+
     el.innerHTML = `
       <div class="card" style="margin-bottom:12px">
         <div style="font-size:15px;font-weight:700;margin-bottom:12px">${fmtDateFull(date)}</div>
+        ${nothingLogged ? `
+        <div style="margin-bottom:12px">
+          <div style="font-size:17px;font-weight:700;color:var(--text-muted)">${date > localDate() ? 'Not yet' : 'Nothing logged'}</div>
+          <div class="label">${date > localDate() ? 'this day is still ahead' : 'no meals were recorded on this day'}</div>
+        </div>` : `
         <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px">
           <div>
             <div class="num" style="font-size:28px;font-weight:800">${fmtE(t.calories)}</div>
@@ -274,7 +287,7 @@ export function renderHistory(container) {
             <div class="num" style="font-size:13px;color:var(--carbs)">${t.carbs.toFixed(1)}g carbs</div>
             <div class="num" style="font-size:13px;color:var(--fat)">${t.fat.toFixed(1)}g fat</div>
           </div>
-        </div>
+        </div>`}
         <div id="hist-macro-bar"></div>
         ${viewed ? `<div style="font-size:11px;color:var(--text-faint);margin-top:2px">Totals shown, not compared to a goal — goals stay private</div>` : ''}
         ${dayWeight ? `
@@ -304,7 +317,7 @@ export function renderHistory(container) {
     // connected profile's day we only have your goals, not theirs, and
     // showing their intake "against" your numbers is misleading rather
     // than just incomplete.
-    if (!viewed) renderMacroBar(el.querySelector('#hist-macro-bar'), t, goals, false);
+    if (!viewed && !nothingLogged) renderMacroBar(el.querySelector('#hist-macro-bar'), t, goals, false, mealData.totals_partial || null);
 
     if (mealData.sessions.length === 0) {
       const future = date > localDate();

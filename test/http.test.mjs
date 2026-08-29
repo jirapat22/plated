@@ -110,3 +110,28 @@ test('a normal meal logs and shows up in the day', async () => {
   const day = await (await api('GET', `/api/meals/day/${today}`)).json();
   assert.ok(day.totals.calories > 0, 'the day total did not move');
 });
+
+// ── the day says which of its totals are floors ─────────────────────────────
+test('a calories-only meal marks the macros as incomplete, not as zero', async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  // A known food first, so the macros have a real floor to be a floor OF.
+  await api('POST', '/api/meals/log', { food_id: 1, quantity_g: 100, date: today });
+  const known = await (await api('GET', `/api/meals/day/${today}`)).json();
+  assert.deepStrictEqual(known.totals_partial, {
+    calories: false, protein: false, carbs: false, fat: false, fiber: false,
+  }, 'nothing is partial yet');
+
+  // Now a Quick Log: calories typed, macros unknown.
+  // The quick shape the sheet sends: a description plus a per-100g figure,
+  // logged as 100 g, which is how "900 kcal, no idea of the macros" is stored.
+  const r = await api('POST', '/api/meals/log', {
+    quick: { name: 'Pub dinner', calories_per_100g: 900 }, quantity_g: 100, date: today,
+  });
+  assert.strictEqual(r.status, 201, await r.text());
+
+  const day = await (await api('GET', `/api/meals/day/${today}`)).json();
+  assert.strictEqual(day.totals_partial.protein, true, 'protein is now a floor');
+  assert.strictEqual(day.totals_partial.calories, false, 'calories were typed in, so they are known');
+  // The number itself must not move — it is still the sum of what is known.
+  assert.strictEqual(day.totals.protein, known.totals.protein);
+});

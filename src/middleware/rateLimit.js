@@ -71,8 +71,22 @@ function rateLimit({ windowMs, max, blockMs, count = 'requests' }) {
 
     // Opportunistic sweep of expired entries — cheaper than a timer, and only
     // runs once the map is already large.
+    //
+    // The sweep alone did not bound anything: it can only drop entries whose
+    // window has already elapsed, and inside a 15-minute window none have. A
+    // spray across an IPv6 /64 therefore grew the map without limit, and
+    // MAX_KEYS was a number that never bound. After sweeping, evict oldest-first
+    // until it does. Map preserves insertion order, so the first keys are the
+    // least recently created — and evicting an attacker's key only gives them
+    // back attempts they were already free to make from a fresh address.
     if (hits.size > MAX_KEYS) {
       for (const [k, v] of hits) if (now > v.resetAt && v.blockedUntil < now) hits.delete(k);
+      // Never evict an IP that is currently serving a block; that is the one
+      // entry an attacker would want dropped.
+      for (const [k, v] of hits) {
+        if (hits.size <= MAX_KEYS) break;
+        if (v.blockedUntil <= now && k !== key) hits.delete(k);
+      }
     }
 
     next();

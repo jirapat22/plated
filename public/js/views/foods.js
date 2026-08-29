@@ -46,8 +46,18 @@ export function renderFoods(container) {
         <input class="input" id="foods-search" placeholder="Search foods…" autocomplete="off" />
       </div>
     </div>
-    <div style="padding:0 16px 10px;display:flex;gap:8px;align-items:center">
-      <div class="search-tabs" id="foods-tabs" style="padding:0;flex:1;overflow-x:auto;flex-wrap:nowrap">
+    <!-- Wraps rather than scrolls sideways. At 390px the five pills need 388px
+         against 259px of room, so "Custom" and "Scanned" sat off the right edge
+         behind a horizontal scroll with no fade, arrow or cut-off pill to hint
+         they were there — at Largest text three of the five were gone. Wrapping
+         is what the Appearance copy already promises ("you'll scroll more"), and
+         vertical scrolling is the one people look for.
+         The row wraps too. A bare flex:1 on the pills squeezed them into a
+         147px column and stacked all five one-per-row down the page. Given a
+         basis to work from they keep the width they need, and "+ Add" drops to
+         its own line only when there is genuinely no room beside them. -->
+    <div style="padding:0 16px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div class="search-tabs" id="foods-tabs" style="padding:0;flex:1 1 240px;min-width:0;flex-wrap:wrap;row-gap:6px">
         <!-- Labelled "All" but it serves /foods/recent — your 40 most-logged.
              A fresh profile tapped it and read "No foods found" with ~4,800
              seeded foods sitting right there. Cheapest honest fix: call it

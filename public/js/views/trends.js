@@ -184,6 +184,32 @@ function markChartsUnavailable() {
   }
 }
 
+// Every calendar day between two ISO dates, inclusive.
+//
+// Charts here draw on a category axis, where every entry in `labels` gets the
+// same width. The series only ever held days that exist, so a day nobody logged
+// was not a gap — it simply wasn't there, and the days either side were drawn
+// touching. The calorie axis ran "8/10, 8/12" with nothing between them, and a
+// fortnight away came back as a single step, directly underneath a verdict about
+// weekly pace. Filling the missing days with nulls puts the time back.
+//
+// Capped: past a few years of daily points the compression stops being the thing
+// that misleads you and the phone starts to care, so a very long range keeps the
+// compact axis it had.
+const MAX_DENSE_DAYS = 1200;
+function daySpan(fromISO, toISO) {
+  const out = [];
+  const cur = new Date(fromISO + 'T00:00:00');
+  const end = new Date(toISO + 'T00:00:00');
+  while (cur <= end) {
+    out.push(localDate(cur));
+    cur.setDate(cur.getDate() + 1);
+    if (out.length > MAX_DENSE_DAYS) return null;
+  }
+  return out;
+}
+const mmdd = iso => { const d = new Date(iso + 'T00:00:00'); return `${d.getMonth() + 1}/${d.getDate()}`; };
+
 function makeChart(id, labels, data, color, yLabel, opts = {}) {
   destroyChart(id);
   const ctx = document.getElementById(id);
@@ -195,6 +221,11 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
 
   const datasets = [{
     data,
+    // The nulls in a densified series mean "no reading that day", not "a break in
+    // the line". The gap is already shown by the correct x-spacing and by having
+    // no point drawn there; snapping the line as well would shatter the chart of
+    // anyone who logs five days a week.
+    spanGaps: true,
     borderColor: color,
     backgroundColor: color + '22',
     fill: true,
@@ -213,6 +244,7 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
     datasets.push({
       label: 'trend',
       data: opts.trendData,
+      spanGaps: true,
       borderColor: color,
       backgroundColor: 'transparent',
       borderWidth: 2,
@@ -474,11 +506,18 @@ export function renderTrends(container) {
     const flagCutoff = (() => { const d = new Date(); d.setDate(d.getDate() - 14); return localDate(d); })();
     const recentFlagged = flaggedDays.filter(r => r.date >= flagCutoff);
 
-    const labels   = rows.map(r => { const d = new Date(r.date + 'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; });
-    const cals     = rows.map(r => toDisplay(r.calories ?? 0));
-    const proteins = rows.map(r => r.protein ?? 0);
-    const carbs    = rows.map(r => r.carbs ?? 0);
-    const fats     = rows.map(r => r.fat ?? 0);
+    // Draw on a continuous calendar, not on "the days that happen to exist".
+    // chartRows holds null where nothing was logged; every series below carries
+    // that null through so the day takes up its space and shows no point.
+    // Statistics keep using `rows` — nothing about which days count changes here.
+    const chartDates = rows.length ? daySpan(rows[0].date, rows[rows.length - 1].date) : [];
+    const rowByDate  = Object.fromEntries(rows.map(r => [r.date, r]));
+    const chartRows  = chartDates ? chartDates.map(d => rowByDate[d] || null) : rows;
+    const labels   = chartDates ? chartDates.map(mmdd) : rows.map(r => mmdd(r.date));
+    const cals     = chartRows.map(r => (r ? toDisplay(r.calories ?? 0) : null));
+    const proteins = chartRows.map(r => (r ? r.protein ?? 0 : null));
+    const carbs    = chartRows.map(r => (r ? r.carbs   ?? 0 : null));
+    const fats     = chartRows.map(r => (r ? r.fat     ?? 0 : null));
 
     // Flagged (likely-incomplete) days get an orange dot so the gap is visible.
     // Today gets a hollow one: it is on the chart because watching it build is
@@ -486,18 +525,20 @@ export function renderTrends(container) {
     // days. Same arrays go to every macro chart so they agree.
     const FLAG = ink('#f97316');
     const DOT  = ink('#c8b8ff');
-    const inProg = r => r.status === LOG_TODAY;
-    const pointColors       = rows.map(r => inProg(r) ? 'transparent' : isFlagged(r.status) ? FLAG : DOT);
-    const pointBorderColors = rows.map(r => isFlagged(r.status) ? FLAG : DOT);
-    const pointBorderWidths = rows.map(r => inProg(r) ? 2 : 1);
-    const pointRadii        = rows.map(r => inProg(r) ? 4 : isFlagged(r.status) ? 5 : 2);
+    const inProg = r => r?.status === LOG_TODAY;
+    // A day with nothing logged gets no marker at all — radius 0. That, plus the
+    // space it now occupies, IS the gap.
+    const pointColors       = chartRows.map(r => !r ? 'transparent' : inProg(r) ? 'transparent' : isFlagged(r.status) ? FLAG : DOT);
+    const pointBorderColors = chartRows.map(r => !r ? 'transparent' : isFlagged(r.status) ? FLAG : DOT);
+    const pointBorderWidths = chartRows.map(r => !r ? 0 : inProg(r) ? 2 : 1);
+    const pointRadii        = chartRows.map(r => !r ? 0 : inProg(r) ? 4 : isFlagged(r.status) ? 5 : 2);
     const pointOpts   = { pointColors, pointBorderColors, pointBorderWidths, pointRadii };
     // The 7-day line stops at yesterday. movingAvg is trailing, so only the last
     // point ever saw today — nulling it is the whole fix. Left in, a 603 kcal
     // morning pulled the visible trend down by ~200 and made a flat month look
     // like a sudden drop.
     const calTrend    = movingAvg(cals, 7);
-    const todayIdx    = rows.findIndex(inProg);
+    const todayIdx    = chartRows.findIndex(inProg);
     if (todayIdx >= 0) calTrend[todayIdx] = null;
 
     // Weight series (IronLog + local merged by date). Normalize hard: IronLog
@@ -528,9 +569,28 @@ export function renderTrends(container) {
 
     const weightSorted  = Object.entries(weightMap).sort((a, b) => a[0].localeCompare(b[0]));
     const weightEntries = weightSorted.filter(([d]) => d >= cutoffISO);   // by date, see cutoffISO
-    const wLabels = weightEntries.map(([d]) => { const dt = new Date(d + 'T00:00:00'); return `${dt.getMonth()+1}/${dt.getDate()}`; });
-    const wVals   = weightEntries.map(([, v]) => v);
-    const wTrend  = movingAvg(wVals, 7);
+    // Same continuous calendar as the calorie chart. This one matters more: it
+    // is the chart the pace verdict sits on, and a week of missed weigh-ins used
+    // to close up into nothing, making a slow fortnight look like a fast week.
+    const wDates  = weightEntries.length
+      ? daySpan(weightEntries[0][0], weightEntries[weightEntries.length - 1][0]) : [];
+    const wIdx    = wDates ? Object.fromEntries(wDates.map((d, i) => [d, i])) : null;
+    const wLabels = wDates ? wDates.map(mmdd) : weightEntries.map(([d]) => mmdd(d));
+    const wVals   = wDates
+      ? (() => { const a = new Array(wDates.length).fill(null);
+                 for (const [d, v] of weightEntries) a[wIdx[d]] = v; return a; })()
+      : weightEntries.map(([, v]) => v);
+    // Computed on the readings, then placed at their calendar positions — NOT
+    // recomputed over the dense array. A mean of "the last 7 weigh-ins" and a
+    // mean of "weigh-ins in the last 7 days" are different numbers, and the first
+    // one is what Today's bodyweight card shows. The line has to agree with it.
+    const wTrend  = (() => {
+      const compact = movingAvg(weightEntries.map(([, v]) => v), 7);
+      if (!wDates) return compact;
+      const a = new Array(wDates.length).fill(null);
+      weightEntries.forEach(([d], i) => { a[wIdx[d]] = compact[i]; });
+      return a;
+    })();
 
     // ── 7-day average — excludes flagged (likely-incomplete) days ──
     // And today, which is a different kind of incomplete. This filters on
@@ -763,7 +823,10 @@ export function renderTrends(container) {
         expectedByDate[iso] = cum;
         cur.setDate(cur.getDate() + 1);
       }
-      expectedAligned = weightEntries.map(([dt]) => dt >= anchorDate ? (expectedByDate[dt] ?? null) : null);
+      // Keyed by date, so it lands on the same axis the weights do — and on the
+      // dense one it becomes the continuous line it always described.
+      expectedAligned = (wDates || weightEntries.map(([d]) => d))
+        .map(dt => (dt >= anchorDate ? (expectedByDate[dt] ?? null) : null));
       const [lastDate, lastActual] = weightEntries[weightEntries.length - 1];
       if (expectedByDate[lastDate] != null) {
         expectedLossKg = anchorWeight - expectedByDate[lastDate];   // +ve = predicted loss
@@ -1132,12 +1195,20 @@ export function renderTrends(container) {
     const drawWaist = () => {
       if (!waistDetails?.open || waistDrawn || waistEntries.length < 2) return;
       waistDrawn = true;
-      const wsLabels = waistEntries.map(([d]) => {
-        const dt = new Date(d + 'T00:00:00');
-        return `${dt.getMonth() + 1}/${dt.getDate()}`;
-      });
-      makeChart('chart-waist', wsLabels, waistEntries.map(([, v]) => v), ink('#ffd166'), 'cm',
-        { trendData: movingAvg(waistEntries.map(([, v]) => v), 5) });
+      // Waist is measured weekly, so the compressed axis hid the most time here:
+      // six readings drawn evenly whether they spanned six weeks or six months.
+      const wsDates  = daySpan(waistEntries[0][0], waistEntries[waistEntries.length - 1][0]);
+      const wsIdx    = wsDates ? Object.fromEntries(wsDates.map((d, i) => [d, i])) : null;
+      const wsLabels = wsDates ? wsDates.map(mmdd) : waistEntries.map(([d]) => mmdd(d));
+      const wsCompact = waistEntries.map(([, v]) => v);
+      const place = arr => {
+        if (!wsDates) return arr;
+        const a = new Array(wsDates.length).fill(null);
+        waistEntries.forEach(([d], i) => { a[wsIdx[d]] = arr[i]; });
+        return a;
+      };
+      makeChart('chart-waist', wsLabels, place(wsCompact), ink('#ffd166'), 'cm',
+        { trendData: place(movingAvg(wsCompact, 5)) });
     };
     waistDetails?.addEventListener('toggle', () => { waistOpen = waistDetails.open; drawWaist(); });
     drawWaist();
