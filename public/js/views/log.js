@@ -538,7 +538,13 @@ export function openQuickLog(sessionId, onSuccess, viewDate) {
         // Quick Log is the restaurant-with-one-bar case by definition — it
         // exists for food you can't weigh, eaten out. Failing it for want of a
         // connection is failing it exactly when it is needed.
-        if (err.offline) {
+        // .unreachable too, not just .offline. A 502 while Railway redeploys is
+        // the same thing from the user's side — the write can't land right now —
+        // and it is the more expensive one to refuse: they have already typed
+        // the meal. The queue is idempotent and classifyFailure treats
+        // unreachable as 'stop', so a queued write waits for the container
+        // rather than burning retries against it.
+        if (err.offline || err.unreachable) {
           const pid = getProfile()?.id;
           if (pid != null) {
             await queueWrite(pid, '/api/meals/log', payload);
