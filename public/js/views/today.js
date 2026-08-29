@@ -93,17 +93,47 @@ export function renderToday(container) {
   let loadGen = 0;             // increments on each load; stale responses discarded
   let onboardingShown = false; // first-run sheet fires at most once per mount
 
+  // Says the screen is a saved copy and how old it is. Never a silent fallback:
+  // a stale calorie total looks exactly like a live one, and acting on it —
+  // eating to a number that stopped updating an hour ago — is the whole risk
+  // of caching a food log at all.
+  function showStaleBanner(at) {
+    const existing = container.querySelector('#stale-banner');
+    if (!at) { existing?.remove(); return; }
+    const mins = Math.max(1, Math.round((Date.now() - at) / 60000));
+    const ago = mins < 60 ? `${mins} min ago`
+      : mins < 1440 ? `${Math.round(mins / 60)}h ago`
+      : `${Math.round(mins / 1440)}d ago`;
+    const html = `<div id="stale-banner" style="margin:0 16px 10px;padding:8px 12px;border-radius:10px;
+      background:var(--surface-2);border:1px solid var(--border);font-size:12px;color:var(--text-muted)">
+      Offline — showing what was saved ${ago}. New meals won't appear until you're back on.</div>`;
+    if (existing) existing.outerHTML = html;
+    else container.insertAdjacentHTML('afterbegin', html);
+  }
+
   async function load() {
     viewDate = localDate();
     const myGen = ++loadGen;
     try {
-      const [mealData, settings, todayWeight, weightHistory] = await Promise.all([
-        api.get(`/api/meals/day/${viewDate}`),
-        api.get('/api/settings'),
-        api.get(`/api/weight/day/${viewDate}`).catch(() => null),
-        api.get('/api/weight?limit=10').catch(() => []),
+      // getCached, not get: with no signal these fall back to the last copy
+      // this device saw instead of replacing the whole screen with an error
+      // string. Today is the screen you open in a lift, a basement, or a
+      // restaurant with one bar — "you ate 1,450 so far" from twenty minutes
+      // ago is worth far more there than "can't load this right now".
+      const [day, sett, todayW, histW] = await Promise.all([
+        api.getCached(`/api/meals/day/${viewDate}`),
+        api.getCached('/api/settings'),
+        api.getCached(`/api/weight/day/${viewDate}`, null),
+        api.getCached('/api/weight?limit=10', []),
       ]);
       if (myGen !== loadGen) return;            // a newer load() superseded us
+      const mealData = day.data, settings = sett.data;
+      const todayWeight = todayW.data, weightHistory = histW.data;
+      // Oldest timestamp across whatever came from the cache — the screen is
+      // only as fresh as its stalest part.
+      const staleAt = (day.stale || sett.stale)
+        ? ([day, sett, todayW, histW].filter(r => r.stale && r.at).map(r => r.at).sort((a, b) => a - b)[0] || null)
+        : null;
       // Paint your own data now. Awaiting IronLog here made it a SECOND
       // sequential round trip from the phone — the four calls above finish, then
       // Today sits on its skeleton for another full trip before showing meals it
@@ -111,6 +141,12 @@ export function renderToday(container) {
       // isn't about a slow service: it's the extra serialised leg over mobile
       // data, bounded only by the route's 6s timeout when the other end stalls.
       render(mealData, settings, null, todayWeight, weightHistory);
+      showStaleBanner(staleAt);   // after render — it owns container.innerHTML
+
+      // Nothing below this line can work without a connection: IronLog is a
+      // live fetch and onboarding writes settings. Stop here on the stale path
+      // rather than falling into a fetch that will only fail.
+      if (staleAt) return;
 
       // First run. Fired after the first paint so the app is visibly there
       // behind the sheet rather than a wizard over a blank screen. Once only —

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'plated-v212';
+const CACHE_NAME = 'plated-v213';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -23,6 +23,7 @@ const STATIC_ASSETS = [
   '/js/utils/bugReport.js',
   '/js/utils/phase.js',
   '/js/utils/stats.js',
+  '/js/utils/offlineStore.js',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/manifest.json',

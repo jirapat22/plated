@@ -1,4 +1,5 @@
-import { api, setToken, onUnauthorized } from './api.js';
+import { api, setToken, setProfileId, onUnauthorized } from './api.js';
+import { clearProfile } from './utils/offlineStore.js';
 import { setEnergyUnit } from './utils/energy.js';
 import { installErrorCapture, submitReport } from './utils/bugReport.js';
 import { renderToday }    from './views/today.js';
@@ -307,6 +308,15 @@ export const accentInk = c => `color-mix(in srgb, ${c} var(--ink-mix), #000)`;
 let currentProfile = null;
 export function getProfile() { return currentProfile; }
 
+// Keep api.js's notion of "who is this" in step with ours. The offline cache is
+// keyed on it, so getting this wrong would mean one profile reading another's
+// cached day on a shared phone — the whole reason that cache lives in the page
+// and not in the service worker.
+function setCurrentProfile(p) {
+  currentProfile = p;
+  setProfileId(p?.id ?? null);
+}
+
 function saveToken(t) {
   setToken(t);
   try { localStorage.setItem(TOKEN_KEY, t); } catch { /* private mode */ }
@@ -327,7 +337,7 @@ export function renderProfileBar() {
 
 // Called by Settings after rename / colour change so the pill stays in sync
 export function applyProfile(profile) {
-  currentProfile = { ...currentProfile, ...profile };
+  setCurrentProfile({ ...currentProfile, ...profile });
   renderProfileBar();
 }
 
@@ -348,7 +358,7 @@ function showScreen(which) {
 }
 
 async function enterApp(profile) {
-  currentProfile = profile;
+  setCurrentProfile(profile);
   renderProfileBar();
   showScreen('app');
   await reloadProfilePrefs();
@@ -358,9 +368,14 @@ async function enterApp(profile) {
 
 // Exported for Settings: end session / after deleting profile → back to lock
 export function logoutToLock() {
+  // Wipe this profile's cached reads and queued writes before forgetting who
+  // they were. Logging out on a shared phone has to leave nothing readable
+  // behind, and a queued write has no one to flush it under any more.
+  const leaving = currentProfile?.id ?? null;
+  if (leaving != null) clearProfile(leaving);
   clearToken();
   clearA11y();
-  currentProfile = null;
+  setCurrentProfile(null);
   renderProfileBar();
   showLock();
 }
@@ -514,7 +529,7 @@ function setupCreate() {
 }
 
 // ─── Init ────────────────────────────────────────────────────
-onUnauthorized(() => { clearToken(); currentProfile = null; renderProfileBar(); showLock(); });
+onUnauthorized(() => { clearToken(); setCurrentProfile(null); renderProfileBar(); showLock(); });
 
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => navigateTo(btn.dataset.view, true));
