@@ -84,23 +84,25 @@ function isSafeExternalUrl(str) {
 //
 // Bounds are wide on purpose: they exist to catch a slipped decimal point or a
 // probe, not to have an opinion about anyone's diet.
+// [min, max, unit] — the unit is appended to the message rather than left in
+// the key, so it reads "between 20 and 400 kg" and not "target weight kg".
 const NUMERIC_RANGE = {
-  calorie_goal:        [200, 20000],
-  protein_goal:        [0, 2000],
-  carb_goal:           [0, 2000],
-  fat_goal:            [0, 2000],
-  fiber_goal:          [0, 500],
+  calorie_goal:        [200, 20000, 'kcal'],
+  protein_goal:        [0, 2000, 'g'],
+  carb_goal:           [0, 2000, 'g'],
+  fat_goal:            [0, 2000, 'g'],
+  fiber_goal:          [0, 500, 'g'],
   protein_multiplier:  [0, 10],
   fat_multiplier:      [0, 10],
-  tdee:                [500, 20000],
-  cut_deficit:         [0, 5000],
-  bulk_surplus:        [0, 5000],
-  target_weight_kg:    [20, 400],
-  bodyweight_kg:       [20, 400],
-  height_cm:           [50, 260],
+  tdee:                [500, 20000, 'kcal'],
+  cut_deficit:         [0, 5000, 'kcal'],
+  bulk_surplus:        [0, 5000, 'kcal'],
+  target_weight_kg:    [20, 400, 'kg'],
+  bodyweight_kg:       [20, 400, 'kg'],
+  height_cm:           [50, 260, 'cm'],
   birth_year:          [1900, 2100],
   activity_level:      [1, 3],
-  ui_scale:            [100, 150],
+  ui_scale:            [100, 150, '%'],
 };
 
 // Returns an error message, or null when everything numeric is in range. Blank
@@ -108,13 +110,18 @@ const NUMERIC_RANGE = {
 // (tdee, target_weight_kg), and clearing one is not the same as setting it to
 // zero.
 function rangeError(body) {
-  for (const [key, [min, max]] of Object.entries(NUMERIC_RANGE)) {
+  for (const [key, [min, max, unit]] of Object.entries(NUMERIC_RANGE)) {
     if (!(key in body)) continue;
     const raw = body[key];
     if (raw === '' || raw === null || raw === undefined) continue;
     const v = parseFloat(raw);
     if (!Number.isFinite(v) || v < min || v > max) {
-      return `${key.replace(/_/g, ' ')} must be a number between ${min} and ${max}`;
+      // Reads like the weight and waist messages rather than naming the column:
+      // "Protein multiplier must be between 0 and 10", not "protein_multiplier".
+      const label = key.replace(/_(kg|cm)$/, '').replace(/_/g, ' ');
+      // Separators above four digits only, so a year stays 1900 and not 1,900.
+      const n = x => (x >= 10000 ? x.toLocaleString('en-NZ') : String(x));
+      return `${label[0].toUpperCase()}${label.slice(1)} must be between ${n(min)} and ${n(max)}${unit ? ' ' + unit : ''}`;
     }
   }
   return null;

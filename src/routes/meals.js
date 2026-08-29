@@ -31,7 +31,7 @@ const MAX_QTY_G = 20000;
 function qtyError(value) {
   const q = parseFloat(value);
   if (!(q > 0)) return 'quantity_g > 0 required';
-  if (q > MAX_QTY_G) return `quantity_g must be ${MAX_QTY_G} g or less — check the decimal point`;
+  if (q > MAX_QTY_G) return `That's over ${MAX_QTY_G.toLocaleString('en-NZ')} g in one go — check the decimal point`;
   return null;
 }
 
