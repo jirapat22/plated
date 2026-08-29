@@ -589,6 +589,119 @@ router.post('/sessions/:id/merge', (req, res) => {
   }
 });
 
+// POST /api/meals/log — log a food in ONE request.
+//
+// Exists because logging was a chain: create the session, then add the entry —
+// and a Quick Log was three, since it mints a food first. Each link needs an id
+// the previous one returned, which is fine online and impossible in a queue: a
+// device with no signal cannot hold "add this to session 47" when 47 does not
+// exist yet and never will.
+//
+// So the whole intent travels together and the server resolves the ids. That
+// also collapses the ordinary online path from two or three round trips to one,
+// which on mobile data is the difference people actually feel.
+//
+// Either `food_id` (something already in the library) or `quick` (a description
+// and a calorie figure you couldn't weigh). Everything runs in one transaction,
+// so a failure halfway cannot leave a session with no meal in it.
+router.post('/log', (req, res) => {
+  try {
+    const db = getDb();
+    const pid = req.profileId;
+
+    const cid = isValidClientId(req.body.client_id) ? req.body.client_id : null;
+    const prior = replayOf(db, pid, cid);
+    if (prior) return res.status(prior.status).json(prior.body);
+
+    const { food_id, quick, quantity_g, session_id, meal_name } = req.body || {};
+    if (req.body.date != null && !/^\d{4}-\d{2}-\d{2}$/.test(req.body.date)) {
+      return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
+    }
+    const date = req.body.date || todayLocal(tzFor(db, pid));
+    const qty = parseFloat(quantity_g);
+    if (!(qty > 0)) return res.status(400).json({ error: 'quantity_g > 0 required' });
+    if (!food_id && !quick) return res.status(400).json({ error: 'food_id or quick required' });
+    if (quick && !String(quick.name ?? '').trim()) {
+      return res.status(400).json({ error: 'Enter a meal description' });
+    }
+    if (quick && !(parseFloat(quick.calories_per_100g) > 0)) {
+      return res.status(400).json({ error: 'Enter the calories' });
+    }
+
+    let out;
+    db.exec('BEGIN');
+    try {
+      // 1. The food. A quick log mints its own — deliberately not deduped, the
+      //    way POST /api/foods also skips dedup for source 'quick': two dinners
+      //    described the same way on different nights are two meals, not one
+      //    library entry being reused.
+      let fid = food_id;
+      if (!fid) {
+        const n = v => (v === '' || v == null ? null : Number(v));
+        fid = db.prepare(`INSERT INTO foods
+          (name, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g,
+           serving_size_g, source, created_by_profile)
+          VALUES ($n, $cal, $p, $c, $f, $fb, 100, 'quick', $by)`).run({
+          n: String(quick.name).trim(), cal: n(quick.calories_per_100g),
+          p: n(quick.protein_per_100g), c: n(quick.carbs_per_100g),
+          f: n(quick.fat_per_100g), fb: n(quick.fiber_per_100g), by: pid,
+        }).lastInsertRowid;
+      }
+      const food = db.prepare('SELECT * FROM foods WHERE id = $id').get({ id: fid });
+      if (!food) throw Object.assign(new Error('Food not found'), { status: 404 });
+
+      // 2. The session. An explicit session_id is honoured only if it is yours
+      //    and on this date — a queued write can carry an id that has since been
+      //    deleted, and silently logging into someone else's meal is worse than
+      //    starting a new one.
+      let sid = parseInt(session_id) || null;
+      if (sid) {
+        const s = db.prepare('SELECT id FROM meal_sessions WHERE id = $id AND profile_id = $p AND date = $d')
+          .get({ id: sid, p: pid, d: date });
+        if (!s) sid = null;
+      }
+      if (!sid) {
+        const idx = db.prepare(
+          'SELECT COALESCE(MAX(meal_index), 0) + 1 AS i FROM meal_sessions WHERE date = $d AND profile_id = $p'
+        ).get({ d: date, p: pid }).i;
+        sid = db.prepare('INSERT INTO meal_sessions (date, name, meal_index, profile_id) VALUES ($d, $n, $i, $p)')
+          .run({ d: date, n: String(meal_name ?? '').trim() || `Meal ${idx}`, i: idx, p: pid }).lastInsertRowid;
+      }
+
+      // 3. The entry, plus the same bookkeeping the per-entry route does.
+      const m = calcMacros(food, qty);
+      const eid = db.prepare(`INSERT INTO meal_entries
+        (meal_session_id, food_id, quantity_g, calories, protein, carbs, fat, fiber)
+        VALUES ($s, $f, $q, $cal, $p, $c, $ft, $fb)`).run({
+        s: sid, f: fid, q: qty, cal: m.calories, p: m.protein, c: m.carbs, ft: m.fat, fb: m.fiber,
+      }).lastInsertRowid;
+
+      adjustBatchStock(db, pid, fid, -qty);
+      db.prepare(`INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used, last_qty_g)
+        VALUES ($p, $f, 1, datetime('now'), $q)
+        ON CONFLICT(profile_id, food_id)
+        DO UPDATE SET use_count = use_count + 1, last_used = datetime('now'), last_qty_g = excluded.last_qty_g`)
+        .run({ p: pid, f: fid, q: qty });
+
+      out = {
+        session_id: sid, date,
+        entry: db.prepare(`SELECT me.*, f.name AS food_name, f.brand AS food_brand, f.serving_size_g
+          FROM meal_entries me JOIN foods f ON f.id = me.food_id WHERE me.id = $id`).get({ id: eid }),
+      };
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      if (e.status === 404) return res.status(404).json({ error: e.message });
+      throw e;
+    }
+
+    remember(db, pid, cid, 201, out);
+    res.status(201).json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/meals/sessions/:id/entries
 router.post('/sessions/:id/entries', (req, res) => {
   try {

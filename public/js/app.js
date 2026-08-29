@@ -1,5 +1,6 @@
 import { api, setToken, setProfileId, onUnauthorized } from './api.js';
 import { clearProfile } from './utils/offlineStore.js';
+import { startQueue } from './utils/writeQueue.js';
 import { setEnergyUnit } from './utils/energy.js';
 import { installErrorCapture, submitReport } from './utils/bugReport.js';
 import { renderToday }    from './views/today.js';
@@ -248,6 +249,24 @@ window.addEventListener('online', () => {
   offlineBanner?.classList.remove('visible');
 });
 
+// Send anything logged while offline, as soon as there is a connection and
+// again whenever the app comes back to the foreground — a phone regaining
+// signal in a pocket never fires 'online'. Every queued write carries a
+// client_id the server recognises, so firing this more often than necessary
+// costs a wasted request and never a duplicate meal.
+const runQueue = startQueue(() => currentProfile?.id ?? null, ({ sent, failed }) => {
+  if (sent) {
+    showToast(sent === 1 ? 'Synced the meal you logged offline' : `Synced ${sent} offline entries`, 'success');
+    if (currentView) navigateTo(currentView, true);
+  }
+  // Said out loud rather than swallowed. A write that can never succeed —
+  // the food was deleted, the day was rejected — has to be visible, or the
+  // queue becomes a place meals quietly go missing.
+  if (failed) {
+    showToast(failed === 1 ? "One offline entry couldn't be saved" : `${failed} offline entries couldn't be saved`, 'error');
+  }
+});
+
 // ─── Theme ───────────────────────────────────────────────────
 // The <head> script in index.html already applied the stored theme before
 // paint; these two only exist so Settings can read and change it. Everything
@@ -364,6 +383,7 @@ async function enterApp(profile) {
   await reloadProfilePrefs();
   currentView = null;
   navigateTo('today');
+  runQueue();          // anything held from a previous session goes now
 }
 
 // Exported for Settings: end session / after deleting profile → back to lock

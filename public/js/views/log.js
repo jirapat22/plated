@@ -1,5 +1,7 @@
 import { api }                            from '../api.js';
-import { showToast, showSheet, hideSheet } from '../app.js';
+import { showToast, showSheet, hideSheet, getProfile } from '../app.js';
+import { queueWrite }                     from '../utils/writeQueue.js';
+import { newClientId }                    from '../utils/offlineStore.js';
 import { renderFoodSearch }               from '../components/foodSearch.js';
 import { fmtE, unitLabel, toKcal, wireEnergyUnitToggle } from '../utils/energy.js';
 import { localDate, addDaysIso }          from '../utils/date.js';
@@ -37,13 +39,25 @@ function formatTime(iso) {
 // on failure so a retry isn't stuck with the rejection.
 export function lazySession(date, name) {
   let pending = null;
-  return () => (pending ??= api.post('/api/meals/sessions', { date, name })
+  const thunk = () => (pending ??= api.post('/api/meals/sessions', { date, name })
     .then(s => s.id)
     .catch(err => { pending = null; throw err; }));
+  // The date and name hang off the thunk so a caller can read the INTENT
+  // without forcing the session into existence. /api/meals/log needs exactly
+  // that: it wants "a meal on this date", not an id, and calling the thunk to
+  // find out would defeat the deferral this whole helper exists for — and is
+  // impossible offline anyway.
+  thunk.date = date;
+  thunk.mealName = name;
+  return thunk;
 }
 
 // Accepts either a plain session id or a lazySession thunk.
 export const sessionIdOf = ref => (typeof ref === 'function' ? ref() : Promise.resolve(ref));
+// The date a ref refers to, without creating anything. A plain id carries no
+// date of its own, so callers that hold one pass it alongside.
+const refDate = (ref, fallback) => (typeof ref === 'function' ? ref.date : fallback) || localDate();
+const refSessionId = ref => (typeof ref === 'function' ? null : ref ?? null);
 
 // ── Copy a single logged food, or a whole meal, to another meal/day ──
 async function dayMeals(viewDate) {
@@ -442,7 +456,9 @@ export function openRenameSession(sessionId, currentName, onSuccess) {
 }
 
 // ── Quick Log (rough calories for a meal out, not saved to the food db) ─
-export function openQuickLog(sessionId, onSuccess) {
+// viewDate is only needed when sessionId is a plain id — a lazySession already
+// carries its own date.
+export function openQuickLog(sessionId, onSuccess, viewDate) {
   showSheet(content => {
     content.innerHTML = `
       <div class="sheet-header">
@@ -499,18 +515,39 @@ export function openQuickLog(sessionId, onSuccess) {
       const fat  = parseFloat(document.getElementById('ql-fat').value)  || null;
       const btn = document.getElementById('ql-submit');
       btn.disabled = true; btn.textContent = 'Logging…';
-      try {
-        const food = await api.post('/api/foods', {
+      // One request, not three. /api/meals/log mints the food, resolves or
+      // creates the session and writes the entry in a single transaction —
+      // which is what makes a Quick Log queueable at all: the old chain needed
+      // ids from earlier links, and a phone with no signal has none of them.
+      const payload = {
+        quick: {
           name, calories_per_100g: calKcal,
           protein_per_100g: pro, carbs_per_100g: carb, fat_per_100g: fat,
-          serving_size_g: 100, source: 'quick',
-        });
-        const sid = await sessionIdOf(sessionId);
-        await api.post(`/api/meals/sessions/${sid}/entries`, { food_id: food.id, quantity_g: 100 });
+        },
+        quantity_g: 100,
+        date: refDate(sessionId, viewDate),
+        session_id: refSessionId(sessionId),
+        meal_name: typeof sessionId === 'function' ? sessionId.mealName : undefined,
+      };
+      try {
+        await api.post('/api/meals/log', { ...payload, client_id: newClientId() });
         hideSheet();
         showToast('Meal logged', 'success');
         onSuccess?.();
       } catch (err) {
+        // Quick Log is the restaurant-with-one-bar case by definition — it
+        // exists for food you can't weigh, eaten out. Failing it for want of a
+        // connection is failing it exactly when it is needed.
+        if (err.offline) {
+          const pid = getProfile()?.id;
+          if (pid != null) {
+            await queueWrite(pid, '/api/meals/log', payload);
+            hideSheet();
+            showToast('Saved — it\'ll sync when you\'re back on', 'success');
+            onSuccess?.();
+            return;
+          }
+        }
         showToast(err.message, 'error');
         btn.disabled = false; btn.textContent = 'Log Meal';
       }
@@ -986,7 +1023,7 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
     qlBtn.className = 'meal-session-add';
     qlBtn.style.cssText = 'flex:0 0 auto;border-left:1px solid var(--border);color:var(--carbs)';
     qlBtn.textContent = '⚡ Quick Log';
-    qlBtn.addEventListener('click', () => openQuickLog(session.id, onDone));
+    qlBtn.addEventListener('click', () => openQuickLog(session.id, onDone, viewDate));
     footer.appendChild(qlBtn);
   }
   sessionEl.appendChild(footer);
