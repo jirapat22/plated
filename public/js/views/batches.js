@@ -6,6 +6,13 @@ import { localDate }                  from '../utils/date.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const g0  = n => Math.round(n || 0);                                    // whole grams
+// Whole grams of a MACRO, where null means "no ingredient recorded this" and
+// has to stay a dash. Separate from g0 because g0 also formats weights —
+// remaining_g, cooked_g, an input's value, an operand in arithmetic — which are
+// never null and must stay numeric. Splitting them was the missing half of the
+// g1 fix: the per-100g line already said "–P · –C" while the row above it,
+// describing the very same unknown macros, still read "0g P  0g C".
+const mg  = n => (n == null ? '–' : Math.round(n));
 const g1  = n => {                                                      // 1dp, trimmed
   // A dash for unknown, not a zero. The server now sends null for a macro no
   // ingredient in the pot recorded, and `n || 0` would have printed that as a
@@ -111,9 +118,9 @@ export function renderBatches(container) {
                 <span style="color:var(--text-faint)">· ${age(l.created_at)}</span>
               </div>
               <div style="display:flex;gap:10px;font-size:12px;font-variant-numeric:tabular-nums;margin-top:5px">
-                <span style="color:var(--protein)">${g0(l.protein)}g P</span>
-                <span style="color:var(--carbs)">${g0(l.carbs)}g C</span>
-                <span style="color:var(--fat)">${g0(l.fat)}g F</span>
+                <span style="color:var(--protein)">${mg(l.protein)}g P</span>
+                <span style="color:var(--carbs)">${mg(l.carbs)}g C</span>
+                <span style="color:var(--fat)">${mg(l.fat)}g F</span>
               </div>
             </div>
             <div style="display:flex;gap:8px;flex-shrink:0">
@@ -148,10 +155,10 @@ export function renderBatches(container) {
             <span>≈ ${fmtE(b.kcal_left)} ${ul} left</span>
           </div>
           <div style="display:flex;gap:10px;font-size:12px;font-variant-numeric:tabular-nums;margin-top:5px">
-            <span style="color:var(--protein)">${g0(L.protein)}g P</span>
-            <span style="color:var(--carbs)">${g0(L.carbs)}g C</span>
-            <span style="color:var(--fat)">${g0(L.fat)}g F</span>
-            ${L.fiber ? `<span style="color:var(--fiber)">${g0(L.fiber)}g fib</span>` : ''}
+            <span style="color:var(--protein)">${mg(L.protein)}g P</span>
+            <span style="color:var(--carbs)">${mg(L.carbs)}g C</span>
+            <span style="color:var(--fat)">${mg(L.fat)}g F</span>
+            ${L.fiber ? `<span style="color:var(--fiber)">${mg(L.fiber)}g fib</span>` : ''}
             <span style="color:var(--text-faint);margin-left:auto">still left</span>
           </div>
           <div style="font-size:11px;color:var(--text-faint);margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">
@@ -505,7 +512,10 @@ export function openPortion(batch, onDone, opts = {}) {
       const box = document.getElementById('p-cals');
       if (!g) { box.innerHTML = ''; return; }
       const r  = g / batch.cooked_g;
-      const sc = k => (batch[k] || 0) * r;
+      // `|| 0` here would defeat g1's null handling one layer before it ran —
+      // the preview said "0P · 0C" for macros the batch explicitly records as
+      // unknown, right under a header that correctly said otherwise.
+      const sc = k => (batch[k] == null ? null : batch[k] * r);
       const over = g > batch.remaining_g;
       box.innerHTML = `
         ≈ ${fmtE(Math.round(batch.calories * r))} ${unitLabel()}
