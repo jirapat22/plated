@@ -312,6 +312,21 @@ function clearA11y() {
 
 // ─── Profiles / Auth ─────────────────────────────────────────
 const TOKEN_KEY = 'plated_token';
+// Who was last signed in on this device: id, name, accent. Enough to open the
+// app while offline, when /api/auth/me cannot be reached to ask. localStorage
+// rather than the IndexedDB cache because it has to be readable synchronously
+// at boot, before we know whose cache to open — and it holds nothing the token
+// sitting beside it doesn't already imply.
+const LAST_PROFILE_KEY = 'plated_last_profile';
+function saveLastProfile(p) {
+  try {
+    if (p) localStorage.setItem(LAST_PROFILE_KEY, JSON.stringify({ id: p.id, name: p.name, accent_color: p.accent_color, is_admin: p.is_admin }));
+    else localStorage.removeItem(LAST_PROFILE_KEY);
+  } catch { /* private mode */ }
+}
+function readLastProfile() {
+  try { return JSON.parse(localStorage.getItem(LAST_PROFILE_KEY) || 'null'); } catch { return null; }
+}
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
 export const ACCENTS = ['#c8b8ff', '#7ee7c7', '#ffb8d2', '#ffd98e', '#8ec5ff', '#ff9e7a'];
@@ -334,6 +349,7 @@ export function getProfile() { return currentProfile; }
 function setCurrentProfile(p) {
   currentProfile = p;
   setProfileId(p?.id ?? null);
+  if (p) saveLastProfile(p);
 }
 
 function saveToken(t) {
@@ -342,6 +358,10 @@ function saveToken(t) {
 }
 function clearToken() {
   setToken(null);
+  // The remembered profile goes with the token. Leaving it behind would let the
+  // offline-boot path above walk straight back into an account that had just
+  // been signed out of, on a phone the family shares.
+  saveLastProfile(null);
   try { localStorage.removeItem(TOKEN_KEY); } catch {}
 }
 
@@ -574,6 +594,21 @@ setupCreate();
     // who opens the app with no signal to re-enter their passcode once back
     // online, even though their session was never actually invalid.
     if (err.message === 'Session expired') clearToken();
+    // ...and if we ARE just offline, go in anyway. Keeping the token but still
+    // showing the lock screen was the worst of both: a day's meals sitting
+    // cached on the device, a valid session in hand, and a passcode prompt that
+    // could not be satisfied because checking it needs the server. Offline
+    // reads exist precisely for this moment and were unreachable.
+    //
+    // Optimistic, not a bypass: nothing here trusts the client. The token is
+    // still sent on every request and still rejected server-side if it is bad —
+    // onUnauthorized bounces straight back to lock the moment a real reply
+    // says so. The passcode was never the thing being verified offline; the
+    // stored session token is, and only the server can do that.
+    else if (err.offline && localStorage.getItem(TOKEN_KEY)) {
+      const last = readLastProfile();
+      if (last) { await enterApp(last); return; }
+    }
   }
 
   try {
@@ -591,11 +626,15 @@ setupCreate();
 // only has to be right at entry.
 export async function reloadProfilePrefs() {
   try {
-    const s = await api.get('/api/settings');
+    // getCached, so an offline launch keeps the unit and the accessibility
+    // settings it had. Falling back to defaults would silently flip a kJ user
+    // to kcal and drop the text scale and contrast — for the person those
+    // settings exist for, at the exact moment they can least afford it.
+    const { data: s } = await api.getCached('/api/settings');
     setEnergyUnit(s.energy_unit || 'kcal');
     applyA11y(s);
     syncTimezone(s.timezone);
-  } catch { /* use defaults */ }
+  } catch { /* no cached copy either — use defaults */ }
 }
 
 // The server derives "today" for a few things it can't get from the client:
