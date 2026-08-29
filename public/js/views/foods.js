@@ -1,7 +1,7 @@
 import { api }           from '../api.js';
 import { showToast, showSheet, hideSheet, showPrompt, getProfile } from '../app.js';
 import { getFoodIcon }  from '../utils/foodIcon.js';
-import { wireEnergyUnitToggle, wireDualNutrition } from '../utils/energy.js';
+import { wireEnergyUnitToggle, wireDualNutrition, fmtE, unitLabel } from '../utils/energy.js';
 import { renderBatches } from './batches.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -119,7 +119,7 @@ export function renderFoods(container) {
       <div class="food-list-icon" style="font-size:18px">${getFoodIcon(food.name)}</div>
       <div class="food-list-info">
         <div class="food-list-name">${esc(food.name)} ${foodTagHtml(food)}</div>
-        <div class="food-list-sub">${food.brand ? esc(food.brand) + ' · ' : ''}${food.calories_per_100g != null ? food.calories_per_100g.toFixed(0) + ' kcal/100g' : 'no cal data'}${isMine(food) ? ' · <span style="color:var(--accent)">by you</span>' : ''}</div>
+        <div class="food-list-sub">${food.brand ? esc(food.brand) + ' · ' : ''}${food.calories_per_100g != null ? `${fmtE(food.calories_per_100g)} ${unitLabel()}/100g` : 'no cal data'}${isMine(food) ? ' · <span style="color:var(--accent)">by you</span>' : ''}</div>
       </div>
       <button class="fav-btn${food.is_favourite ? ' active' : ''}" data-id="${food.id}" title="Toggle favourite">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="${food.is_favourite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.7">
@@ -163,7 +163,7 @@ export function renderFoods(container) {
             <div class="card" style="margin-bottom:12px">
               <div class="label" style="margin-bottom:10px">Per 100g</div>
               <div class="macro-totals-row">
-                <div class="macro-total"><div class="macro-total-val num">${food.calories_per_100g?.toFixed(0) ?? '–'}</div><div class="macro-total-lbl label">kcal</div></div>
+                <div class="macro-total"><div class="macro-total-val num">${food.calories_per_100g != null ? fmtE(food.calories_per_100g) : '–'}</div><div class="macro-total-lbl label">${unitLabel()}</div></div>
                 <div class="macro-total"><div class="macro-total-val num" style="color:var(--protein)">${food.protein_per_100g?.toFixed(1) ?? '–'}g</div><div class="macro-total-lbl label">protein</div></div>
                 <div class="macro-total"><div class="macro-total-val num" style="color:var(--carbs)">${food.carbs_per_100g?.toFixed(1) ?? '–'}g</div><div class="macro-total-lbl label">carbs</div></div>
                 <div class="macro-total"><div class="macro-total-val num" style="color:var(--fat)">${food.fat_per_100g?.toFixed(1) ?? '–'}g</div><div class="macro-total-lbl label">fat</div></div>
