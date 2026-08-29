@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
-const { todayLocal, tzFor } = require('../utils/tz');
+const { todayLocal, tzFor, isRealDate } = require('../utils/tz');
 const { recalcMacroGoals } = require('../utils/macros');
 const { snapshotGoals } = require('../utils/goals');
 const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
@@ -55,8 +55,8 @@ router.get('/', (req, res) => {
 router.get('/day/:date', (req, res) => {
   try {
     const { date } = req.params;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
+    if (!isRealDate(date)) {
+      return res.status(400).json({ error: 'Not a real date — use YYYY-MM-DD' });
     }
     const row = getDb().prepare(
       'SELECT * FROM weight_log WHERE date = $date AND profile_id = $pid ORDER BY logged_at DESC LIMIT 1'
@@ -81,8 +81,8 @@ router.post('/', (req, res) => {
     // Every other write route format-checks its date; this one took whatever it
     // was given, so a junk string became a weight_log row that no date-keyed
     // read could ever match again.
-    if (date != null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
+    if (date != null && !isRealDate(date)) {
+      return res.status(400).json({ error: 'Not a real date — use YYYY-MM-DD' });
     }
     const db = getDb();
     const logDate = date || todayLocal(tzFor(db, req.profileId));

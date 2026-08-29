@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
-const { todayLocal, tzFor } = require('../utils/tz');
+const { todayLocal, tzFor, isRealDate } = require('../utils/tz');
 const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
 
 const router = express.Router();
@@ -151,9 +151,16 @@ router.post('/:id/portion', (req, res) => {
 
     let grams = parseFloat(req.body.grams);
     if (!(grams > 0)) return res.status(400).json({ error: 'grams must be greater than 0' });
+    // Checked BEFORE the clamp below, because the clamp can produce a zero.
+    // An empty batch took Math.min(anything, 0) = 0 and went on to write a 0 g,
+    // 0 kcal entry — inventing a meal card for food that no longer exists — and
+    // answered 201, so the UI reported it as a successful log.
+    if (!(b.remaining_g > 0)) {
+      return res.status(409).json({ error: `There's none of ${b.name} left — the batch is finished` });
+    }
     grams = Math.min(grams, b.remaining_g);   // can't take more than is left
 
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body.date || '')
+    const date = isRealDate(req.body.date || '')
       ? req.body.date : todayLocal(tzFor(db, req.profileId));
 
     // Resolve (or create) the meal session this portion goes into.

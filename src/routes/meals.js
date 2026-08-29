@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb, canView } = require('../db');
-const { todayLocal, tzFor } = require('../utils/tz');
+const { todayLocal, tzFor, isRealDate } = require('../utils/tz');
 const { goalsOn, stampGoals } = require('../utils/goals');
 const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
 
@@ -19,6 +19,20 @@ function resolveViewedProfile(req, res) {
     return null;
   }
   return targetId;
+}
+
+// One sitting, in grams. There was a floor but no ceiling, so quantity_g
+// 1000000000 was accepted and wrote a 5,189,000,000 kcal entry — which then
+// counted in the day total, the 7-day average, the real-maintenance estimate
+// behind Trends' verdict, and every chart, with nothing to say where it came
+// from. 20 kg is far past any real portion and well short of a slipped decimal
+// point, which is the mistake this catches.
+const MAX_QTY_G = 20000;
+function qtyError(value) {
+  const q = parseFloat(value);
+  if (!(q > 0)) return 'quantity_g > 0 required';
+  if (q > MAX_QTY_G) return `quantity_g must be ${MAX_QTY_G} g or less — check the decimal point`;
+  return null;
 }
 
 function round1(n) { return Math.round(n * 10) / 10; }
@@ -102,8 +116,8 @@ function loadDay(db, date, pid) {
 router.get('/day/:date', (req, res) => {
   try {
     const { date } = req.params;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
+    if (!isRealDate(date)) {
+      return res.status(400).json({ error: 'Not a real date — use YYYY-MM-DD' });
     }
     const pid = resolveViewedProfile(req, res);
     if (pid == null) return;
@@ -131,8 +145,8 @@ router.get('/day/:date', (req, res) => {
 router.post('/log-status', (req, res) => {
   try {
     const { date, status } = req.body;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) {
-      return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
+    if (!isRealDate(date || '')) {
+      return res.status(400).json({ error: 'Not a real date — use YYYY-MM-DD' });
     }
     const db = getDb();
     if (status == null || status === '') {
@@ -217,7 +231,7 @@ router.patch('/sessions/:id', (req, res) => {
         .run({ name: name.trim(), id: req.params.id, pid });
     }
     if (date) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+      if (!isRealDate(date)) return res.status(400).json({ error: 'Not a real date — use YYYY-MM-DD' });
       // Recalculate meal_index so it doesn't collide with existing sessions on target date
       const { max_idx } = db.prepare(
         'SELECT COALESCE(MAX(meal_index), 0) AS max_idx FROM meal_sessions WHERE date = $date AND profile_id = $pid AND id != $id'
@@ -247,8 +261,8 @@ router.post('/sessions', (req, res) => {
     // read is looked up by, so a junk string creates a meal that no day view,
     // summary or export can ever reach again — invisible, undeletable, and
     // still counted by anything that aggregates without a date filter.
-    if (req.body.date != null && !/^\d{4}-\d{2}-\d{2}$/.test(req.body.date)) {
-      return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
+    if (req.body.date != null && !isRealDate(req.body.date)) {
+      return res.status(400).json({ error: 'Not a real date — use YYYY-MM-DD' });
     }
     const date = req.body.date || todayLocal(tzFor(db, pid));
 
@@ -291,7 +305,7 @@ router.post('/sessions/:id/copy', (req, res) => {
       const own = db.prepare('SELECT 1 FROM meal_sessions WHERE id = $s AND profile_id = $p').get({ s: targetId, p: pid });
       if (!own) return res.status(404).json({ error: 'Target meal not found' });
     } else {
-      const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body.date || '') ? req.body.date : todayLocal(tzFor(db, pid));
+      const date = isRealDate(req.body.date || '') ? req.body.date : todayLocal(tzFor(db, pid));
       const idx = db.prepare('SELECT COALESCE(MAX(meal_index), 0) + 1 AS i FROM meal_sessions WHERE date = $d AND profile_id = $p').get({ d: date, p: pid }).i;
       targetId = db.prepare('INSERT INTO meal_sessions (date, name, meal_index, profile_id) VALUES ($d, $n, $i, $p)')
         .run({ d: date, n: src.name, i: idx, p: pid }).lastInsertRowid;
@@ -614,12 +628,13 @@ router.post('/log', (req, res) => {
     if (prior) return res.status(prior.status).json(prior.body);
 
     const { food_id, quick, quantity_g, session_id, meal_name } = req.body || {};
-    if (req.body.date != null && !/^\d{4}-\d{2}-\d{2}$/.test(req.body.date)) {
-      return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' });
+    if (req.body.date != null && !isRealDate(req.body.date)) {
+      return res.status(400).json({ error: 'Not a real date — use YYYY-MM-DD' });
     }
     const date = req.body.date || todayLocal(tzFor(db, pid));
     const qty = parseFloat(quantity_g);
-    if (!(qty > 0)) return res.status(400).json({ error: 'quantity_g > 0 required' });
+    const qtyBad = qtyError(quantity_g);
+    if (qtyBad) return res.status(400).json({ error: qtyBad });
     if (!food_id && !quick) return res.status(400).json({ error: 'food_id or quick required' });
     if (quick && !String(quick.name ?? '').trim()) {
       return res.status(400).json({ error: 'Enter a meal description' });
@@ -717,9 +732,9 @@ router.post('/sessions/:id/entries', (req, res) => {
     const prior = replayOf(db, req.profileId, cid);
     if (prior) return res.status(prior.status).json(prior.body);
 
-    if (!food_id || !quantity_g || quantity_g <= 0) {
-      return res.status(400).json({ error: 'food_id and quantity_g > 0 required' });
-    }
+    if (!food_id) return res.status(400).json({ error: 'food_id and quantity_g > 0 required' });
+    const addBad = qtyError(quantity_g);
+    if (addBad) return res.status(400).json({ error: addBad });
 
     const session = db.prepare('SELECT * FROM meal_sessions WHERE id = $id AND profile_id = $pid')
       .get({ id, pid: req.profileId });
@@ -774,9 +789,8 @@ router.patch('/entries/:id', (req, res) => {
     const { id } = req.params;
     const { quantity_g } = req.body;
 
-    if (!quantity_g || quantity_g <= 0) {
-      return res.status(400).json({ error: 'quantity_g must be > 0' });
-    }
+    const editBad = qtyError(quantity_g);
+    if (editBad) return res.status(400).json({ error: editBad });
 
     const entry = db.prepare(`
       SELECT me.* FROM meal_entries me

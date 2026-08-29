@@ -49,8 +49,18 @@ function isSafeExternalUrl(str) {
   let u;
   try { u = new URL(str); } catch { return false; }
   if (!['http:', 'https:'].includes(u.protocol)) return false;
-  const host = u.hostname.toLowerCase();
-  if (host === 'localhost' || host === '::1' || host === '0.0.0.0') return false;
+  // URL.hostname keeps the brackets on an IPv6 literal — 'http://[::1]:3000'
+  // gives '[::1]', not '::1' — so the comparison below could never match and
+  // every loopback form walked straight through. http://[::1]:PORT reached the
+  // app's own port; so did [0:0:0:0:0:0:0:1] and [::ffff:127.0.0.1].
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host === '0.0.0.0') return false;
+  // Any IPv6 literal is judged by the one rule that is short and complete:
+  // globally routable IPv6 is 2000::/3. Loopback (::1), unspecified (::),
+  // unique-local (fc00::/7), link-local (fe80::/10) and IPv4-mapped
+  // (::ffff:7f00:1) all fall outside it, so one test covers forms that would
+  // each otherwise need their own case — and anything new does too.
+  if (host.includes(':')) return /^[23]/.test(host);
   const m = host.match(/^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
   if (m) {
     const a = Number(m[1]), b = Number(m[2]);
@@ -60,6 +70,54 @@ function isSafeExternalUrl(str) {
     if (a === 169 && b === 254) return false;                       // link-local incl. cloud metadata (169.254.169.254)
   }
   return true;
+}
+
+// Sane ranges for the settings that are numbers.
+//
+// Weight and waist have had bounds (and a "check the decimal point" message)
+// since someone could type 700 kg. These never did: PATCH /api/settings took
+// calorie_goal -500 and calorie_goal 1000000000 without comment, wrote them,
+// and — because snapshotGoals runs after every goal write — recorded them into
+// goal_history, where they permanently describe what you were "aiming at" on
+// that day. A negative goal makes every ring, every "left" figure and every
+// history comparison nonsense, with no way to tell where it came from.
+//
+// Bounds are wide on purpose: they exist to catch a slipped decimal point or a
+// probe, not to have an opinion about anyone's diet.
+const NUMERIC_RANGE = {
+  calorie_goal:        [200, 20000],
+  protein_goal:        [0, 2000],
+  carb_goal:           [0, 2000],
+  fat_goal:            [0, 2000],
+  fiber_goal:          [0, 500],
+  protein_multiplier:  [0, 10],
+  fat_multiplier:      [0, 10],
+  tdee:                [500, 20000],
+  cut_deficit:         [0, 5000],
+  bulk_surplus:        [0, 5000],
+  target_weight_kg:    [20, 400],
+  bodyweight_kg:       [20, 400],
+  height_cm:           [50, 260],
+  birth_year:          [1900, 2100],
+  activity_level:      [1, 3],
+  ui_scale:            [100, 150],
+};
+
+// Returns an error message, or null when everything numeric is in range. Blank
+// is allowed throughout — several of these are legitimately "not set yet"
+// (tdee, target_weight_kg), and clearing one is not the same as setting it to
+// zero.
+function rangeError(body) {
+  for (const [key, [min, max]] of Object.entries(NUMERIC_RANGE)) {
+    if (!(key in body)) continue;
+    const raw = body[key];
+    if (raw === '' || raw === null || raw === undefined) continue;
+    const v = parseFloat(raw);
+    if (!Number.isFinite(v) || v < min || v > max) {
+      return `${key.replace(/_/g, ' ')} must be a number between ${min} and ${max}`;
+    }
+  }
+  return null;
 }
 
 function allSettings(db, pid) {
@@ -98,6 +156,8 @@ router.patch('/', (req, res) => {
     if (req.body.timezone !== undefined && req.body.timezone !== '' && !isValidTz(req.body.timezone)) {
       return res.status(400).json({ error: 'Unknown timezone' });
     }
+    const bad = rangeError(req.body);
+    if (bad) return res.status(400).json({ error: bad });
     const db = getDb();
     const stmt = db.prepare(
       'INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)'

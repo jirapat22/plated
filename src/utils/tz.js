@@ -25,6 +25,27 @@ function localDayOf(value, tz = APP_TZ) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(t));
 }
 
+// A REAL calendar day, not just four-two-two digits.
+//
+// Every route validated dates with the shape regex alone, so '2026-02-30' — a
+// day that does not exist — passed and was stored. The result is a meal session
+// History can never show you (the day strip only generates real days) that every
+// summary, average and export still counts. '0001-01-01' and '9999-12-31' went
+// in the same way and sort to the ends of every range query.
+//
+// Year bounds rather than open-ended: this is a food diary, and a date outside
+// them is a typo or a probe, never a meal.
+function isRealDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ''));
+  if (!m) return false;
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+  if (y < 2000 || y > 2100) return false;
+  // Date.UTC rolls overflow forward (Feb 30 becomes Mar 2), so a round-trip
+  // that comes back unchanged is the test for "this day exists".
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+}
+
 // Is this a zone Intl actually knows? Guards the setting at the trust boundary
 // — an unknown name makes DateTimeFormat throw, and it would throw from
 // whichever route next asked what day it was, not from the write that stored it.
@@ -58,4 +79,4 @@ function tzFor(db, profileId) {
   }
 }
 
-module.exports = { todayLocal, localDayOf, isValidTz, tzFor, APP_TZ };
+module.exports = { todayLocal, localDayOf, isValidTz, isRealDate, tzFor, APP_TZ };
