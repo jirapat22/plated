@@ -105,7 +105,15 @@ async function request(method, path, body) {
     // Thrown with .unreachable so the global rejection handler skips it too,
     // the same way .offline is skipped; otherwise the same blip reports twice,
     // once from here and once as a bare "HTTP 502" from the uncaught rejection.
-    if (UNREACHABLE.has(resp.status)) throw unreachableError(resp.status);
+    // Same fallback the offline branch above gets. A 502 during a deploy is the
+    // moment Today is most worth showing from the cache — the device has a
+    // perfectly good copy and nothing was wrong with it. Without this the read
+    // cache sat populated and unused, and a 30-second redeploy blanked the
+    // screen it was built to protect. cachedOr re-throws for writes and for
+    // paths outside the allowlist, so only cacheable GETs change behaviour.
+    if (UNREACHABLE.has(resp.status)) {
+      throw await cachedOr(method, path, unreachableError(resp.status));
+    }
     // Server faults the app itself raised are real bugs — capture those.
     if (resp.status >= 500) reportApiError({ method, path, status: resp.status, message: data?.error || '' });
     const err = new Error(data?.error || `HTTP ${resp.status}`);
