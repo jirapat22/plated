@@ -605,17 +605,16 @@ export function renderToday(container) {
     document.getElementById('quick-log-standalone').addEventListener('click', () =>
       openQuickLog(lazySession(viewDate), () => load()));
 
-    // "New Meal" is the one button whose job IS to create the meal, so it does
-    // it eagerly and you get a real card to name and fill over the day. It also
-    // opens the food sheet straight away rather than making you find the card's
-    // own Add Food button, which was the original complaint.
-    document.getElementById('new-meal-btn').addEventListener('click', async () => {
-      try {
-        const session = await api.post('/api/meals/sessions', { date: viewDate });
-        openFoodEntry(session.id, () => load(), { sessionName: session.name });
-        load();
-      } catch (err) { showToast(err.message, 'error'); }
-    });
+    // "New Meal" used to create the meal eagerly, on the reasoning that making
+    // the meal IS its job. But it opens straight into food search, so backing
+    // out is an ordinary thing to do — wrong food, changed your mind, a mis-tap
+    // — and it left an empty "Meal 2 · 0 kcal" on the day that nothing cleans
+    // up. Measured: tapping the button and closing the sheet was enough.
+    // It ends in the same place either way, and it sits in the same row as the
+    // FAB, which has always been lazy — so one of two adjacent buttons opening
+    // the same sheet left litter and the other didn't.
+    document.getElementById('new-meal-btn').addEventListener('click', () =>
+      openFoodEntry(lazySession(viewDate), () => load()));
 
     // The FAB is fixed in the bottom-right corner, so whatever sits under that
     // corner is hidden with nothing to say so. Two cases need it out of the way.
@@ -671,9 +670,16 @@ export function renderToday(container) {
         fabDetach = null;
       };
       if (row && 'IntersectionObserver' in window) {
+        // rootMargin trims the nav's height off the bottom of the root, so a
+        // row is only "on screen" when it is above the bar rather than behind
+        // it. Without it, on a day with one meal the New Meal row sat at
+        // y 819-868 with the nav starting at 780: 25px inside the viewport, 0px
+        // actually visible — and the FAB hid itself for a row you could not
+        // see. Neither way to add food was on screen when the app opened.
+        const navH = document.querySelector('.bottom-nav')?.offsetHeight || 64;
         fabObserver = new IntersectionObserver(
           ([e]) => { rowVisible = e.isIntersecting; applyTuck(); },
-          { root: vc, threshold: 0.15 },
+          { root: vc, threshold: 0.15, rootMargin: `0px 0px -${navH}px 0px` },
         );
         fabObserver.observe(row);
       }

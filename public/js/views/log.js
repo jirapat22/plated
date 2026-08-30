@@ -87,7 +87,15 @@ async function dayMeals(viewDate) {
 function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOthers, onPick, opts = {}) {
   showSheet(content => {
     const today = localDate();
-    const quickDays = opts.days || [today, ...Array.from({ length: 7 }, (_, i) => addDaysIso(today, i + 1))];
+    // Two days back as well as forward. The strip was today plus the next
+    // seven, which serves meal-prep and not the commoner reason for copying a
+    // food: you ate the same thing recently and forgot to log it. Yesterday was
+    // reachable only through "Pick another date…", and dayLabel already knew
+    // the word.
+    const quickDays = opts.days || [
+      addDaysIso(today, -2), addDaysIso(today, -1), today,
+      ...Array.from({ length: 5 }, (_, i) => addDaysIso(today, i + 1)),
+    ];
     // Compare dates, don't count positions. The index-based version read
     // "Today/Tomorrow" off the first two slots, which is only true for the copy
     // strip — hand it any other order and it labels yesterday "Tomorrow". Same
@@ -96,7 +104,9 @@ function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOt
       : iso === addDaysIso(today, 1)  ? 'Tomorrow'
       : iso === addDaysIso(today, -1) ? 'Yesterday'
       : new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    let selectedDate = opts.defaultDate || quickDays[1];   // copy defaults to tomorrow — the common case
+    // By date, not by index. quickDays[1] happened to be tomorrow only while the
+    // strip started at today; the comment above this block is the same warning.
+    let selectedDate = opts.defaultDate || addDaysIso(today, 1);   // copy still defaults to tomorrow
 
     content.innerHTML = `
       <div class="sheet-header">

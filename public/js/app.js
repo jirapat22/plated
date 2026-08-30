@@ -50,7 +50,10 @@ export function showToast(msg, type = 'info', opts = {}) {
   }
 
   container.appendChild(el);
-  timer = setTimeout(dismiss, opts.duration || (opts.actionLabel ? 6000 : 3000));
+  // 10s, not 6, when there is something to tap. Six is the usual default, but
+  // this app's reader has to notice the toast, read it, and hit a small target
+  // near the bottom edge — and the thing being undone is usually a delete.
+  timer = setTimeout(dismiss, opts.duration || (opts.actionLabel ? 10000 : 3000));
 }
 
 // ─── Bottom Sheet ───────────────────────────────────────────

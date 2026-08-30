@@ -327,3 +327,47 @@ test('a profile name is capped rather than stored whole', async () => {
   // A non-string name used to throw on .trim() and answer 500.
   assert.strictEqual((await api('PATCH', '/api/auth/me', { name: 12345 })).status, 200);
 });
+
+// ── search puts the plain food first ────────────────────────────────────────
+// Ordering was favourites, then use count, then SHORTEST NAME — and the seed
+// names base ingredients "Ingredient, qualifier, …", so processed foods with
+// short names won. Searching "banana" led with Banana chip at 519 kcal and put
+// a real banana sixth; "rice" led with Licorice, black; "egg" with Eggplant.
+//
+// The rule that fixed it is narrow on purpose: the name IS the query, or starts
+// with the query followed by a comma. A dish that merely mentions the word
+// cannot be promoted, which is what sank the earlier contiguous-phrase attempt
+// (see the note in foods.js).
+test('a search for a plain food leads with that food, not a dish made from it', async () => {
+  const cases = {
+    banana: /^Banana,/i,
+    rice:   /^Rice,/i,
+    egg:    /^Egg,/i,
+    butter: /^Butter,/i,
+    milk:   /^Milk,/i,
+  };
+  for (const [q, want] of Object.entries(cases)) {
+    const rows = await (await api('GET', `/api/foods/search?q=${q}&limit=5`)).json();
+    assert.ok(Array.isArray(rows) && rows.length, `no results for "${q}"`);
+    assert.match(rows[0].name, want, `"${q}" led with "${rows[0].name}"`);
+  }
+});
+
+test('a multi-word search is not disturbed by the rule', async () => {
+  // "olive oil" opens no name, so every row falls to the last tier and keeps
+  // the order it had. "Oil, olive" was already first and must stay first.
+  const rows = await (await api('GET', '/api/foods/search?q=olive%20oil&limit=5')).json();
+  assert.strictEqual(rows[0].name, 'Oil, olive');
+});
+
+test('a favourite still outranks the plain-food rule', async () => {
+  // The tiers above it — favourites, then use count — must keep winning, or
+  // this quietly demotes the foods someone actually eats.
+  const rows = await (await api('GET', '/api/foods/search?q=banana&limit=10')).json();
+  const dish = rows.find(r => !/^Banana,/i.test(r.name));
+  assert.ok(dish, 'expected at least one non-plain banana row');
+  await api('PATCH', `/api/foods/${dish.id}/favourite`);   // the route toggles; it ignores the body
+  const after = await (await api('GET', '/api/foods/search?q=banana&limit=10')).json();
+  assert.strictEqual(after[0].id, dish.id, 'a favourited food must come first');
+  await api('PATCH', `/api/foods/${dish.id}/favourite`);   // toggled back off
+});
