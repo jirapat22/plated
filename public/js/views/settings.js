@@ -1158,7 +1158,10 @@ function openTdeeEstimator(s, onUse) {
     if (weightKg) $('te-kg').value = Math.round(weightKg * 10) / 10;
     if (s.height_cm) $('te-cm').value = s.height_cm;
     if (age) $('te-age').value = age;
-    let sex = s.sex || 'male';
+    // Not `|| 'male'`. The same guess onboarding used to make, in the other
+    // place it can be made — and here it is invisible, because the chip simply
+    // looks chosen.
+    let sex = s.sex || '';
     let act = s.activity_level || '';
 
     const paint = () => {
@@ -1182,7 +1185,7 @@ function openTdeeEstimator(s, onUse) {
         // and mistyped. Name the actual problem when there is one.
         const w = parseFloat($('te-kg').value), h = parseFloat($('te-cm').value), a = parseFloat($('te-age').value);
         const bad = (w > 0 && h > 0 && a > 0) ? outOfRange({ weightKg: w, heightCm: h, age: a }) : null;
-        box.innerHTML = `<div class="phase-goal-empty">${bad || 'Fill in weight, height, age and activity.'}</div>`;
+        box.innerHTML = `<div class="phase-goal-empty">${bad || 'Fill in weight, height, age, sex and activity.'}</div>`;
         $('te-use').disabled = true;
         return;
       }

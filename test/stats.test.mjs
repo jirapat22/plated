@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { trendWeightNow, movingAvg, etaWeeks } from '../public/js/utils/stats.js';
+import { trendWeightNow, movingAvg, etaWeeks, estimateTdee } from '../public/js/utils/stats.js';
 
 const shift = (iso, n) => {
   const d = new Date(iso + 'T00:00:00Z');
@@ -47,4 +47,28 @@ test('a normal run of daily weigh-ins is unchanged by the fix', () => {
 test('the boundary day is inside the window', () => {
   const edge = [[shift(TODAY, -30), 90], [shift(TODAY, -31), 50]];
   assert.strictEqual(trendWeightNow(edge, { today: TODAY }), 90, 'day 30 in, day 31 out');
+});
+
+// ── an unknown sex is unknown, not male ─────────────────────────────────────
+// bmr read `sex === 'female' ? -161 : 5`, so '', undefined and a profile that
+// never answered all silently took the male constant. Onboarding pre-selected
+// Male too, so the guess was invisible from both ends. 166 kcal of BMR becomes
+// ~228 kcal/day of TDEE once the activity multiplier is applied — measured on
+// one profile as 2085 vs 1857 maintenance, which is about half of a "steady"
+// cut's entire deficit.
+test('an estimate is refused rather than guessed when sex is missing', () => {
+  const body = { weightKg: 79, heightCm: 165, age: 62, activity: 1.375 };
+  assert.strictEqual(estimateTdee({ ...body }), null, 'undefined sex produced a number');
+  assert.strictEqual(estimateTdee({ ...body, sex: '' }), null, "'' produced a number");
+  assert.strictEqual(estimateTdee({ ...body, sex: 'unspecified' }), null);
+});
+
+test('both answers still work, and differ by the Mifflin sex constant', () => {
+  const body = { weightKg: 79, heightCm: 165, age: 62, activity: 1.375 };
+  const male   = estimateTdee({ ...body, sex: 'male' });
+  const female = estimateTdee({ ...body, sex: 'female' });
+  assert.strictEqual(male, 2085);
+  assert.strictEqual(female, 1857);
+  // 166 kcal of BMR x the activity multiplier, which is the whole point.
+  assert.strictEqual(male - female, Math.round(166 * 1.375));
 });

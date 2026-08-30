@@ -54,10 +54,22 @@ export function showToast(msg, type = 'info', opts = {}) {
 }
 
 // ─── Bottom Sheet ───────────────────────────────────────────
+// hideSheet's teardown runs 300ms later, to let the slide-out finish. Nothing
+// used to cancel it, so closing a sheet and opening another inside that window
+// — two taps under 300ms apart, which is inside normal double-tap range — let
+// the OLD timer fire against the NEW sheet: it re-added `hidden`, wiped
+// #sheet-content, and left `hidden` and `open` both set. The sheet appeared and
+// then silently vanished. Reproduced: content "Add Food / Recent / Favourites /
+// Batches" at open, empty string 300ms later.
+let sheetTeardown = null;
+
 export function showSheet(renderFn) {
   const overlay = document.getElementById('sheet-overlay');
   const sheet   = document.getElementById('sheet');
   const content = document.getElementById('sheet-content');
+
+  clearTimeout(sheetTeardown);
+  sheetTeardown = null;
 
   content.innerHTML = '';
   renderFn(content);
@@ -79,7 +91,9 @@ export function hideSheet() {
   const sheet   = document.getElementById('sheet');
   overlay.classList.remove('visible');
   sheet.classList.remove('open');
-  setTimeout(() => {
+  clearTimeout(sheetTeardown);
+  sheetTeardown = setTimeout(() => {
+    sheetTeardown = null;
     overlay.classList.add('hidden');
     sheet.classList.add('hidden');
     document.getElementById('sheet-content').innerHTML = '';

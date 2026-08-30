@@ -1121,13 +1121,19 @@ export function renderTrends(container) {
           <div class="stat-cell"><div class="stat-num">${wkRows.length}<span style="font-size:13px;color:var(--text-muted)">/7</span></div><div class="stat-lbl">days logged</div></div>
         </div>
         <div style="font-size:12px;color:${wkAvg > goal ? 'var(--warning)' : 'var(--text-muted)'};margin-top:10px">${wkAvg > goal ? `+${fmtE(wkAvg - goal)} over` : `${fmtE(goal - wkAvg)} under`} your ${fmtE(goal)} ${ul} goal, on average</div>
-        <div style="display:flex;gap:14px;font-size:12px;margin-top:8px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:12px;margin-top:8px;border-top:1px solid var(--border);padding-top:10px">
           <span><span style="color:var(--protein);font-weight:600">${Math.round(wkP)}${plus(wkRows, 'protein')}</span><span style="color:var(--text-faint)">/${Math.round(proteinGoal)} P</span></span>
           <span><span style="color:var(--carbs);font-weight:600">${Math.round(wkC)}${plus(wkRows, 'carbs')}</span><span style="color:var(--text-faint)">/${Math.round(carbGoal)} C</span></span>
           <span><span style="color:var(--fat);font-weight:600">${Math.round(wkF)}${plus(wkRows, 'fat')}</span><span style="color:var(--text-faint)">/${Math.round(fatGoal)} F</span></span>
-          ${['protein', 'carbs', 'fat'].some(k => anyPartial(wkRows, k)) ? `<span style="color:var(--text-faint);font-size:11px;flex-basis:100%">+ = at least; a meal this week didn't record every macro</span>` : ''}
           <span style="color:var(--text-faint);margin-left:auto">avg/day</span>
-        </div>`}
+        </div>
+        ${/* Its own block, below the row. As a flex ITEM with flex-basis:100% it
+             was at the mercy of the parent's flex-wrap, which is nowrap — so
+             instead of taking a line it shrank to 45px wide and 190px tall, one
+             word per line, clipped by the card. */
+          ['protein', 'carbs', 'fat'].some(k => anyPartial(wkRows, k))
+            ? `<div style="color:var(--text-muted);font-size:11px;margin-top:6px">+ = at least this much; a meal this week didn't record every macro.</div>`
+            : ''}`}
         ${wkToday ? `<div style="font-size:12px;color:var(--text-faint);margin-top:10px;border-top:1px solid var(--border);padding-top:10px">Today in progress · <strong style="color:var(--text-muted)">${fmtE(wkToday.calories || 0)} ${ul}</strong> so far, not counted above.</div>` : ''}
       </div>` : ''}
 

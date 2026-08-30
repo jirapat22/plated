@@ -984,7 +984,7 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
         </div>
       </div>
       <div class="meal-entry-kcal">${fmtE(entry.calories)}</div>
-      <div style="display:flex;gap:4px;flex-shrink:0">
+      <div class="meal-entry-actions">
         ${canLeftover ? `<button class="entry-left-btn" title="Didn't finish it — save the rest" style="width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:13px">🥡</button>` : ''}
         <button class="entry-copy-btn" title="Copy to…" style="width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:13px">⧉</button>
         <button class="entry-edit-btn" title="Edit" style="width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:12px">✏️</button>
@@ -1018,16 +1018,16 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
   });
 
   const footer = document.createElement('div');
-  footer.style.cssText = 'display:flex;border-top:1px solid var(--border)';
+  footer.className = 'meal-session-footer';
   const addBtn = document.createElement('button');
-  addBtn.className = 'meal-session-add'; addBtn.style.flex = '1';
+  addBtn.className = 'meal-session-add';
   addBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> Add Food`;
   addBtn.addEventListener('click', () => openFoodEntry(session.id, onDone, { sessionName: session.name }));
   footer.appendChild(addBtn);
   if (showQuickLog) {
     const qlBtn = document.createElement('button');
     qlBtn.className = 'meal-session-add';
-    qlBtn.style.cssText = 'flex:0 0 auto;border-left:1px solid var(--border);color:var(--carbs)';
+    qlBtn.style.cssText = 'border-left:1px solid var(--border);color:var(--carbs)';
     qlBtn.textContent = '⚡ Quick Log';
     qlBtn.addEventListener('click', () => openQuickLog(session.id, onDone, viewDate));
     footer.appendChild(qlBtn);

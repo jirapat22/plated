@@ -33,7 +33,14 @@ const RATES = {
 };
 
 export function openOnboarding(onDone) {
-  const d = { kg: '', cm: '', age: '', sex: 'male', act: '1.375', phase: 'cut', rate: 250 };
+  // sex starts UNSET. It used to default to 'male' with the chip already
+  // highlighted, so Continue accepted it without anyone choosing — and the
+  // Mifflin-St Jeor sex constant is 166 kcal, which the activity multiplier
+  // turns into ~228 kcal/day of TDEE. Measured on one profile: 2085 vs 1857
+  // maintenance, 1835 vs 1607 goal. That is roughly half a "steady" cut's
+  // entire deficit, wrong from the first screen, on the number every ring,
+  // verdict and history comparison is measured against.
+  const d = { kg: '', cm: '', age: '', sex: '', act: '1.375', phase: 'cut', rate: 250 };
   let step = 1;
 
   const tdee = () => estimateTdee({
@@ -56,7 +63,7 @@ export function openOnboarding(onDone) {
       content.innerHTML = `
         <div class="sheet-header">
           <span class="sheet-title">${step === 1 ? '👋 Welcome to Plated' : step === 2 ? 'How much do you move?' : "What's the goal?"}</span>
-          ${step === 1 ? '<button class="sheet-close" id="ob-skip">Skip</button>' : ''}
+          ${step === 1 ? '<button class="sheet-close" id="ob-skip" style="min-width:44px;min-height:44px">Skip</button>' : ''}
         </div>
         <div style="padding:0 16px 4px">
           <div style="display:flex;gap:4px;margin-bottom:14px">
@@ -71,14 +78,14 @@ export function openOnboarding(onDone) {
               <div class="form-group" style="margin-bottom:0">
                 <label class="form-label">Weight</label>
                 <div style="position:relative">
-                  <input class="input" id="ob-kg" type="text" inputmode="decimal" value="${d.kg}" placeholder="76" style="height:42px;padding-right:30px"/>
+                  <input class="input" id="ob-kg" type="text" inputmode="decimal" value="${d.kg}" placeholder="e.g. 76" style="height:42px;padding-right:30px"/>
                   <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text-muted)">kg</span>
                 </div>
               </div>
               <div class="form-group" style="margin-bottom:0">
                 <label class="form-label">Height</label>
                 <div style="position:relative">
-                  <input class="input" id="ob-cm" type="text" inputmode="decimal" value="${d.cm}" placeholder="173" style="height:42px;padding-right:32px"/>
+                  <input class="input" id="ob-cm" type="text" inputmode="decimal" value="${d.cm}" placeholder="e.g. 173" style="height:42px;padding-right:32px"/>
                   <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text-muted)">cm</span>
                 </div>
               </div>
@@ -86,7 +93,7 @@ export function openOnboarding(onDone) {
             <div class="form-row" style="margin-bottom:16px">
               <div class="form-group" style="margin-bottom:0">
                 <label class="form-label">Age</label>
-                <input class="input" id="ob-age" type="text" inputmode="decimal" value="${d.age}" placeholder="26" style="height:42px"/>
+                <input class="input" id="ob-age" type="text" inputmode="decimal" value="${d.age}" placeholder="e.g. 26" style="height:42px"/>
               </div>
               <div class="form-group" style="margin-bottom:0">
                 <label class="form-label">Sex</label>
@@ -190,6 +197,8 @@ export function openOnboarding(onDone) {
           // behind it and a TDEE computed from the typo.
           const bad = outOfRange({ weightKg: w, heightCm: h, age: a });
           if (bad) { showToast(bad, 'error'); return; }
+          // Asked for rather than assumed — see the note on `d` above.
+          if (!d.sex) { showToast('Pick male or female — the estimate needs it', 'error'); return; }
           step = 2; draw(); return;
         }
         if (step === 2) { step = 3; draw(); return; }

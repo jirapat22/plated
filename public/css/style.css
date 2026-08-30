@@ -11,7 +11,14 @@
   --border:       #2c2c35;
   --text:         #f0eff4;
   --text-muted:   #8b8a96;
-  --text-faint:   #4a4a55;
+  /* Was #4a4a55: 2.06:1 on a card, against a 4.5:1 floor — and not decoration,
+     it draws the goal figure beside every macro ("/ 166g"), the DAILY GOAL
+     heading and the trend notes. The nav bar was moved off it for exactly this
+     reason and the other ~100 uses were left behind. #7e7e90 is 4.53:1 on a
+     card and 4.94:1 on the page. The gap to --text-muted (5.30:1) is narrower
+     than it was, so the hierarchy now leans on size and weight, which is where
+     it should have been: a tier you cannot read is not a tier. */
+  --text-faint:   #7e7e90;
   --accent:       #c8b8ff;
   --accent-hover: #b8a4ff;
   --accent-dim:   #2a2540;
@@ -91,7 +98,7 @@
   --border:       #e0dde8;
   --text:         #1a1922;
   --text-muted:   #6a6779;
-  --text-faint:   #9b97a9;
+  --text-faint:   #726e86;   /* was #9b97a9 — 2.84:1 on white. Now 4.89:1, and 4.51:1 on --bg. */
   --accent:       #6b4fd6;   /* the dark-mode lavender is unreadable on white */
   --accent-hover: #5a3fc0;
   --accent-dim:   #ece7fb;
@@ -235,9 +242,10 @@ img { display: block; max-width: 100%; }
   align-items: center;
   justify-content: center;
   gap: 4px;
-  /* --text-faint is 2.06:1 on dark and 2.84:1 on light — well under the 4.5:1
-     floor, on the most-tapped control in the app. --text-muted is 5.31:1 and
-     still reads as "not the active tab" next to --accent. */
+  /* --text-faint used to be 2.06:1 on dark and 2.84:1 on light — well under
+     the 4.5:1 floor — and this is the most-tapped control in the app. The token
+     itself now clears the floor, but --text-muted (5.31:1) stays the right
+     choice here: it reads as "not the active tab" next to --accent. */
   color: var(--text-muted);
   font-size: calc(10px * var(--ui-scale));
   font-weight: 600;
@@ -519,6 +527,14 @@ img { display: block; max-width: 100%; }
 
 .meal-entry {
   display: flex;
+  /* Wraps so the button cluster drops to its own line instead of eating the
+     name. The four buttons never shrink (flex-shrink:0) and grow with the text
+     size — 132px at Normal, 198px at Largest — while the row's content box
+     shrinks from 356px to 227px. .meal-entry-info had `flex: 1`, i.e. a basis
+     of 0, so it absorbed the whole squeeze: the food name measured 108px,
+     67px, 25px and finally 0 across the four sizes. At Largest the meal list
+     showed a weight, some macros and four buttons, and not what you ate. */
+  flex-wrap: wrap;
   align-items: center;
   padding: 11px 14px;
   background: var(--surface);
@@ -529,7 +545,19 @@ img { display: block; max-width: 100%; }
   transition: transform 0.2s;
 }
 .meal-entry + .meal-entry { border-top: 1px solid var(--border); }
-.meal-entry-info { flex: 1; min-width: 0; }
+/* `1 1 0` with a FLOOR, not `flex: 1` (which is `1 1 0` with min-width 0).
+   The floor is what makes the row wrap instead of crushing the name: a flex
+   line breaks on hypothetical size, which is the basis clamped by min-width, so
+   a floor of 5em means the button cluster drops to its own line the moment the
+   name would go under it. `1 1 auto` doesn't work here — with an auto basis the
+   line breaks at max-content and the row wraps even at Normal, making every
+   list taller for everyone. Measured, name width by text size:
+       flex:1        108 / 67 / 25 / 0     (one line, then nothing)
+       1 1 auto      250 / 230 / 209 / 238 (wraps at every size — too eager)
+       1 1 0, 5em    108 / 230 / 209 / 182 (one line at Normal, wraps above it)
+   Normal is byte-for-byte what it was: a 59px single-line row. */
+.meal-entry-info { flex: 1 1 0; min-width: 5em; }
+.meal-entry-actions { display: flex; gap: 4px; flex-shrink: 0; margin-left: auto; }
 .meal-entry-name {
   font-size: 14px;
   font-weight: 500;
@@ -555,6 +583,16 @@ img { display: block; max-width: 100%; }
   gap: 8px;
 }
 .meal-session-add:active { background: var(--accent-dim); }
+/* The Add Food / Quick Log pair. `.meal-session-add` sets width:100% because it
+   is also used alone, spanning the card — and a `flex: 0 0 auto` item sized from
+   that width came out as wide as the whole card, so the second button's box ran
+   61px off a 390px screen at Normal and 92px at Largest. Invisible, because the
+   card clips it, but it also stopped the labels sitting on one line: "Add Food"
+   broke in two at the larger sizes. width:auto and a real flex hand the row back
+   to the layout — measured, the row gets SHORTER at every size (56->39 at
+   Normal, 84->58 at Largest) and nothing leaves the card. */
+.meal-session-footer { display: flex; flex-wrap: wrap; border-top: 1px solid var(--border); }
+.meal-session-footer > .meal-session-add { width: auto; flex: 1 1 auto; min-width: 0; }
 
 /* ─── New Meal Button ────────────────────────────────────── */
 .new-meal-btn {
@@ -599,13 +637,31 @@ img { display: block; max-width: 100%; }
 }
 .fab-log:active { transform: scale(.94); }
 /* Tucked away while the New Meal / Quick Log row is on screen — down there the
-   FAB sat right on top of Quick Log. After :active on purpose: equal
-   specificity, so source order decides which transform wins. */
+   FAB sat right on top of Quick Log, and the same action is already sitting in
+   the card underneath it. After :active on purpose: equal specificity, so
+   source order decides which transform wins. */
 .fab-log.tucked {
   opacity: 0;
   transform: scale(.85);
   pointer-events: none;
 }
+/* Icon only at the larger text sizes. The label makes the button 116px wide at
+   Largest, which is what put it over the fiber row of the goal card on first
+   paint. The previous answer was to tuck it there too — but tucked means
+   opacity 0 and pointer-events none, so the app's primary action was simply
+   absent when you opened it, at exactly the setting a low-vision reader uses.
+   A 52px circle in the corner clears the numbers instead of hiding the button. */
+.fab-log.compact { padding: 0; width: 52px; justify-content: center; gap: 0; }
+.fab-log.compact .fab-label { display: none; }
+
+/* A canvas with no CSS width falls back to the HTML default of 300px, which at
+   the largest text size is 450 device px in a 292px card — 109px off the right
+   of a 390px screen, with nothing to scroll to it. Chart.js sets an inline
+   width once it draws, so this only bites before the first draw and whenever it
+   never draws at all: the CDN blocked, offline, or a <details> opened for the
+   first time. The charts that had drawn measured 291px and sat inside their
+   card; the three that hadn't measured 450px and did not. */
+canvas { max-width: 100%; }
 
 /* Stand-in where a chart would be when Chart.js hasn't loaded (offline). */
 .chart-offline {
@@ -692,7 +748,13 @@ img { display: block; max-width: 100%; }
 }
 .search-tabs {
   display: flex;
+  /* Wraps rather than overflowing. It was nowrap with overflow visible, so at
+     Largest the Trends metric strip needed 259px in a 195px box and the "Fat"
+     tab sat off the edge with no way to scroll to it. The Foods strip got this
+     treatment when the same bug was found there; this instance was missed. */
+  flex-wrap: wrap;
   gap: 4px;
+  row-gap: 6px;
   padding: 0 16px 10px;
 }
 .search-tab {

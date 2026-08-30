@@ -520,7 +520,7 @@ export function renderToday(container) {
         <svg width="15" height="15" viewBox="0 0 14 14" fill="none">
           <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
         </svg>
-        Log
+        <span class="fab-label">Log</span>
       </button>
     `;
 
@@ -639,23 +639,23 @@ export function renderToday(container) {
     fabDetach?.();
     const row = document.getElementById('new-meal-btn')?.parentElement;
     const fab = document.getElementById('fab-log');
-    const goalCard = document.getElementById('goal-card');
     if (fab) {
+      // Icon only from 130% up. The label is what makes this button 116px wide,
+      // and 116px in the corner is what covered the goal card's fiber row on
+      // first paint. Hiding the button instead — which is what tucking does,
+      // opacity 0 and pointer-events none — took the app's primary action off
+      // the screen it opens on, at the one setting a low-vision reader picks.
+      // aria-label carries the name, so nothing is lost to a screen reader.
+      const scale = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1;
+      fab.classList.toggle('compact', scale >= 1.3);
       let rowVisible = false;
       // Measured from the CENTRE outwards using offsetWidth/offsetHeight, which
       // ignore transforms. The tucked state scales the FAB down, so reading its
       // live rect would shrink the band, untuck it, grow the band and tuck it
       // again — a loop. scale() leaves the centre where it is, so this is the
       // untucked footprint whatever state it is in.
-      const goalUnderFab = () => {
-        if (!goalCard) return false;
-        const r = fab.getBoundingClientRect();
-        const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-        const w = fab.offsetWidth / 2, h = fab.offsetHeight / 2;
-        const g = goalCard.getBoundingClientRect();
-        return g.bottom > cy - h && g.top < cy + h && g.right > cx - w && g.left < cx + w;
-      };
-      const applyTuck = () => fab.classList.toggle('tucked', rowVisible || goalUnderFab());
+      const applyTuck = () => fab.classList.toggle('tucked', rowVisible);
       let queued = false;
       const onScroll = () => {
         if (queued) return;

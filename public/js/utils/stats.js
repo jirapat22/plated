@@ -123,7 +123,17 @@ export function outOfRange({ weightKg, heightCm, age }) {
 // Mifflin-St Jeor resting burn — what you'd spend doing nothing at all.
 function bmr({ weightKg, heightCm, age, sex }) {
   if (!(weightKg > 0) || !(heightCm > 0) || !(age > 0)) return null;
-  return 10 * weightKg + 6.25 * heightCm - 5 * age + (sex === 'female' ? -161 : 5);
+  // An unknown sex is unknown, not male. This read `sex === 'female' ? -161 : 5`,
+  // so every value that wasn't the string 'female' — including '', undefined and
+  // a profile that never answered — silently took the male constant. That is
+  // 166 kcal of BMR, which the activity multiplier turns into ~228 kcal/day of
+  // TDEE: measured 2085 vs 1857 maintenance on one profile. Onboarding no longer
+  // pre-selects a sex, and this is the layer that makes the omission visible
+  // instead of guessing behind it — callers already handle null by showing
+  // nothing rather than a number.
+  const sexOffset = sex === 'female' ? -161 : sex === 'male' ? 5 : null;
+  if (sexOffset == null) return null;
+  return 10 * weightKg + 6.25 * heightCm - 5 * age + sexOffset;
 }
 
 // Null rather than a number whenever the inputs aren't a plausible person.
