@@ -1,6 +1,11 @@
 const express = require('express');
 const { getDb } = require('../db');
-const { todayLocal, localDayOf, tzFor } = require('../utils/tz');
+const { todayLocal, localDayOf, tzFor, isRealDate, isValidTz } = require('../utils/tz');
+// IronLog is a remote server whose JSON is written straight into weight_log and
+// profile_settings. Both of those have had guards at the form since someone
+// could type 700 kg — this path had none at all, so the same rules now apply to
+// what the network says as to what a keyboard says.
+const { badWeight, badSetting, isSafeExternalUrl } = require('../utils/validate');
 const { recalcMacroGoals } = require('../utils/macros');
 const { snapshotGoals } = require('../utils/goals');
 
@@ -65,6 +70,15 @@ function profileSetting(pid, key) {
 function getBaseUrl(pid) {
   const url = profileSetting(pid, 'ironlog_api_url')?.trim();
   if (!url) throw new Error('IronLog URL not configured');
+  // Checked again HERE, not only where it was written. The PATCH handler has
+  // refused internal addresses for a while, but a restored backup wrote the
+  // setting directly (fixed now), and any URL stored before that guard existed
+  // is still sitting in the database unvalidated. This is the line that decides
+  // where the server actually sends a request, so it is the line that has to be
+  // sure — /api/ironlog/raw echoes the response verbatim.
+  if (!isSafeExternalUrl(url)) {
+    throw new Error('IronLog URL must be a public http(s) address — re-enter it in Settings');
+  }
   return url.replace(/\/$/, ''); // strip trailing slash
 }
 
@@ -111,7 +125,15 @@ function importBodyweight(db, pid, bwList) {
     const date = localDayOf(w.date, tz);
     const kg   = w.weight_kg ?? w.weight ?? w.bodyweight_kg;
     if (!date || kg == null) continue;
-    if (!exists.get({ pid, date })) { insert.run({ date, kg, pid }); added++; }
+    // Everything POST /api/weight enforces, applied to the other end of the
+    // wire. localDayOf passes a plain YYYY-MM-DD through untouched, so a
+    // remote 2026-02-30 became a weigh-in on a day that does not exist; and the
+    // raw value went into a REAL column, so a "70abc" landed as TEXT. That one
+    // is the expensive one: it makes trendWeight return NaN, which fails the
+    // `bw > 0` guard in recalcMacroGoals, so the g/kg macro goals silently stop
+    // tracking bodyweight for good and nothing on screen says why.
+    if (!isRealDate(date) || badWeight(kg)) continue;
+    if (!exists.get({ pid, date })) { insert.run({ date, kg: parseFloat(kg), pid }); added++; }
   }
   return added;
 }
@@ -307,28 +329,41 @@ router.post('/sync', async (req, res) => {
       });
     }
 
+    // What IronLog sent that this app will not store. Reported rather than
+    // dropped in silence — if the other end starts sending a 999,999 kcal TDEE
+    // the user needs to know their sync is partially failing, not wonder why
+    // one number never updates.
+    const rejected = [];
     const setSetting = (key, value) => {
-      if (value == null) return;
+      if (value == null) return false;
+      // The ranges PATCH /api/settings enforces. Without this, sync wrote a
+      // tdee of 999999 (band 500-20000), a protein_goal of 99999 (0-2000) and a
+      // bodyweight_kg of 700 (20-400) — every one of them refused from the
+      // user's own settings form, arriving from the network instead.
+      const bad = badSetting(key, value, isValidTz);
+      if (bad) { rejected.push({ key, value, reason: bad }); return false; }
       db.prepare('INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)')
         .run({ pid, key, value: String(value) });
+      return true;
     };
     const getSetting = key => profileSetting(pid, key);
 
     const updates = {};
 
-    if (p.tdee)         { setSetting('tdee',         p.tdee);         updates.tdee         = p.tdee;         }
+    if (p.tdee && setSetting('tdee', p.tdee)) updates.tdee = p.tdee;
     // Re-read every sync: it tracks the user's IronLog activity level, so it
     // changes the moment they edit that, and a stale copy silently restores the
     // double count.
     if (p.tdee_includes_workouts != null) {
-      setSetting('tdee_includes_workouts', p.tdee_includes_workouts ? '1' : '0');
-      updates.tdee_includes_workouts = !!p.tdee_includes_workouts;
+      if (setSetting('tdee_includes_workouts', p.tdee_includes_workouts ? '1' : '0')) {
+        updates.tdee_includes_workouts = !!p.tdee_includes_workouts;
+      }
     }
-    if (p.bodyweight)   { setSetting('bodyweight_kg', p.bodyweight);                                         updates.bodyweight_kg = p.bodyweight; }
-    if (p.protein_goal) { setSetting('protein_goal',  p.protein_goal); updates.protein_goal = p.protein_goal; }
-    if (p.carb_goal)    { setSetting('carb_goal',     p.carb_goal);    updates.carb_goal    = p.carb_goal;    }
-    if (p.fat_goal)     { setSetting('fat_goal',      p.fat_goal);     updates.fat_goal     = p.fat_goal;     }
-    if (p.fiber_goal)   { setSetting('fiber_goal',    p.fiber_goal);   updates.fiber_goal   = p.fiber_goal;   }
+    if (p.bodyweight && setSetting('bodyweight_kg', p.bodyweight)) updates.bodyweight_kg = p.bodyweight;
+    if (p.protein_goal && setSetting('protein_goal', p.protein_goal)) updates.protein_goal = p.protein_goal;
+    if (p.carb_goal && setSetting('carb_goal', p.carb_goal)) updates.carb_goal = p.carb_goal;
+    if (p.fat_goal && setSetting('fat_goal', p.fat_goal)) updates.fat_goal = p.fat_goal;
+    if (p.fiber_goal && setSetting('fiber_goal', p.fiber_goal)) updates.fiber_goal = p.fiber_goal;
 
     // ── Who owns what ───────────────────────────────────────────────────────
     // IronLog owns TDEE and bodyweight: it measures them. Plated owns phase and
@@ -351,23 +386,23 @@ router.post('/sync', async (req, res) => {
     const localPhase = getSetting('phase');
     const phase = ['cut', 'maintain', 'bulk'].includes(localPhase) ? localPhase
       : (['cut', 'maintain', 'bulk'].includes(p.phase) ? p.phase : null);
-    if (phase && phase !== localPhase) { setSetting('phase', phase); updates.phase = phase; }
+    if (phase && phase !== localPhase && setSetting('phase', phase)) updates.phase = phase;
 
     const tdeeNow = parseFloat(getSetting('tdee')) || null;
     if (phase && tdeeNow) {
       const deficit = parseFloat(getSetting('cut_deficit'))  || 500;
       const surplus = parseFloat(getSetting('bulk_surplus')) || 300;
       const goal = phaseCalories(tdeeNow, phase, deficit, surplus);
-      setSetting('calorie_goal', goal);
-      updates.calorie_goal = goal;
-      // Say so, so the Settings panel can show why the number is not the one
-      // IronLog sent — otherwise this reads as the sync quietly disagreeing.
-      updates.calorie_goal_source = 'derived';
+      if (setSetting('calorie_goal', goal)) {
+        updates.calorie_goal = goal;
+        // Say so, so the Settings panel can show why the number is not the one
+        // IronLog sent — otherwise this reads as the sync quietly disagreeing.
+        updates.calorie_goal_source = 'derived';
+      }
       if (p.calorie_goal && Math.round(p.calorie_goal) !== goal) {
         updates.ironlog_calorie_goal = Math.round(p.calorie_goal);
       }
-    } else if (p.calorie_goal) {
-      setSetting('calorie_goal', p.calorie_goal);
+    } else if (p.calorie_goal && setSetting('calorie_goal', p.calorie_goal)) {
       updates.calorie_goal = p.calorie_goal;
       updates.calorie_goal_source = 'ironlog';
     }
@@ -392,7 +427,10 @@ router.post('/sync', async (req, res) => {
     // profile_raw (IronLog's entire upstream payload) used to ride along here.
     // Nothing consumed it — /api/ironlog/raw already exists for inspection —
     // so it was upstream data echoed to the client for no reason.
-    res.json({ synced: true, updates });
+    // `rejected` is normally empty. When it isn't, IronLog sent something this
+    // app will not store, and saying so beats a sync that reports success while
+    // one field never moves.
+    res.json({ synced: true, updates, ...(rejected.length ? { rejected } : {}) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -447,3 +485,8 @@ router.get('/test', async (req, res) => {
 });
 
 module.exports = router;
+// Exported for the ingestion tests: these two are where a remote server's JSON
+// becomes a row in weight_log and a URL the server will actually fetch, which
+// makes them the two functions worth pinning down.
+module.exports.importBodyweight = importBodyweight;
+module.exports.getBaseUrl = getBaseUrl;

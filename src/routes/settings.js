@@ -6,8 +6,7 @@ const { snapshotGoals, goalsOn } = require('../utils/goals');
 // The same guards the live write routes apply. An import is no more trusted
 // than a form — the principle this file already states over the measurements
 // band — but it was only ever applied to the tables added after it was written.
-const { qtyError } = require('./meals');
-const { badWeight } = require('./weight');
+const { qtyError, badWeight, badSetting, settingsError } = require('../utils/validate');
 
 const router = express.Router();
 
@@ -43,95 +42,6 @@ const ALLOWED = new Set([
 // shown right above them.
 const MACRO_INPUTS = ['macro_mode', 'protein_multiplier', 'fat_multiplier', 'calorie_goal'];
 
-// ironlog_api_url is fetched server-side (src/routes/ironlog.js) and its raw
-// response is echoed back verbatim via GET /api/ironlog/raw — without this
-// check, any profile could point it at an internal address (cloud metadata,
-// localhost, another service on the private network) and use that route as
-// an SSRF read oracle. Blocks the obvious cases (literal internal
-// hosts/IPs); doesn't defend against DNS rebinding, which is out of scope
-// for this app's threat model (household members, not remote attackers).
-function isSafeExternalUrl(str) {
-  let u;
-  try { u = new URL(str); } catch { return false; }
-  if (!['http:', 'https:'].includes(u.protocol)) return false;
-  // URL.hostname keeps the brackets on an IPv6 literal — 'http://[::1]:3000'
-  // gives '[::1]', not '::1' — so the comparison below could never match and
-  // every loopback form walked straight through. http://[::1]:PORT reached the
-  // app's own port; so did [0:0:0:0:0:0:0:1] and [::ffff:127.0.0.1].
-  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  if (host === 'localhost' || host === '0.0.0.0') return false;
-  // Any IPv6 literal is judged by the one rule that is short and complete:
-  // globally routable IPv6 is 2000::/3. Loopback (::1), unspecified (::),
-  // unique-local (fc00::/7), link-local (fe80::/10) and IPv4-mapped
-  // (::ffff:7f00:1) all fall outside it, so one test covers forms that would
-  // each otherwise need their own case — and anything new does too.
-  if (host.includes(':')) return /^[23]/.test(host);
-  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
-  if (m) {
-    const a = Number(m[1]), b = Number(m[2]);
-    if (a === 127 || a === 10 || a === 0) return false;             // loopback, 10.0.0.0/8, "this" network
-    if (a === 172 && b >= 16 && b <= 31) return false;               // 172.16.0.0/12
-    if (a === 192 && b === 168) return false;                       // 192.168.0.0/16
-    if (a === 169 && b === 254) return false;                       // link-local incl. cloud metadata (169.254.169.254)
-  }
-  return true;
-}
-
-// Sane ranges for the settings that are numbers.
-//
-// Weight and waist have had bounds (and a "check the decimal point" message)
-// since someone could type 700 kg. These never did: PATCH /api/settings took
-// calorie_goal -500 and calorie_goal 1000000000 without comment, wrote them,
-// and — because snapshotGoals runs after every goal write — recorded them into
-// goal_history, where they permanently describe what you were "aiming at" on
-// that day. A negative goal makes every ring, every "left" figure and every
-// history comparison nonsense, with no way to tell where it came from.
-//
-// Bounds are wide on purpose: they exist to catch a slipped decimal point or a
-// probe, not to have an opinion about anyone's diet.
-// [min, max, unit] — the unit is appended to the message rather than left in
-// the key, so it reads "between 20 and 400 kg" and not "target weight kg".
-const NUMERIC_RANGE = {
-  calorie_goal:        [200, 20000, 'kcal'],
-  protein_goal:        [0, 2000, 'g'],
-  carb_goal:           [0, 2000, 'g'],
-  fat_goal:            [0, 2000, 'g'],
-  fiber_goal:          [0, 500, 'g'],
-  protein_multiplier:  [0, 10],
-  fat_multiplier:      [0, 10],
-  tdee:                [500, 20000, 'kcal'],
-  cut_deficit:         [0, 5000, 'kcal'],
-  bulk_surplus:        [0, 5000, 'kcal'],
-  target_weight_kg:    [20, 400, 'kg'],
-  bodyweight_kg:       [20, 400, 'kg'],
-  height_cm:           [50, 260, 'cm'],
-  birth_year:          [1900, 2100],
-  activity_level:      [1, 3],
-  ui_scale:            [100, 150, '%'],
-};
-
-// Returns an error message, or null when everything numeric is in range. Blank
-// is allowed throughout — several of these are legitimately "not set yet"
-// (tdee, target_weight_kg), and clearing one is not the same as setting it to
-// zero.
-function rangeError(body) {
-  for (const [key, [min, max, unit]] of Object.entries(NUMERIC_RANGE)) {
-    if (!(key in body)) continue;
-    const raw = body[key];
-    if (raw === '' || raw === null || raw === undefined) continue;
-    const v = parseFloat(raw);
-    if (!Number.isFinite(v) || v < min || v > max) {
-      // Reads like the weight and waist messages rather than naming the column:
-      // "Protein multiplier must be between 0 and 10", not "protein_multiplier".
-      const label = key.replace(/_(kg|cm)$/, '').replace(/_/g, ' ');
-      // Separators above four digits only, so a year stays 1900 and not 1,900.
-      const n = x => (x >= 10000 ? x.toLocaleString('en-NZ') : String(x));
-      return `${label[0].toUpperCase()}${label.slice(1)} must be between ${n(min)} and ${n(max)}${unit ? ' ' + unit : ''}`;
-    }
-  }
-  return null;
-}
-
 function allSettings(db, pid) {
   const rows = db.prepare(
     'SELECT key, value FROM profile_settings WHERE profile_id = $pid'
@@ -157,18 +67,11 @@ router.get('/', (req, res) => {
 
 router.patch('/', (req, res) => {
   try {
-    if (req.body.ironlog_api_url !== undefined && req.body.ironlog_api_url !== ''
-        && !isSafeExternalUrl(req.body.ironlog_api_url)) {
-      return res.status(400).json({ error: 'IronLog URL must be a public http(s) address' });
-    }
-    // Reject an unknown zone here rather than storing it: every date the server
-    // derives for this profile would then throw from a route that looks
-    // unrelated to the write that caused it. '' is allowed — it means
-    // "not detected", and falls back to APP_TZ.
-    if (req.body.timezone !== undefined && req.body.timezone !== '' && !isValidTz(req.body.timezone)) {
-      return res.status(400).json({ error: 'Unknown timezone' });
-    }
-    const bad = rangeError(req.body);
+    // URL safety, timezone and every numeric range, from the one module that
+    // decides those — so the form, a restored backup and an IronLog sync
+    // cannot disagree about what a setting may hold. '' is allowed throughout:
+    // it means "not set", which is not the same as zero.
+    const bad = settingsError(req.body, isValidTz);
     if (bad) return res.status(400).json({ error: bad });
     const db = getDb();
     const stmt = db.prepare(
@@ -596,7 +499,14 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
 
       const setSetting = db.prepare('INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)');
       for (const [key, value] of Object.entries(settings)) {
-        if (ALLOWED.has(key) && value != null) setSetting.run({ pid, key, value: String(value) });
+        // The tables above learned this; the settings block had not. A file
+        // could set ironlog_api_url to 127.0.0.1 — which PATCH refuses, and
+        // which turns GET /api/ironlog/raw into an SSRF read oracle — or a
+        // calorie_goal of -500, which snapshotGoals then wrote into
+        // goal_history as a permanent record of an impossible target.
+        if (!ALLOWED.has(key) || value == null) continue;
+        if (badSetting(key, value, isValidTz)) { skipped++; continue; }
+        setSetting.run({ pid, key, value: String(value) });
       }
 
       db.exec('COMMIT');

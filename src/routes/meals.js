@@ -3,6 +3,7 @@ const { getDb, canView } = require('../db');
 const { todayLocal, tzFor, isRealDate } = require('../utils/tz');
 const { goalsOn, stampGoals } = require('../utils/goals');
 const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
+const { qtyError } = require('../utils/validate');
 
 const router = express.Router();
 
@@ -19,20 +20,6 @@ function resolveViewedProfile(req, res) {
     return null;
   }
   return targetId;
-}
-
-// One sitting, in grams. There was a floor but no ceiling, so quantity_g
-// 1000000000 was accepted and wrote a 5,189,000,000 kcal entry — which then
-// counted in the day total, the 7-day average, the real-maintenance estimate
-// behind Trends' verdict, and every chart, with nothing to say where it came
-// from. 20 kg is far past any real portion and well short of a slipped decimal
-// point, which is the mistake this catches.
-const MAX_QTY_G = 20000;
-function qtyError(value) {
-  const q = parseFloat(value);
-  if (!(q > 0)) return 'quantity_g > 0 required';
-  if (q > MAX_QTY_G) return `That's over ${MAX_QTY_G.toLocaleString('en-NZ')} g in one go — check the decimal point`;
-  return null;
 }
 
 function round1(n) { return Math.round(n * 10) / 10; }
@@ -916,9 +903,3 @@ router.delete('/sessions/:id', (req, res) => {
 });
 
 module.exports = router;
-// Shared with the import route, which restores meal_entries wholesale and has
-// to apply the same ceiling — a backup file was the one door into this table
-// that no guard stood at. Exported off the router the way orbit.js exports its
-// key middleware, rather than moving one constant into a new module.
-module.exports.qtyError = qtyError;
-module.exports.MAX_QTY_G = MAX_QTY_G;

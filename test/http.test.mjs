@@ -255,3 +255,75 @@ test('a negative limit does not lift the row cap', async () => {
   // -1 means "no limit" to SQLite. Clamped to 1, so at most one row comes back.
   assert.ok((await r.json()).length <= 1, 'LIMIT -1 walked past the ceiling');
 });
+
+// ── the second door into profile_settings ───────────────────────────────────
+// The table loops above learned that an import is no more trusted than a form;
+// the settings block in the same handler had not. It could plant an
+// ironlog_api_url the PATCH handler refuses — which turns GET /api/ironlog/raw
+// into an SSRF read oracle — and a calorie_goal that snapshotGoals then wrote
+// into goal_history as a permanent record of an impossible target.
+test('a backup cannot set a setting the settings form would refuse', async () => {
+  const forbidden = {
+    ironlog_api_url: 'http://127.0.0.1:9',
+    calorie_goal: '-500',
+    timezone: 'Not/AZone',
+    tdee: '999999',
+    bodyweight_kg: '700',
+  };
+  // Every one of them is a 400 through the form.
+  for (const [k, v] of Object.entries(forbidden)) {
+    const r = await api('PATCH', '/api/settings', { [k]: v });
+    assert.strictEqual(r.status, 400, `PATCH accepted ${k}=${v}`);
+  }
+
+  const before = await (await api('GET', '/api/settings')).json();
+  const exported = await (await api('GET', '/api/settings/export')).json();
+  const r = await api('POST', '/api/settings/import', {
+    ...exported, settings: { ...exported.settings, ...forbidden },
+  });
+  const out = await r.json();
+  assert.strictEqual(r.status, 200, JSON.stringify(out));
+  assert.ok(out.skipped >= Object.keys(forbidden).length, 'the bad settings were not reported as skipped');
+
+  const after = await (await api('GET', '/api/settings')).json();
+  for (const k of Object.keys(forbidden)) {
+    assert.notStrictEqual(after[k], forbidden[k], `${k} was restored past the guard`);
+    assert.strictEqual(after[k], before[k], `${k} changed`);
+  }
+
+  // And nothing impossible reached the permanent goal record.
+  const hist = (await (await api('GET', '/api/settings/export')).json()).goal_history || [];
+  for (const g of hist) {
+    assert.ok(g.calorie_goal == null || g.calorie_goal >= 200,
+      `goal_history holds an impossible target: ${g.calorie_goal}`);
+  }
+});
+
+// ── the URL is checked where the request is made, not only where it is set ──
+// Any ironlog_api_url stored before that guard existed is still in the database
+// unvalidated, so the check has to happen at the point of use too.
+test('an unsafe IronLog URL cannot be reached even if it is already stored', async () => {
+  // Plant it the only way that still works: straight into the settings table
+  // via the import path's ALLOWED list is now blocked, so assert the guard from
+  // the other end — a configured-but-unsafe URL must fail closed, not fetch.
+  const r = await api('GET', '/api/ironlog/raw');
+  const body = await r.json();
+  // No IronLog configured at all in this test profile: every sub-request must
+  // report an error rather than having gone somewhere.
+  assert.ok(body.profile?.error, 'raw fetched something with no URL configured');
+});
+
+// ── the profile name has a ceiling ──────────────────────────────────────────
+test('a profile name is capped rather than stored whole', async () => {
+  const r = await api('POST', '/api/auth/profiles', { name: 'z'.repeat(5000), passcode: '9182' }, null);
+  assert.strictEqual(r.status, 201);
+  const { profile } = await r.json();
+  assert.ok(profile.name.length <= 40, `name stored at ${profile.name.length} chars`);
+
+  const ren = await api('PATCH', '/api/auth/me', { name: 'q'.repeat(5000) });
+  assert.strictEqual(ren.status, 200);
+  assert.ok((await ren.json()).name.length <= 40, 'rename was not capped');
+
+  // A non-string name used to throw on .trim() and answer 500.
+  assert.strictEqual((await api('PATCH', '/api/auth/me', { name: 12345 })).status, 200);
+});

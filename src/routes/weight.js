@@ -4,21 +4,9 @@ const { todayLocal, tzFor, isRealDate } = require('../utils/tz');
 const { recalcMacroGoals } = require('../utils/macros');
 const { snapshotGoals } = require('../utils/goals');
 const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
+const { badWeight } = require('../utils/validate');
 
 const router = express.Router();
-
-// 20–400 kg. The measurements route already guards its input this way ("catch
-// inches typed into a cm field"); weight never got the same treatment despite
-// being the more expensive mistake — it feeds recalcMacroGoals, so entering 700
-// for 70.0 silently rewrote the protein goal to ~1540 g and nothing on screen
-// explained where that came from. Can't catch lb-typed-as-kg (300 lb reads as a
-// legitimate 300) — only the decimal slips, which are the common ones.
-function badWeight(v) {
-  const w = parseFloat(v);
-  return Number.isFinite(w) && w >= 20 && w <= 400
-    ? null
-    : 'Weight must be between 20 and 400 kg — check the decimal point';
-}
 
 // Fire-and-forget push of a manual weigh-in to IronLog (two-way sync).
 // IronLog must expose POST /api/plated/bodyweight; until then this no-ops.
@@ -154,7 +142,3 @@ router.patch('/:id', (req, res) => {
 });
 
 module.exports = router;
-// Shared with the import route for the same reason meals.js exports qtyError:
-// restoring a backup wrote straight into weight_log, past the 20-400 kg band
-// this route has enforced since a mistyped 700 rewrote a protein goal.
-module.exports.badWeight = badWeight;

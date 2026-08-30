@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { promisify } = require('util');
 const { getDb, seedProfileDefaults, adoptOrphanData, countProfiles } = require('../db');
+const { trimName } = require('../utils/validate');
 const { requireProfile, pruneExpiredSessions } = require('../middleware/auth');
 const { rateLimit } = require('../middleware/rateLimit');
 
@@ -147,7 +148,11 @@ router.post('/login', loginLimiter, async (req, res) => {
 router.post('/profiles', loginLimiter, createLimiter, async (req, res) => {
   try {
     const { name, passcode, accent_color } = req.body;
-    if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
+    // Capped: a profile name renders on the lock screen and in the switcher
+    // chips, and both routes stored whatever was sent — a 5,000-character name
+    // was accepted by each of them.
+    const cleanName = trimName(name);
+    if (!cleanName) return res.status(400).json({ error: 'Name required' });
     if (!isValidCode(passcode)) return res.status(400).json({ error: 'Passcode must be 4 digits' });
     if (accent_color !== undefined && !isValidColor(accent_color)) {
       return res.status(400).json({ error: 'Invalid accent color' });
@@ -165,7 +170,7 @@ router.post('/profiles', loginLimiter, createLimiter, async (req, res) => {
       const wasFirst = countProfiles(db) === 0;
       const newId = db.prepare(
         'INSERT INTO profiles (name, accent_color, pass_hash, pass_salt) VALUES ($n, $c, $h, $s)'
-      ).run({ n: name.trim(), c: accent_color || '#c8b8ff', h: hash, s: salt }).lastInsertRowid;
+      ).run({ n: cleanName, c: accent_color || '#c8b8ff', h: hash, s: salt }).lastInsertRowid;
       seedProfileDefaults(db, newId);
       if (wasFirst) {
         adoptOrphanData(db, newId);                       // inherits legacy single-user data
@@ -204,8 +209,11 @@ router.patch('/me', requireProfile, (req, res) => {
     const db = getDb();
     const { name, accent_color } = req.body;
     if (name !== undefined) {
-      if (!name.trim()) return res.status(400).json({ error: 'Name cannot be empty' });
-      db.prepare('UPDATE profiles SET name = $n WHERE id = $id').run({ n: name.trim(), id: req.profileId });
+      // trimName, not name.trim(): capped at 40 like create, and String()-safe —
+      // a non-string name threw here and answered 500.
+      const clean = trimName(name);
+      if (!clean) return res.status(400).json({ error: 'Name cannot be empty' });
+      db.prepare('UPDATE profiles SET name = $n WHERE id = $id').run({ n: clean, id: req.profileId });
     }
     if (accent_color !== undefined) {
       if (!isValidColor(accent_color)) return res.status(400).json({ error: 'Invalid accent color' });

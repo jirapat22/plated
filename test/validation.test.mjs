@@ -8,16 +8,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { createRequire } from 'node:module';
-import fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const { isRealDate } = require('../src/utils/tz.js');
-
-// isSafeExternalUrl is module-private; lift it out rather than exporting a
-// function nothing else needs, so the source stays the thing under test.
-const settingsSrc = fs.readFileSync(new URL('../src/routes/settings.js', import.meta.url), 'utf8');
-const isSafeExternalUrl = new Function(
-  'return ' + settingsSrc.match(/function isSafeExternalUrl[\s\S]*?\n}/)[0])();
+// Was scraped out of settings.js with a regex, because it was module-private
+// there and "nothing else needs it". Three things needed it: the settings form,
+// a restored backup, and the IronLog client deciding where to send a request.
+// It lives in utils/validate.js now and is simply imported.
+const { isSafeExternalUrl } = require('../src/utils/validate.js');
 
 // ── dates ───────────────────────────────────────────────────────────────────
 test('a day that does not exist is not a date', () => {
@@ -73,4 +71,43 @@ test('the IPv4 and scheme cases that already worked are unchanged', () => {
     assert.strictEqual(isSafeExternalUrl(u), false, `${u} must be blocked`);
   }
   assert.strictEqual(isSafeExternalUrl('https://ironlog.example.com/api'), true);
+});
+
+// ── the short-form IPv4 bypass, which does not exist here ───────────────────
+// The dotted-quad regex looks like it could be walked around with http://127.1
+// or http://2130706433 — the classic way past a check of this shape. It can't
+// be, because the WHATWG URL parser canonicalises those to 127.0.0.1 before the
+// regex ever sees them. That is load-bearing and invisible, so it gets a test:
+// anyone who later swaps `new URL()` for a hand-rolled parse needs this to fail.
+test('short-form and encoded loopback addresses are still loopback', () => {
+  for (const url of ['http://127.1', 'http://127.0.1', 'http://2130706433',
+                     'http://0x7f000001', 'http://0177.0.0.1', 'http://0']) {
+    assert.strictEqual(isSafeExternalUrl(url), false, `${url} was allowed`);
+  }
+});
+
+// ── one rule, every door ────────────────────────────────────────────────────
+// These exact values were written by POST /api/ironlog/sync, straight past the
+// ranges the settings form enforces, because the range table lived in the
+// settings route and the sync had its own setter.
+test('the values an IronLog sync sent are refused by the shared rule', () => {
+  const { badSetting } = require('../src/utils/validate.js');
+  const sent = {
+    tdee: 999999,           // band 500-20000
+    protein_goal: 99999,    // band 0-2000
+    carb_goal: 5000,
+    fat_goal: 5000,
+    bodyweight_kg: 700,     // band 20-400 — trendWeight's fallback
+    calorie_goal: 999999,
+  };
+  for (const [k, v] of Object.entries(sent)) {
+    assert.ok(badSetting(k, v), `${k}=${v} was accepted`);
+  }
+  // And the ordinary values a real IronLog sends still go through.
+  for (const [k, v] of Object.entries({ tdee: 2676, protein_goal: 166, carb_goal: 180,
+                                        fat_goal: 62, bodyweight_kg: 75.6, calorie_goal: 1760 })) {
+    assert.strictEqual(badSetting(k, v), null, `${k}=${v} was wrongly refused`);
+  }
+  // Blank means "not set", which is not the same as zero and must stay allowed.
+  assert.strictEqual(badSetting('tdee', ''), null);
 });
