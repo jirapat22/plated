@@ -42,7 +42,9 @@ router.get('/', (req, res) => {
   try {
     // Ceiling raised from 365 so Trends' "All" range can plot a weight history
     // longer than a year alongside the now-unbounded meal summary.
-    const limit = Math.min(parseInt(req.query.limit) || 30, 5000);
+    // Math.max(...,1) because SQLite reads a negative LIMIT as "no limit", so
+    // ?limit=-1 walked straight past the ceiling.
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 30, 1), 5000);
     const rows = getDb().prepare(
       'SELECT * FROM weight_log WHERE profile_id = $pid ORDER BY date DESC LIMIT $limit'
     ).all({ limit, pid: req.profileId });
@@ -59,7 +61,12 @@ router.get('/day/:date', (req, res) => {
       return res.status(400).json({ error: 'Not a real date — use YYYY-MM-DD' });
     }
     const row = getDb().prepare(
-      'SELECT * FROM weight_log WHERE date = $date AND profile_id = $pid ORDER BY logged_at DESC LIMIT 1'
+      // id DESC breaks the tie: logged_at is datetime('now'), one-second
+      // resolution, so correcting a weigh-in within the same second left two
+      // rows with identical timestamps and this returned whichever SQLite
+      // reached first — the OLD one. macros.js already picks by MAX(id); the
+      // two disagreed about which reading was current.
+      'SELECT * FROM weight_log WHERE date = $date AND profile_id = $pid ORDER BY logged_at DESC, id DESC LIMIT 1'
     ).get({ date, pid: req.profileId });
     res.json(row || null);
   } catch (err) {
@@ -147,3 +154,7 @@ router.patch('/:id', (req, res) => {
 });
 
 module.exports = router;
+// Shared with the import route for the same reason meals.js exports qtyError:
+// restoring a backup wrote straight into weight_log, past the 20-400 kg band
+// this route has enforced since a mistyped 700 rewrote a protein goal.
+module.exports.badWeight = badWeight;

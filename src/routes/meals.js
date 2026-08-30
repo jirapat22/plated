@@ -198,6 +198,14 @@ router.get('/summary', (req, res) => {
         COALESCE(SUM(me.carbs),    0) AS carbs,
         COALESCE(SUM(me.fat),      0) AS fat,
         COALESCE(SUM(me.fiber),    0) AS fiber,
+        -- How many of the day's entries didn't record each macro. COUNT(col)
+        -- ignores nulls, so entries-minus-recorded is the missing count; a day
+        -- with no entries at all gives 0 - 0 and is not marked partial.
+        COUNT(me.id) - COUNT(me.calories) AS miss_calories,
+        COUNT(me.id) - COUNT(me.protein)  AS miss_protein,
+        COUNT(me.id) - COUNT(me.carbs)    AS miss_carbs,
+        COUNT(me.id) - COUNT(me.fat)      AS miss_fat,
+        COUNT(me.id) - COUNT(me.fiber)    AS miss_fiber,
         COUNT(DISTINCT me.meal_session_id) AS meal_count,
         MAX(ovr.value) AS log_status
       FROM meal_sessions ms
@@ -208,6 +216,24 @@ router.get('/summary', (req, res) => {
       GROUP BY ms.date
       ORDER BY ms.date ASC
     `).all(all ? { pid } : { offset: `-${days} days`, today: todayLocal(tzFor(getDb(), pid)), pid });
+
+    // Same honesty as the day route, one level up. SUM() skips nulls, so every
+    // total here is a LOWER BOUND when something in the day didn't record that
+    // macro — and this route is what Trends charts, what its weekly macro bars
+    // average, and what History's 7-day average reads. A week holding two Quick
+    // Logs averaged (5x160 + 2x0)/7 = 114 g of protein against a 150 g goal and
+    // drew a red bar for a shortfall that never happened. `partial` has the same
+    // shape as the day route's totals_partial so both feed renderMacroBar
+    // unchanged.
+    for (const r of rows) {
+      r.partial = {
+        calories: r.miss_calories > 0, protein: r.miss_protein > 0,
+        carbs:    r.miss_carbs    > 0, fat:     r.miss_fat     > 0,
+        fiber:    r.miss_fiber    > 0,
+      };
+      delete r.miss_calories; delete r.miss_protein; delete r.miss_carbs;
+      delete r.miss_fat;      delete r.miss_fiber;
+    }
 
     // The calorie goal that was in force on each date, so Trends can judge a
     // day by what you were aiming at THEN. It only had today's goal, so after
@@ -890,3 +916,9 @@ router.delete('/sessions/:id', (req, res) => {
 });
 
 module.exports = router;
+// Shared with the import route, which restores meal_entries wholesale and has
+// to apply the same ceiling — a backup file was the one door into this table
+// that no guard stood at. Exported off the router the way orbit.js exports its
+// key middleware, rather than moving one constant into a new module.
+module.exports.qtyError = qtyError;
+module.exports.MAX_QTY_G = MAX_QTY_G;

@@ -248,6 +248,11 @@ export function renderHistory(container) {
     const goalIsHistoric = hist?.recorded
       && parseFloat(hist.calorie_goal) !== (parseFloat(settings.calorie_goal) || null);
     const t  = mealData.totals;
+    // Which of those totals are floors rather than measurements. The macro bar
+    // below already reads this; the headline numbers beside it did not, so the
+    // same card showed "150.0g protein" fifteen pixels above a bar saying
+    // "150+ / 150g". Both are the same figure — only one of them was honest.
+    const tp = mealData.totals_partial || {};
     const ul = unitLabel();
 
     // 7-day rolling average ending at `date`
@@ -259,6 +264,10 @@ export function renderHistory(container) {
     }).filter(Boolean);
     const n = weekRows.length;
     const wAvg = k => n ? Math.round(weekRows.reduce((s, r) => s + (r[k] ?? 0), 0) / n) : 0;
+    // Averaging floors gives a floor. The summary route marks the days that are
+    // missing a macro; carry that through rather than presenting the mean as
+    // measured.
+    const wPlus = k => (weekRows.some(r => r.partial?.[k]) ? '+' : '');
 
     // A day with nothing on it is not a day you ate nothing. It used to lead
     // with "0 of 1,760 kcal", "0.0g protein" and four bars pinned at zero —
@@ -278,14 +287,14 @@ export function renderHistory(container) {
         </div>` : `
         <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px">
           <div>
-            <div class="num" style="font-size:28px;font-weight:800">${fmtE(t.calories)}</div>
+            <div class="num" style="font-size:28px;font-weight:800">${fmtE(t.calories)}${tp.calories ? '+' : ''}</div>
             <div class="label">${viewed ? ul : `of ${fmtE(goals.cal)} ${ul}`}</div>
             ${!viewed && goalIsHistoric ? `<div style="font-size:10px;color:var(--text-faint);margin-top:2px">your goal at the time</div>` : ''}
           </div>
           <div style="text-align:right">
-            <div class="num" style="font-size:13px;color:var(--protein)">${t.protein.toFixed(1)}g protein</div>
-            <div class="num" style="font-size:13px;color:var(--carbs)">${t.carbs.toFixed(1)}g carbs</div>
-            <div class="num" style="font-size:13px;color:var(--fat)">${t.fat.toFixed(1)}g fat</div>
+            <div class="num" style="font-size:13px;color:var(--protein)">${t.protein.toFixed(1)}${tp.protein ? '+' : ''}g protein</div>
+            <div class="num" style="font-size:13px;color:var(--carbs)">${t.carbs.toFixed(1)}${tp.carbs ? '+' : ''}g carbs</div>
+            <div class="num" style="font-size:13px;color:var(--fat)">${t.fat.toFixed(1)}${tp.fat ? '+' : ''}g fat</div>
           </div>
         </div>`}
         <div id="hist-macro-bar"></div>
@@ -301,13 +310,13 @@ export function renderHistory(container) {
             7-DAY AVG · ${n} of 7 days logged
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <div class="num" style="font-size:18px">${fmtE(wAvg('calories'))}
+            <div class="num" style="font-size:18px">${fmtE(wAvg('calories'))}${wPlus('calories')}
               <span style="font-size:11px;color:var(--text-muted)">${ul}/day</span>
             </div>
             <div style="font-size:12px;color:var(--text-muted)">
-              <span style="color:var(--protein)">${wAvg('protein')}g P</span> ·
-              <span style="color:var(--carbs)">${wAvg('carbs')}g C</span> ·
-              <span style="color:var(--fat)">${wAvg('fat')}g F</span>
+              <span style="color:var(--protein)">${wAvg('protein')}${wPlus('protein')}g P</span> ·
+              <span style="color:var(--carbs)">${wAvg('carbs')}${wPlus('carbs')}g C</span> ·
+              <span style="color:var(--fat)">${wAvg('fat')}${wPlus('fat')}g F</span>
             </div>
           </div>
         </div>` : ''}

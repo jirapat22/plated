@@ -518,6 +518,15 @@ export function renderTrends(container) {
     const proteins = chartRows.map(r => (r ? r.protein ?? 0 : null));
     const carbs    = chartRows.map(r => (r ? r.carbs   ?? 0 : null));
     const fats     = chartRows.map(r => (r ? r.fat     ?? 0 : null));
+    // A plotted point is a floor, not a measurement, on any day something didn't
+    // record that macro. A line chart has nowhere to put a '+', so the count
+    // goes under the chart — enough to stop someone reading a dip as a real one.
+    const partialDays = k => chartRows.filter(r => r && r.partial?.[k]).length;
+    const chartNote = (k, what) => {
+      const n = partialDays(k);
+      if (!n) return '';
+      return `<div style="font-size:10px;color:var(--text-faint);margin-top:8px">${n} day${n === 1 ? '' : 's'} here didn't record ${what} for every meal — ${n === 1 ? 'that point is a floor' : 'those points are floors'}, not a measurement.</div>`;
+    };
 
     // Flagged (likely-incomplete) days get an orange dot so the gap is visible.
     // Today gets a hollow one: it is on the chart because watching it build is
@@ -635,6 +644,14 @@ export function renderTrends(container) {
     // This-week macro averages (per logged day)
     const wkAvgOf = k => wkRows.length ? wkRows.reduce((s, r) => s + (r[k] || 0), 0) / wkRows.length : 0;
     const wkP = wkAvgOf('protein'), wkC = wkAvgOf('carbs'), wkF = wkAvgOf('fat');
+    // A day's total is a LOWER BOUND when something in it didn't record that
+    // macro (a Quick Log records calories only). Averaging those in as if they
+    // were measured understates the week: five days at 160 g and two Quick Logs
+    // average 114 g against a 150 g goal — a shortfall that never happened. The
+    // summary route now says which days are floors; everything that averages
+    // them marks the result the same way the macro bar does, with a '+'.
+    const anyPartial = (arr, k) => arr.some(r => r.partial?.[k]);
+    const plus = (arr, k) => (anyPartial(arr, k) ? '+' : '');
 
     // ── Weekly averages over the selected range (Mon–Sun buckets), per macro ──
     // Excludes the in-progress week — the "This week" card above already covers
@@ -647,7 +664,15 @@ export function renderTrends(container) {
 
     const weekData = Object.entries(weekMap)
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([mon, arr]) => ({ mon, kg: weekKg(mon), cal: avgOf(arr, 'calories'), protein: avgOf(arr, 'protein'), carbs: avgOf(arr, 'carbs'), fat: avgOf(arr, 'fat') }));
+      .map(([mon, arr]) => ({
+        mon, kg: weekKg(mon),
+        cal: avgOf(arr, 'calories'), protein: avgOf(arr, 'protein'),
+        carbs: avgOf(arr, 'carbs'), fat: avgOf(arr, 'fat'),
+        // Keyed by the metric names drawWeekBars uses, not the row's column
+        // names — 'cal' is the metric, 'calories' is the column.
+        part: { cal: anyPartial(arr, 'calories'), protein: anyPartial(arr, 'protein'),
+                carbs: anyPartial(arr, 'carbs'), fat: anyPartial(arr, 'fat') },
+      }));
 
     const macroMeta = {
       cal:     { label: 'Calories', goal, color: 'var(--accent)',  disp: v => fmtE(v) },
@@ -672,6 +697,10 @@ export function renderTrends(container) {
         const mon = new Date(w.mon + 'T00:00:00');
         const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
         const val = w[metric];
+        // A floor already past the goal still proves you were over, so the bar and
+        // the over-colour stay; only the size of the excess is a minimum, and
+        // the '+' says so. Same rule the macro bar follows on Today.
+        const unsure = !!w.part?.[metric];
         const over = m.goal && val > m.goal;
         const kgTxt = w.kg == null ? '–'
           : `${w.kg > 0 ? '+' : w.kg < 0 ? '−' : ''}${Math.abs(w.kg).toFixed(1)}`;
@@ -683,10 +712,10 @@ export function renderTrends(container) {
             <div style="height:100%;width:${Math.round(val / max * 100)}%;background:${m.color};border-radius:5px"></div>
             ${goalPct != null ? `<div title="goal" style="position:absolute;top:-1px;bottom:-1px;left:${goalPct}%;width:2px;background:var(--text);opacity:.5"></div>` : ''}
           </div>
-          <span style="width:46px;text-align:right;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;${over ? 'color:var(--warning)' : ''}">${m.disp(val)}</span>
+          <span style="width:46px;text-align:right;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;${over ? 'color:var(--warning)' : ''}">${m.disp(val)}${unsure ? '+' : ''}</span>
           ${anyKg ? `<span title="trend weight change" style="width:52px;text-align:right;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:${kgColor}">${kgTxt}${w.kg == null ? '' : ' kg'}</span>` : ''}
         </div>`;
-      }).join('') + `<div style="display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--text-faint);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+      }).join('') + `${weekData.some(w => w.part?.[metric]) ? `<div style="font-size:10px;color:var(--text-faint);margin-top:8px">+ = at least this much; a meal that week didn't record ${m.label.toLowerCase()}.</div>` : ''}<div style="display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--text-faint);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
           <span>avg per logged day</span>
           <span>┃ goal ${m.disp(m.goal)}${anyKg ? ' · kg = 7-day trend move' : ''}</span>
         </div>${anyKg && weekData.some(w => w.kg == null) ? `<div style="font-size:10px;color:var(--text-faint);margin-top:4px">“–” = no weigh-in that week, so there's nothing to compare.</div>` : ''}`;
@@ -1072,6 +1101,7 @@ export function renderTrends(container) {
           </div>
         </div>
         <div style="height:160px;position:relative"><canvas id="chart-cal"></canvas></div>
+        ${chartNote('calories', 'calories')}
       </div>
 
       <!-- ── Shift from "is it working" to "your week & logging" ── -->
@@ -1092,9 +1122,10 @@ export function renderTrends(container) {
         </div>
         <div style="font-size:12px;color:${wkAvg > goal ? 'var(--warning)' : 'var(--text-muted)'};margin-top:10px">${wkAvg > goal ? `+${fmtE(wkAvg - goal)} over` : `${fmtE(goal - wkAvg)} under`} your ${fmtE(goal)} ${ul} goal, on average</div>
         <div style="display:flex;gap:14px;font-size:12px;margin-top:8px;border-top:1px solid var(--border);padding-top:10px">
-          <span><span style="color:var(--protein);font-weight:600">${Math.round(wkP)}</span><span style="color:var(--text-faint)">/${Math.round(proteinGoal)} P</span></span>
-          <span><span style="color:var(--carbs);font-weight:600">${Math.round(wkC)}</span><span style="color:var(--text-faint)">/${Math.round(carbGoal)} C</span></span>
-          <span><span style="color:var(--fat);font-weight:600">${Math.round(wkF)}</span><span style="color:var(--text-faint)">/${Math.round(fatGoal)} F</span></span>
+          <span><span style="color:var(--protein);font-weight:600">${Math.round(wkP)}${plus(wkRows, 'protein')}</span><span style="color:var(--text-faint)">/${Math.round(proteinGoal)} P</span></span>
+          <span><span style="color:var(--carbs);font-weight:600">${Math.round(wkC)}${plus(wkRows, 'carbs')}</span><span style="color:var(--text-faint)">/${Math.round(carbGoal)} C</span></span>
+          <span><span style="color:var(--fat);font-weight:600">${Math.round(wkF)}${plus(wkRows, 'fat')}</span><span style="color:var(--text-faint)">/${Math.round(fatGoal)} F</span></span>
+          ${['protein', 'carbs', 'fat'].some(k => anyPartial(wkRows, k)) ? `<span style="color:var(--text-faint);font-size:11px;flex-basis:100%">+ = at least; a meal this week didn't record every macro</span>` : ''}
           <span style="color:var(--text-faint);margin-left:auto">avg/day</span>
         </div>`}
         ${wkToday ? `<div style="font-size:12px;color:var(--text-faint);margin-top:10px;border-top:1px solid var(--border);padding-top:10px">Today in progress · <strong style="color:var(--text-muted)">${fmtE(wkToday.calories || 0)} ${ul}</strong> so far, not counted above.</div>` : ''}
@@ -1166,6 +1197,7 @@ export function renderTrends(container) {
       <div class="card" style="margin-bottom:12px">
         <div class="label" style="margin-bottom:10px">Protein <span class="range-chip">· ${rangeLabel()}</span></div>
         <div style="height:160px;position:relative"><canvas id="chart-pro"></canvas></div>
+        ${chartNote('protein', 'protein')}
       </div>
 
       <!-- Carbs + fat (secondary — tucked away) -->
@@ -1174,10 +1206,12 @@ export function renderTrends(container) {
         <div class="card" style="margin-top:10px">
           <div class="label" style="margin-bottom:10px">Carbs <span class="range-chip">· ${rangeLabel()}</span></div>
           <div style="height:150px;position:relative"><canvas id="chart-carb"></canvas></div>
+          ${chartNote('carbs', 'carbs')}
         </div>
         <div class="card" style="margin-top:12px">
           <div class="label" style="margin-bottom:10px">Fat <span class="range-chip">· ${rangeLabel()}</span></div>
           <div style="height:150px;position:relative"><canvas id="chart-fat"></canvas></div>
+          ${chartNote('fat', 'fat')}
         </div>
       </details>
     `;

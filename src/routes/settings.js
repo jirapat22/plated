@@ -1,8 +1,13 @@
 const express = require('express');
 const { getDb } = require('../db');
-const { todayLocal, isValidTz, tzFor } = require('../utils/tz');
+const { todayLocal, isValidTz, tzFor, isRealDate } = require('../utils/tz');
 const { recalcMacroGoals, trendWeight } = require('../utils/macros');
 const { snapshotGoals, goalsOn } = require('../utils/goals');
+// The same guards the live write routes apply. An import is no more trusted
+// than a form — the principle this file already states over the measurements
+// band — but it was only ever applied to the tables added after it was written.
+const { qtyError } = require('./meals');
+const { badWeight } = require('./weight');
 
 const router = express.Router();
 
@@ -356,6 +361,12 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
     let measurementsImported = 0;
     let overridesImported = 0;
     let leftoversImported = 0;
+    let sessionsImported = 0;
+    let weightImported = 0;
+    // Rows the file carried that no live route would have accepted. Reported
+    // rather than dropped in silence: a restore that quietly loses days is its
+    // own kind of data loss, and the only place it can be noticed is here.
+    let skipped = 0;
     db.exec('BEGIN');
     try {
       const findFood = db.prepare('SELECT id FROM foods WHERE name = $name AND brand IS $brand');
@@ -390,8 +401,15 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
       const insSession = db.prepare('INSERT INTO meal_sessions (date, name, meal_index, logged_at, profile_id) VALUES ($date, $name, $idx, $logged_at, $pid)');
       const sessionIdMap = new Map();
       for (const s of meal_sessions) {
+        // A session's date is the only handle the app has on it. Anything that
+        // isn't a real day makes a session the day route refuses to open (400)
+        // and nothing in the UI can reach — while its calories keep counting in
+        // every summary, average and export. Dropped, not repaired: there is no
+        // way to know which day 2026-02-30 was meant to be.
+        if (!isRealDate(s.date)) { skipped++; continue; }
         const newId = insSession.run({ date: s.date, name: s.name ?? null, idx: s.meal_index || 1, logged_at: s.logged_at || null, pid }).lastInsertRowid;
         sessionIdMap.set(s.id, newId);
+        sessionsImported++;
       }
 
       const insEntry = db.prepare(`
@@ -401,13 +419,29 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
       for (const e of meal_entries) {
         const sid = sessionIdMap.get(e.meal_session_id);
         const fid = foodIdMap.get(e.food_id);
-        if (sid == null || fid == null) continue; // orphaned reference — food/session missing from this export
+        if (sid == null || fid == null) { skipped++; continue; } // orphaned reference — food/session missing from this export (or its session was dropped above)
+        // The same ceiling POST /api/meals/entries enforces. Without it a file
+        // carrying quantity_g 1000000000 restored a 5,189,000,000 kcal entry —
+        // the exact figure that guard was written for — into the day totals,
+        // the 28-day intake average and the real-maintenance estimate behind
+        // Trends' verdict.
+        if (qtyError(e.quantity_g)) { skipped++; continue; }
         insEntry.run({ sid, fid, qty: e.quantity_g, cal: e.calories ?? null, pro: e.protein ?? null, carb: e.carbs ?? null, fat: e.fat ?? null, fiber: e.fiber ?? null, logged_at: e.logged_at || null });
         entriesImported++;
       }
 
       const insWeight = db.prepare('INSERT INTO weight_log (date, weight_kg, note, source, logged_at, profile_id) VALUES ($date, $kg, $note, $src, $logged_at, $pid)');
-      for (const w of weight_log) insWeight.run({ date: w.date, kg: w.weight_kg, note: w.note ?? null, src: w.source || 'manual', logged_at: w.logged_at || null, pid });
+      for (const w of weight_log) {
+        // Everything POST /api/weight learned the hard way, applied to the file
+        // as well: a real date, the 20-400 kg band, and — the one that bites
+        // silently — storing parseFloat rather than the raw value. SQLite's
+        // loose typing accepted "70abc" straight into the REAL column, where it
+        // poisons every average, trend and macro recalculation that reads it
+        // back. Same three bugs as the route, arriving through the other door.
+        if (!isRealDate(w.date) || badWeight(w.weight_kg)) { skipped++; continue; }
+        insWeight.run({ date: w.date, kg: parseFloat(w.weight_kg), note: w.note ?? null, src: w.source || 'manual', logged_at: w.logged_at || null, pid });
+        weightImported++;
+      }
 
       // Batches. Only touched when the file actually carries them, so restoring
       // a pre-batch backup leaves your current batches alone instead of wiping
@@ -419,7 +453,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
           VALUES ($pid, $name, $fid, $cal, $pro, $carb, $fat, $fiber, $cooked, $remaining, $ing, $created)
         `);
         for (const b of batches) {
-          if (!b.name || !(b.cooked_g > 0)) continue;          // unusable without a divisor
+          if (!b.name || !(b.cooked_g > 0)) { skipped++; continue; }   // unusable without a divisor
           // Ingredients are stored as JSON carrying the ORIGINAL database's
           // food ids. Remap them the same way entries are, and drop an id that
           // didn't come across rather than leaving one pointing at a stranger's
@@ -472,7 +506,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
         for (const gh of goal_history) {
           // The date is the primary key and the whole point of the row — a junk
           // one would sort wrong and answer for days it never applied to.
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(gh.effective_from ?? ''))) continue;
+          if (!isRealDate(gh.effective_from)) { skipped++; continue; }
           insGoal.run({
             pid, d: gh.effective_from,
             cal: gh.calorie_goal ?? null, pro: gh.protein_goal ?? null, carb: gh.carb_goal ?? null,
@@ -482,7 +516,6 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
         }
       }
 
-      const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v ?? ''));
 
       if (measurements) {
         db.prepare('DELETE FROM measurements WHERE profile_id = $pid').run({ pid });
@@ -493,7 +526,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
           // Same 40-200 cm band the POST route enforces — an import is no more
           // trusted than a form, and a 32 typed for inches would render a chart
           // nobody can read.
-          if (!isDate(m.date) || !(w >= 40 && w <= 200)) continue;
+          if (!isRealDate(m.date) || !(w >= 40 && w <= 200)) { skipped++; continue; }
           insM.run({ pid, d: m.date, w: Math.round(w * 10) / 10, at: m.logged_at ?? null });
           measurementsImported++;
         }
@@ -503,7 +536,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
         db.prepare('DELETE FROM daily_overrides WHERE profile_id = $pid').run({ pid });
         const insO = db.prepare('INSERT OR REPLACE INTO daily_overrides (profile_id, date, key, value) VALUES ($pid, $d, $k, $v)');
         for (const o of overrides) {
-          if (!isDate(o.date) || !o.key) continue;
+          if (!isRealDate(o.date) || !o.key) { skipped++; continue; }
           insO.run({ pid, d: o.date, k: String(o.key), v: o.value == null ? null : String(o.value) });
           overridesImported++;
         }
@@ -528,7 +561,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
         const insL = db.prepare(`INSERT INTO leftovers (profile_id, name, food_id, quantity_g, calories, protein, carbs, fat, fiber, created_at)
           VALUES ($pid, $n, $f, $q, $cal, $p, $c, $ft, $fb, COALESCE($at, datetime('now')))`);
         for (const l of leftovers) {
-          if (!l.name) continue;
+          if (!l.name) { skipped++; continue; }
           // Food ids are per-database, so remap like meal_entries do. A leftover
           // whose food didn't come across keeps its stored macros and loses only
           // the link — it is still a real portion in a real fridge.
@@ -579,9 +612,12 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
 
     res.json({
       success: true,
-      imported: { meals: meal_sessions.length, entries: entriesImported, weight: weight_log.length,
+      // Counts of what was actually written. These reported the file's own row
+      // counts, which stopped being true the moment anything could be rejected.
+      imported: { meals: sessionsImported, entries: entriesImported, weight: weightImported,
         foods_added: foodsAdded, batches: batchesImported, goal_rows: goalRowsImported,
         measurements: measurementsImported, day_notes: overridesImported, leftovers: leftoversImported },
+      skipped,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

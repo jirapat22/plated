@@ -81,11 +81,22 @@ function rateLimit({ windowMs, max, blockMs, count = 'requests' }) {
     // back attempts they were already free to make from a fresh address.
     if (hits.size > MAX_KEYS) {
       for (const [k, v] of hits) if (now > v.resetAt && v.blockedUntil < now) hits.delete(k);
-      // Never evict an IP that is currently serving a block; that is the one
-      // entry an attacker would want dropped.
+      // Prefer to evict an IP that is NOT currently serving a block; that is the
+      // one entry an attacker would want dropped.
       for (const [k, v] of hits) {
         if (hits.size <= MAX_KEYS) break;
         if (v.blockedUntil <= now && k !== key) hits.delete(k);
+      }
+      // A preference, not a veto. Making it a veto left MAX_KEYS still not
+      // binding, because in a spray EVERY entry is blocked: 20,000 addresses at
+      // four requests each all tripped the block, nothing was evictable, and the
+      // first address was still held at 4x the cap. The map has to be bounded
+      // whatever is in it — and dropping an attacker's block costs nothing they
+      // could not already get by moving to a fresh address, which is what filled
+      // the map in the first place.
+      for (const [k] of hits) {
+        if (hits.size <= MAX_KEYS) break;
+        if (k !== key) hits.delete(k);
       }
     }
 

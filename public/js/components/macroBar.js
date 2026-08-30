@@ -57,9 +57,13 @@ export function renderMacroBar(container, totals, goals, showRemaining = true, p
   // One line for the whole card rather than a repeated caveat on every row —
   // the reason is the same for all of them, and four copies of it would crowd a
   // 390px screen without saying anything the first one didn't.
+  //
+  // "the day's meals", not "today": History renders this same component for any
+  // past day, where "a meal today" is simply the wrong day. Wording that is true
+  // on both surfaces beats a parameter telling it which one it is on.
   const anyPartial = macros.some(m => partial?.[m.key]);
   const note = anyPartial
-    ? `<div style="font-size:11px;color:var(--text-muted);margin:-4px 0 2px">+ means at least this much — a meal today didn't record every macro.</div>`
+    ? `<div style="font-size:11px;color:var(--text-muted);margin:-4px 0 2px">+ means at least this much — one of the day's meals didn't record every macro.</div>`
     : '';
 
   container.innerHTML = rows + note;

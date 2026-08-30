@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../db');
-const { todayLocal, tzFor } = require('../utils/tz');
+const { todayLocal, tzFor, isRealDate } = require('../utils/tz');
 
 const router = express.Router();
 const round1 = n => Math.round(n * 10) / 10;
@@ -86,7 +86,12 @@ router.post('/:id/log', (req, res) => {
       .get({ id: req.params.id, p: pid });
     if (!l) return res.status(404).json({ error: 'Leftover not found' });
 
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.date || '')
+    // isRealDate, not the shape regex: the shape alone accepted 2026-02-30 and
+    // logged the leftover onto a day that does not exist — one the day route
+    // then refuses to open (400), so it can never be seen, edited or deleted,
+    // while its calories keep counting in every summary, average and export.
+    // The sweep that replaced this regex everywhere else missed this one route.
+    const date = isRealDate(req.body?.date || '')
       ? req.body.date : todayLocal(tzFor(db, pid));
 
     let sid = parseInt(req.body?.meal_session_id) || null;
