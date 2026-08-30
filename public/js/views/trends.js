@@ -3,7 +3,7 @@ import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
 import { localDate, addDaysIso }      from '../utils/date.js';
 import { showToast, navigateTo }      from '../app.js';
 import { openFoodEntry, lazySession } from './log.js';
-import { classifyDay, isFlagged, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY, LOG_TODAY } from '../utils/logCheck.js';
+import { classifyDay, isFlagged, calcStreak, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY, LOG_TODAY } from '../utils/logCheck.js';
 import { movingAvg, trendWeightNow, weeklyTrendChange, etaWeeks, maintenanceShortfall } from '../utils/stats.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -335,44 +335,6 @@ function makeChart(id, labels, data, color, yLabel, opts = {}) {
 // Consecutive fully-logged days (a consistency streak — not a hit-your-calorie-
 // target streak). Allows 1 skipped (no-log) day per 7-day window. An
 // under-logged day breaks it; today is in progress so it can only extend it.
-function calcStreak(summary, goal, todayISO) {
-  const byDate = Object.fromEntries(summary.map(r => [r.date, r]));
-  const todayD = new Date();
-  let streak       = 0;
-  let graceUsed    = 0;
-  for (let i = 0; i < 365; i++) {
-    const d = new Date(todayD);
-    d.setDate(d.getDate() - i);
-    const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    const row = byDate[iso] || { date: iso, calories: 0, meal_count: 0 };
-    const status = classifyDay(row, row.goal ?? goal, todayISO);
-    // Today counts toward the streak the moment anything is logged — it is a
-    // "did you show up" number, not a "was the day complete" one. LOG_TODAY has
-    // to be included explicitly now that today no longer arrives as 'complete',
-    // or the streak would drop by one every morning until dinner.
-    const logged = status === LOG_COMPLETE || status === LOG_TODAY;
-    const empty  = status === LOG_EMPTY;      // nothing logged that day
-
-    if (i > 0 && i % 7 === 0) graceUsed = 0;   // reset grace counter every 7 days back
-
-    if (i === 0) {
-      // Today is still in progress: it extends the streak as soon as it's
-      // logged, but a not-yet-logged today never breaks it.
-      if (logged) streak++;
-      continue;
-    }
-
-    if (logged) {
-      streak++;
-    } else if (empty && graceUsed < 1) {
-      graceUsed++;
-      streak++;                                  // one skipped day per week is OK
-    } else {
-      break;                                     // under-logged, or a 2nd skip in the week
-    }
-  }
-  return streak;
-}
 
 export function renderTrends(container) {
   container.classList.add('trends-view');
@@ -1167,7 +1129,7 @@ export function renderTrends(container) {
           <div class="stat-cell"><div class="stat-num">${completePct}%</div><div class="stat-lbl">fully logged</div></div>
           <div class="stat-cell"><div class="stat-num" style="color:${recentFlagged.length ? FLAG : 'var(--text)'}">${recentFlagged.length}</div><div class="stat-lbl">need a look</div></div>
         </div>
-        ${todayRow ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">Today isn't counted here — it's still being logged (${fmtE(todayRow.calories || 0)} ${ul} so far). It joins these figures tomorrow.</div>` : ''}
+        ${todayRow ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">Today isn't counted in the three figures above — it's still being logged (${fmtE(todayRow.calories || 0)} ${ul} so far). It joins these figures tomorrow.</div>` : ''}
       </div>
 
       ${recentFlagged.length ? `

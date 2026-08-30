@@ -56,3 +56,60 @@ export function classifyDay(day, goal, todayISO) {
 export function isFlagged(status) {
   return status === LOG_INCOMPLETE || status === LOG_STRONG;
 }
+
+// The current run of days you showed up, walked backwards from today.
+// Lives here rather than in the Trends view because it is the same question
+// classifyDay answers, one day at a time — and because a view module cannot be
+// tested without a DOM.
+export function calcStreak(summary, goal, todayISO) {
+  const byDate = Object.fromEntries(summary.map(r => [r.date, r]));
+  // The day this account first logged anything. The walk below forgives one
+  // missed day a week, and without this it spent that forgiveness on days
+  // BEFORE you started — a day you were not here answers "nothing logged"
+  // exactly like a day you skipped. Every streak came out one longer than the
+  // history behind it: 37 against 36 consecutive logged days, and on a brand
+  // new account 'a 2 day streak' next to 'days logged: 0'.
+  const firstLogged = summary.find(r => (r.meal_count || 0) > 0)?.date || null;
+  // Nothing logged, ever: no run to be on. Without this the walk below reached
+  // yesterday, found it empty, forgave it, and reported a streak of 1 to an
+  // account that had never logged a thing.
+  if (!firstLogged) return 0;
+  const todayD = new Date();
+  let streak       = 0;
+  let graceUsed    = 0;
+  for (let i = 0; i < 365; i++) {
+    const d = new Date(todayD);
+    d.setDate(d.getDate() - i);
+    const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    // Before the account existed there is nothing to forgive, and nothing to
+    // count. Stop rather than break, so a streak can reach back to day one.
+    if (firstLogged && iso < firstLogged) break;
+    const row = byDate[iso] || { date: iso, calories: 0, meal_count: 0 };
+    const status = classifyDay(row, row.goal ?? goal, todayISO);
+    // Today counts toward the streak the moment anything is logged — it is a
+    // "did you show up" number, not a "was the day complete" one. LOG_TODAY has
+    // to be included explicitly now that today no longer arrives as 'complete',
+    // or the streak would drop by one every morning until dinner.
+    const logged = status === LOG_COMPLETE || status === LOG_TODAY;
+    const empty  = status === LOG_EMPTY;      // nothing logged that day
+
+    if (i > 0 && i % 7 === 0) graceUsed = 0;   // reset grace counter every 7 days back
+
+    if (i === 0) {
+      // Today is still in progress: it extends the streak as soon as it's
+      // logged, but a not-yet-logged today never breaks it.
+      if (logged) streak++;
+      continue;
+    }
+
+    if (logged) {
+      streak++;
+    } else if (empty && graceUsed < 1) {
+      graceUsed++;
+      streak++;                                  // one skipped day per week is OK
+    } else {
+      break;                                     // under-logged, or a 2nd skip in the week
+    }
+  }
+  return streak;
+}
