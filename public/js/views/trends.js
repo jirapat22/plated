@@ -342,6 +342,7 @@ export function renderTrends(container) {
   let weighInsOpen = false;       // weigh-ins disclosure survives re-renders
   let waistOpen    = false;       // ditto for waist
   let weighInsExpanded = false;   // "show older" state, ditto
+  let waistExpanded    = false;   // and for the waist list below it
   const rangeLabel = () => (days === Infinity ? 'all time' : `${days} days`);
 
   container.innerHTML = `
@@ -1046,6 +1047,12 @@ export function renderTrends(container) {
             <input class="input" id="waist-date" type="date" max="${todayISO}" value="${todayISO}"
               style="flex:0 1 138px;height:38px;min-width:0;font-size:12px;color:var(--text-muted)"/>
           </div>
+          <!-- The measurements themselves. Weigh-ins have had a list you can
+               scroll and correct since they existed; waist had an input and
+               nothing else, so a number typed wrong was unreachable — no list
+               to spot it in, and no way to change it. Same shape as the
+               weigh-in list on purpose: they are the same job. -->
+          <div id="waist-log-list" style="margin-top:8px"></div>
         </details>
       </div>
 
@@ -1313,6 +1320,78 @@ export function renderTrends(container) {
                   await api.post('/api/weight', { weight_kg: parseFloat(kg), date });
                   load();
                 } catch (err) { showToast(err.message, 'error'); }
+              },
+            });
+          } catch (err) { showToast(err.message, 'error'); }
+        });
+      });
+    })();
+
+    (function renderWaistLog() {
+      const box = document.getElementById('waist-log-list');
+      if (!box) return;
+      const RECENT = 6;
+      // Newest first, and every measurement — not just the chart's range. The
+      // one you want to fix is usually the one you just typed.
+      const all   = waistAll.slice().reverse();
+      const shown = waistExpanded ? all : all.slice(0, RECENT);
+      const older = all.length - RECENT;
+
+      box.innerHTML = all.length ? shown.map(([date, cm]) => `
+        <div class="weight-entry" data-date="${date}" style="padding:9px 0">
+          <div style="flex:1;min-width:0">
+            <button class="ws-edit" data-date="${date}" data-cm="${cm}" style="padding:0;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums" title="Tap to edit">${cm} cm <span style="font-size:11px;color:var(--text-faint)">✎</span></button>
+            <div class="weight-date">${date}</div>
+          </div>
+          <button class="weight-del ws-del" data-date="${date}" data-cm="${cm}">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+        </div>`).join('')
+        + (older > 0 ? `<button id="ws-show-older" class="btn btn-ghost btn-full" style="height:36px;font-size:12px;margin-top:4px">${waistExpanded ? 'Show recent only ▴' : `Show ${older} older ▾`}</button>` : '')
+        : '';
+
+      document.getElementById('ws-show-older')?.addEventListener('click', () => {
+        waistExpanded = !waistExpanded;
+        renderWaistLog();
+      });
+
+      box.querySelectorAll('.ws-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const entryEl = btn.closest('.weight-entry');
+          btn.outerHTML = `<span style="display:inline-flex;gap:6px;align-items:center">
+            <input class="input ws-edit-input" type="text" inputmode="decimal" value="${btn.dataset.cm}" style="width:76px;height:34px;padding:0 8px;text-align:center;font-weight:700"/>
+            <button class="btn btn-primary ws-edit-save" style="height:34px;padding:0 12px;font-size:12px">Save</button>
+          </span>`;
+          const input = entryEl.querySelector('.ws-edit-input');
+          input.focus(); input.select();
+          const save = async () => {
+            const v = parseFloat(input.value);
+            if (!(v > 0)) { showToast('Enter a valid measurement', 'error'); return; }
+            try {
+              // There is no PATCH for a measurement and none is needed: the row
+              // is keyed by (profile, date), so posting the same date replaces
+              // it. That is how the server has always stored them.
+              await api.post('/api/measurements', { waist_cm: v, date: btn.dataset.date });
+              showToast('Waist updated', 'success');
+              load();
+            } catch (err) { showToast(err.message, 'error'); }
+          };
+          entryEl.querySelector('.ws-edit-save').addEventListener('click', save);
+          input.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+        });
+      });
+
+      box.querySelectorAll('.ws-del').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const { cm, date } = btn.dataset;
+          try {
+            await api.delete(`/api/measurements/${date}`);
+            load();
+            showToast(`${cm} cm on ${date} deleted`, 'info', {
+              actionLabel: 'Undo',
+              onAction: async () => {
+                try { await api.post('/api/measurements', { waist_cm: parseFloat(cm), date }); load(); }
+                catch (err) { showToast(err.message, 'error'); }
               },
             });
           } catch (err) { showToast(err.message, 'error'); }

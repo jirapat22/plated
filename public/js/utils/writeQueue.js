@@ -106,6 +106,13 @@ export function startQueue(getProfileId, onResult) {
     if (r.sent || r.failed) onResult?.(r);
   };
   window.addEventListener('online', run);
+  // The server coming back, as opposed to the phone. api.js fires this on the
+  // first successful request after an unreachable one — the case neither of the
+  // other two triggers covers, because the browser never went offline and the
+  // app never left the foreground. Measured: a meal logged during a server blip
+  // stayed queued, with the app looking completely normal, until the user
+  // happened to switch away and back.
+  window.addEventListener('plated:reachable', run);
   // Coming back to a backgrounded PWA is the other moment a phone regains
   // signal without ever firing 'online'.
   document.addEventListener('visibilitychange', () => { if (!document.hidden) run(); });

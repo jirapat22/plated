@@ -64,6 +64,23 @@ async function cachedOr(method, path, fallbackErr) {
   return Object.assign(fallbackErr, { cached: hit.data, cachedAt: hit.at });
 }
 
+// Whether the last attempt found the server unreachable. The write queue needs
+// to know the moment that stops being true: it flushes on the browser's
+// 'online' event and on the app coming back to the foreground, and neither of
+// those fires when the SERVER was the thing that went away. A meal logged
+// during a thirty-second redeploy then sat on the device, unsent, while the app
+// looked entirely normal — the offline banner had already cleared.
+//
+// An event rather than a direct call, so this module keeps knowing nothing
+// about the queue (writeQueue imports api, not the other way round). It fires
+// only on the transition back, so it is rare by construction.
+let wasUnreachable = false;
+function markReachable() {
+  if (!wasUnreachable) return;
+  wasUnreachable = false;
+  try { window.dispatchEvent(new Event('plated:reachable')); } catch { /* no window in tests */ }
+}
+
 async function request(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (_token) headers['Authorization'] = `Bearer ${_token}`;
@@ -79,6 +96,7 @@ async function request(method, path, body) {
     // the expected outcome, not a fault — say so plainly and don't page Orbit.
     // (With the service worker installed this branch rarely runs: it answers
     // failed /api/ fetches itself, handled below.)
+    wasUnreachable = true;
     if (!navigator.onLine) throw await cachedOr(method, path, offlineError(method));
     if (method !== 'GET') reportApiError({ method, path, status: 0, message: netErr.message });
     throw netErr;
@@ -100,7 +118,7 @@ async function request(method, path, body) {
     // with a synthetic 503 {offline:true}. That's this device having no signal,
     // not a server fault: it was filing itself as a 5xx bug in Orbit, and
     // surfacing to the user as a toast reading just "offline".
-    if (data?.offline) throw await cachedOr(method, path, offlineError(method));
+    if (data?.offline) { wasUnreachable = true; throw await cachedOr(method, path, offlineError(method)); }
     // A restarting or unreachable server is not a bug in the app — see above.
     // Thrown with .unreachable so the global rejection handler skips it too,
     // the same way .offline is skipped; otherwise the same blip reports twice,
@@ -112,6 +130,7 @@ async function request(method, path, body) {
     // screen it was built to protect. cachedOr re-throws for writes and for
     // paths outside the allowlist, so only cacheable GETs change behaviour.
     if (UNREACHABLE.has(resp.status)) {
+      wasUnreachable = true;
       throw await cachedOr(method, path, unreachableError(resp.status));
     }
     // Server faults the app itself raised are real bugs — capture those.
@@ -125,6 +144,11 @@ async function request(method, path, body) {
     err.data = data;
     throw err;
   }
+
+  // The server answered. If the last attempt didn't, say so once — the write
+  // queue is listening, and this is the only signal it gets when the outage was
+  // the server's rather than the phone's.
+  markReachable();
 
   // Keep a copy of anything worth reading offline. Fire-and-forget: a storage
   // failure must never turn a successful request into a failed one.

@@ -53,3 +53,57 @@ test('plain api.get is unchanged by any of this', async () => {
   await assert.rejects(() => api.get('/api/meals/day/2026-08-29'),
     err => err.offline === true);
 });
+
+// ── telling the write queue the server is back ──────────────────────────────
+// The queue flushes on the browser's 'online' event and on the app returning to
+// the foreground. Neither fires when the SERVER was what went away: the phone
+// keeps its signal and the app stays open. Measured in a browser — a meal logged
+// during a server outage stayed on the device, unsent, while the offline banner
+// cleared and Today looked entirely normal.
+test('a successful request after an unreachable one announces the recovery', async () => {
+  // Earlier tests in this file leave the module believing the server is down,
+  // so settle it with one good request BEFORE listening.
+  served = { ok: 1 };
+  await api.get('/api/settings');
+
+  const seen = [];
+  const listener = () => seen.push('reachable');
+  globalThis.window = { dispatchEvent: e => { if (e.type === 'plated:reachable') listener(); } };
+
+  // A healthy request while nothing is wrong must NOT announce anything —
+  // otherwise this fires on every request in the app and the queue re-reads
+  // IndexedDB constantly.
+  served = { ok: 1 };
+  await api.get('/api/settings');
+  assert.deepStrictEqual(seen, [], 'announced a recovery that never happened');
+
+  // The server goes away. 502 is what a proxy returns mid-deploy.
+  globalThis.fetch = async () => new Response(JSON.stringify({ error: 'bad gateway' }),
+    { status: 502, headers: { 'Content-Type': 'application/json' } });
+  await assert.rejects(() => api.get('/api/settings'), err => err.unreachable === true);
+  assert.deepStrictEqual(seen, [], 'nothing to announce while it is still down');
+
+  // And comes back.
+  globalThis.fetch = async () => ok({ ok: 1 });
+  await api.get('/api/settings');
+  assert.deepStrictEqual(seen, ['reachable'], 'the recovery was not announced');
+
+  // Once, not on every subsequent request.
+  await api.get('/api/settings');
+  await api.get('/api/settings');
+  assert.deepStrictEqual(seen, ['reachable'], 'announced more than once per outage');
+
+  delete globalThis.window;
+  globalThis.fetch = async () => (mode === 'online' ? ok(served) : swOffline());
+});
+
+test('the synthetic offline 503 counts as unreachable for the same purpose', async () => {
+  const seen = [];
+  globalThis.window = { dispatchEvent: e => { if (e.type === 'plated:reachable') seen.push(1); } };
+  mode = 'offline';
+  await assert.rejects(() => api.get('/api/settings'));
+  mode = 'online'; served = { ok: 1 };
+  await api.get('/api/settings');
+  assert.strictEqual(seen.length, 1, 'coming back from no-signal must announce too');
+  delete globalThis.window;
+});
