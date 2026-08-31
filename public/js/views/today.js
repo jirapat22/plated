@@ -255,24 +255,23 @@ export function renderToday(container) {
     const midOver  = baseGoal > 0 ? Math.max(0, (eaten - baseGoal) / baseGoal) * 100 : 0;
     const leftOver = combined > 0 ? Math.max(0, (eaten - combined) / combined) * 100 : 0;
 
-    // Hint speaks to the real budget. `combined` already collapses to baseGoal
-    // when there is nothing to eat back — on a rest day, or when the burn is
-    // already inside the TDEE — so the old `hasWorkout ? ... : ...` branch was
-    // saying the same thing twice and would have got the second case wrong.
+    // Every ring answers "how much of THIS one is left" about its own
+    // denominator, so the three numbers in a ring always subtract.
     //
-    // Because it is measured against `combined`, it has to be RENDERED against
-    // `combined` too. It used to sit inside the Daily Goal ring, whose
-    // denominator is baseGoal, so a training day read "1,450 / 2,207" with
-    // "1,207 left" underneath — two numbers on one ring that don't subtract.
-    // It now sits in the Eat Target ring, and falls back to Daily Goal only
-    // when there is no Eat Target ring, which is exactly when the two budgets
-    // are equal anyway.
-    const budget    = combined;
-    const remaining = budget - eaten;
-    const hintText  = eaten === 0 ? 'nothing yet'
-      : remaining > 50  ? `${fmtE(remaining)} left`
-      : remaining < -50 ? `+${fmtE(-remaining)} over`
-      : '✓ goal hit';
+    // There was one hint before, measured against `combined` (the plan plus
+    // what you burned) and therefore drawn inside the Eat Target ring, because
+    // putting it in the Daily Goal ring read "1,450 / 2,207" with "1,207 left"
+    // underneath — two numbers on one ring that don't subtract. That was right
+    // about the arithmetic and wrong about where people look: the big ring is
+    // the one you read, and it was the only one with no answer on it.
+    //
+    // So both rings carry one now. On a training day the Daily Goal ring says
+    // what is left of the PLAN and the Eat Target ring says what is left once
+    // the workout is added — two different questions with two different, and
+    // individually correct, answers. On a rest day `combined` collapses to
+    // `baseGoal` and the Eat Target ring isn't drawn at all, so there is
+    // exactly one hint and no way to read it as two.
+    //
     // Traffic light: the colour says where you stand before you've read the
     // digits. Green with room, amber once you're into the last quarter of the
     // budget, orange past it. Proportional rather than a fixed kcal threshold —
@@ -281,12 +280,23 @@ export function renderToday(container) {
     // "nothing yet" stays muted: it's a placeholder, not a number to act on,
     // and a bold green one next to a big 0 reads as praise for having eaten
     // nothing.
-    const leftFrac  = budget > 0 ? remaining / budget : 0;
-    const hintColor = eaten === 0      ? 'var(--text-muted)'
-                    : remaining < -50  ? 'var(--over)'      // past the budget
-                    : remaining < 50   ? 'var(--success)'   // landed on it
-                    : leftFrac <= 0.25 ? 'var(--warning)'   // last quarter
-                    : 'var(--success)';                     // room to spare
+    const hintFor = budget => {
+      const remaining = budget - eaten;
+      const frac = budget > 0 ? remaining / budget : 0;
+      return {
+        text: eaten === 0 ? 'nothing yet'
+            : remaining > 50  ? `${fmtE(remaining)} left`
+            : remaining < -50 ? `+${fmtE(-remaining)} over`
+            : '✓ goal hit',
+        color: eaten === 0     ? 'var(--text-muted)'
+             : remaining < -50 ? 'var(--over)'      // past the budget
+             : remaining < 50  ? 'var(--success)'   // landed on it
+             : frac <= 0.25    ? 'var(--warning)'   // last quarter
+             : 'var(--success)',                    // room to spare
+      };
+    };
+    const goalHint   = hintFor(baseGoal);   // what is left of the plan
+    const targetHint = hintFor(combined);   // …and of the plan plus the workout
 
     // ── Concerns: one glanceable row of "what needs attention" ──
     // Protein is a floor you're trying to reach, not a ceiling to stay under —
@@ -397,7 +407,7 @@ export function renderToday(container) {
                 <div class="ring-center">
                   <div class="num ring-kcal-sm">${fmtE(eaten)}</div>
                   <div class="ring-goal-sm">/ ${fmtE(combined)}</div>
-                  <div class="ring-hint" style="color:${hintColor}">${hintText}</div>
+                  <div class="ring-hint ring-hint-sm" style="color:${targetHint.color}">${targetHint.text}</div>
                 </div>
               </div>
             </div>` : ''}
@@ -408,7 +418,7 @@ export function renderToday(container) {
                 <div class="ring-center">
                   <div class="num ring-kcal">${fmtE(eaten)}${partial?.calories ? '+' : ''}</div>
                   <div class="ring-goal muted">/ ${fmtE(baseGoal)} ${ul}</div>
-                  ${eatable > 0 ? '' : `<div class="ring-hint" style="color:${hintColor}">${hintText}</div>`}
+                  <div class="ring-hint" style="color:${goalHint.color}">${goalHint.text}</div>
                 </div>
               </div>
             </div>

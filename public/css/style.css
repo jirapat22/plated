@@ -194,7 +194,20 @@ img { display: block; max-width: 100%; }
 
 /* ─── App Shell ──────────────────────────────────────────── */
 .app {
-  position: fixed; inset: 0;
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  /* 100dvh rather than letting inset:0 set the height. A fixed element's
+     bottom:0 resolves against the LAYOUT viewport, and iOS Safari keeps that at
+     its full height whether or not the address bar is on screen. With the bar
+     showing, the shell was therefore taller than the screen: the column
+     stretched, everything sat higher than it should, and the bottom of the
+     scroll area hung below the fold — content too high, dead space underneath.
+     dvh tracks the viewport you can actually see and shrinks when the bar
+     appears. Installed to the home screen there is no bar and the two are the
+     same: measured at a simulated 430x932 with the island and home-indicator
+     insets, the nav sits flush at the bottom and the scroll area clears it by
+     14px, before and after this change. */
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -391,6 +404,12 @@ img { display: block; max-width: 100%; }
   margin-top: 3px;
   font-variant-numeric: tabular-nums;
 }
+/* The two side rings are 82px across and carry three lines. At the full 14px
+   the hint was nearly as loud as the intake figure above it (15px) and the
+   stack filled the circle corner to corner — the "wonky" look. Smaller here,
+   and a tighter margin: the hierarchy inside a small ring should read number,
+   then hint, then denominator, and it has to fit the arc. */
+.ring-hint-sm { font-size: 10px; margin-top: 2px; }
 
 /* ─── Three-ring calorie layout (goal · burned · eat target) ── */
 .tri-rings {
@@ -405,7 +424,9 @@ img { display: block; max-width: 100%; }
   text-transform: uppercase; color: var(--text-faint);
   margin-bottom: 6px; text-align: center;
 }
-.calorie-ring.ring-sm { width: 82px; height: 82px; }
+/* 92, not 82: three lines of text need the extra 10px of chord more
+   than the layout needs the 10px of gap. */
+.calorie-ring.ring-sm { width: 92px; height: 92px; }
 /* The workout ring reads differently from the other two. Its TRACK is the
    allowance you earned (amber, full circle) and its FILL is how much of that
    allowance you have eaten (orange, drawn over it). Before, the earned amount
@@ -429,7 +450,7 @@ img { display: block; max-width: 100%; }
 @media (max-width: 430px) {
   .tri-rings { gap: 2px; }
   .tri-rings .calorie-ring         { width: clamp(94px, 30vw, 140px); height: clamp(94px, 30vw, 140px); }
-  .tri-rings .calorie-ring.ring-sm { width: clamp(58px, 19vw, 82px);  height: clamp(58px, 19vw, 82px); }
+  .tri-rings .calorie-ring.ring-sm { width: clamp(62px, 21vw, 92px);  height: clamp(62px, 21vw, 92px); }
   .tri-rings .ring-kcal    { font-size: clamp(18px, 6vw, 26px); }
   .tri-rings .ring-kcal-sm { font-size: clamp(12px, 4vw, 15px); }
   /* The captions never scaled with the rings, so "nothing yet" broke in two. */
@@ -439,6 +460,7 @@ img { display: block; max-width: 100%; }
      at the ring's own width, and a wrapped hint is what spilled past the
      circle last time. Worst realistic string is "12,345 left". */
   .tri-rings .ring-hint    { font-size: clamp(11px, 3.6vw, 14px); }
+  .tri-rings .ring-hint-sm { font-size: clamp(8px, 2.6vw, 10px); }
 }
 
 /* ─── Macro Bar ──────────────────────────────────────────── */
