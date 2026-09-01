@@ -4,7 +4,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <!-- Deliberately NOT black-translucent. That asks iOS to run the web view full
+       screen, up underneath the status bar and the Dynamic Island, which is only
+       safe if env(safe-area-inset-top) reports the island's height — and in the
+       installed app it reports 0, so the profile name pill rendered directly under
+       the island. (Patched once in June by defining --safe-top; the padding rule is
+       right, the number feeding it is not, and CSS cannot measure around it.)
+       An opaque style has iOS lay the view out BELOW the status bar itself, so the
+       island is outside the page and nothing has to know how tall it is. "black"
+       rather than "default" because this app is dark by default (#0d0d0f) and the
+       bar then disappears into it; recent iOS tints the bar from theme-color, which
+       app.js already keeps matched to the page in both themes, in which case the
+       choice does not matter. The --safe-top padding stays: it is 0 here, and a real
+       number in Safari and in landscape. -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
   <meta name="apple-mobile-web-app-title" content="Plated" />
   <meta name="theme-color" content="#0d0d0f" />
   <script>
