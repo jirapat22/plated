@@ -43,3 +43,33 @@ test('the top padding still reads the inset', () => {
   assert.match(bar.slice(0, bar.indexOf('}')), /padding:.*var\(--safe-top/);
   assert.match(css, /--safe-top:\s*env\(safe-area-inset-top/);
 });
+
+// ── the top inset is spent once, not twice ──────────────────────────────────
+// Measured on the device rather than reasoned about, after three rounds of the
+// latter missed. iPhone 15 Plus, home-screen app, v234:
+//
+//   screen 430x932, viewport 430x873, insets top 59 / bottom 34
+//
+// 932 - 873 = 59. iOS had ALREADY moved the web view below the status bar —
+// and still reported the 59px inset. Spending it again put 59px of dead space
+// above the name pill and took the same 59 off the scroll area. So in a
+// standalone app --safe-top is zero; in a browser tab it is whatever iOS says,
+// because there the page really does start at the top of the screen.
+test('the installed app does not pay the top inset twice', () => {
+  const css = fs.readFileSync(new URL('../public/css/style.css', import.meta.url), 'utf8');
+  const at = css.indexOf('@media (display-mode: standalone)');
+  assert.ok(at > -1, 'no standalone block — the top inset will be applied on top of one iOS already applied');
+  const block = css.slice(at, css.indexOf('}', css.indexOf('{', at) + 1));
+  assert.match(block, /--safe-top:\s*0/, 'the standalone block must zero --safe-top');
+});
+
+test('nothing reaches past the token to the raw inset', () => {
+  // A rule using env(safe-area-inset-top) directly would miss the override
+  // above and double-count again — which is exactly how the toast container
+  // was written. Only the token definition itself may name it.
+  const css = fs.readFileSync(new URL('../public/css/style.css', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');   // prose about this rule is not a use of it
+  const uses = [...css.matchAll(/([-\w]+)\s*:\s*[^;]*env\(safe-area-inset-top/g)].map(m => m[1]);
+  assert.deepStrictEqual(uses, ['--safe-top'],
+    'read the top inset through var(--safe-top), not env() directly');
+});

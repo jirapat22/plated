@@ -81,6 +81,8 @@
   --nav-h:        64px;
   --safe-bottom:  env(safe-area-inset-bottom, 0px);
   --safe-top:     env(safe-area-inset-top, 0px);
+  /* Read through --safe-top, never env() directly: the standalone override
+     below is the whole point, and a rule that reaches past it double-counts. */
   --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono:    'Space Mono', ui-monospace, 'SF Mono', monospace;
 }
@@ -191,6 +193,27 @@ img { display: block; max-width: 100%; }
   font-weight: 600;
 }
 .muted { color: var(--text-muted); }
+
+/* iOS reports the device's safe-area insets whether or not it has already
+   applied them, and in the installed app it has.
+   Measured on an iPhone 15 Plus, home-screen app, v234: screen 932 tall,
+   viewport 873, and env(safe-area-inset-top) still 59 — the 873 IS 932 minus
+   that 59. With an opaque status bar (see index.html) iOS starts the web view
+   below the status bar itself, so the inset is already spent; adding it again
+   put 59px of dead space above the name pill and took the same 59px off the
+   scroll area underneath. That is the "screen doesn't fit" report, and it is
+   why measuring beat three rounds of reasoning about it.
+   Only the TOP is double-counted. The view still runs to the bottom edge of
+   the screen, so --safe-bottom is a real 34px keeping the nav bar off the home
+   indicator, and it stays.
+   Not scoped to iOS: an Android home-screen app is laid out the same way,
+   below the system bar, and reports 0 anyway.
+   In a browser tab this block does not apply and --safe-top keeps the real
+   value, because there the page genuinely does start at the top of the
+   screen. */
+@media (display-mode: standalone) {
+  :root { --safe-top: 0px; }
+}
 
 /* ─── App Shell ──────────────────────────────────────────── */
 .app {
@@ -964,7 +987,7 @@ canvas { max-width: 100%; }
 /* ─── Toast ──────────────────────────────────────────────── */
 .toast-container {
   position: fixed;
-  top: calc(16px + env(safe-area-inset-top, 0px));
+  top: calc(16px + var(--safe-top));
   left: 50%;
   transform: translateX(-50%);
   z-index: 500;
