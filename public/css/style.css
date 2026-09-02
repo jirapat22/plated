@@ -194,26 +194,20 @@ img { display: block; max-width: 100%; }
 }
 .muted { color: var(--text-muted); }
 
-/* iOS reports the device's safe-area insets whether or not it has already
-   applied them, and in the installed app it has.
-   Measured on an iPhone 15 Plus, home-screen app, v234: screen 932 tall,
-   viewport 873, and env(safe-area-inset-top) still 59 — the 873 IS 932 minus
-   that 59. With an opaque status bar (see index.html) iOS starts the web view
-   below the status bar itself, so the inset is already spent; adding it again
-   put 59px of dead space above the name pill and took the same 59px off the
-   scroll area underneath. That is the "screen doesn't fit" report, and it is
-   why measuring beat three rounds of reasoning about it.
-   Only the TOP is double-counted. The view still runs to the bottom edge of
-   the screen, so --safe-bottom is a real 34px keeping the nav bar off the home
-   indicator, and it stays.
-   Not scoped to iOS: an Android home-screen app is laid out the same way,
-   below the system bar, and reports 0 anyway.
-   In a browser tab this block does not apply and --safe-top keeps the real
-   value, because there the page genuinely does start at the top of the
-   screen. */
-@media (display-mode: standalone) {
-  :root { --safe-top: 0px; }
-}
+/* WHY THERE IS NO STANDALONE OVERRIDE HERE.
+   v235 zeroed --safe-top for standalone, reasoning from one measurement on an
+   iPhone 15 Plus: screen 932, viewport 873, top inset 59, and 932 - 873 = 59,
+   so iOS looked to have already moved the view below the status bar and to be
+   reporting the inset a second time.
+   The device disagreed. With the padding gone the name pill went under the
+   Dynamic Island — which means the viewport is 873 tall but still anchored at
+   the TOP of the screen, not below the status bar. The size told us how tall
+   the viewport is and nothing about where it starts, and the difference
+   happening to equal the inset is what made a guess look like arithmetic.
+   So the inset is spent once, here, the way it was before: the page starts
+   under the island and pads itself out. Do not remove it again without a
+   screenshot of the top of the screen — the numbers alone cannot tell these
+   two arrangements apart. */
 
 /* ─── App Shell ──────────────────────────────────────────── */
 .app {

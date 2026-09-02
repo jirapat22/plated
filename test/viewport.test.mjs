@@ -44,23 +44,28 @@ test('the top padding still reads the inset', () => {
   assert.match(css, /--safe-top:\s*env\(safe-area-inset-top/);
 });
 
-// ── the top inset is spent once, not twice ──────────────────────────────────
-// Measured on the device rather than reasoned about, after three rounds of the
-// latter missed. iPhone 15 Plus, home-screen app, v234:
+// ── the top inset is spent exactly once, and it IS spent ────────────────────
+// This test asserted the opposite for about an hour. The v234 device numbers
+// were screen 430x932, viewport 430x873, top inset 59 — and since 932 - 873 is
+// 59, iOS looked to have already moved the view below the status bar and to be
+// reporting the inset again on top of that. v235 zeroed --safe-top for
+// standalone on that reasoning.
 //
-//   screen 430x932, viewport 430x873, insets top 59 / bottom 34
+// The phone said no: with the padding gone the name pill went under the
+// Dynamic Island. So the viewport is 873 tall but still anchored at the TOP of
+// the screen. The measurement gave its height and said nothing about where it
+// starts — the difference happening to equal the inset is what made a guess
+// look like arithmetic.
 //
-// 932 - 873 = 59. iOS had ALREADY moved the web view below the status bar —
-// and still reported the 59px inset. Spending it again put 59px of dead space
-// above the name pill and took the same 59 off the scroll area. So in a
-// standalone app --safe-top is zero; in a browser tab it is whatever iOS says,
-// because there the page really does start at the top of the screen.
-test('the installed app does not pay the top inset twice', () => {
+// Pinned now: the thing both arrangements agree on. Something must pad the
+// top, and exactly one thing may.
+test('the top inset is applied, once', () => {
   const css = fs.readFileSync(new URL('../public/css/style.css', import.meta.url), 'utf8');
-  const at = css.indexOf('@media (display-mode: standalone)');
-  assert.ok(at > -1, 'no standalone block — the top inset will be applied on top of one iOS already applied');
-  const block = css.slice(at, css.indexOf('}', css.indexOf('{', at) + 1));
-  assert.match(block, /--safe-top:\s*0/, 'the standalone block must zero --safe-top');
+  const bar = css.slice(css.indexOf('.profile-bar {'));
+  assert.match(bar.slice(0, bar.indexOf('}')), /padding:\s*calc\(var\(--safe-top/,
+    'the profile bar must pad itself clear of the island');
+  assert.strictEqual(css.indexOf('@media (display-mode: standalone)'), -1,
+    'a standalone override cancelled this padding once already and hid the name pill — see the note in style.css');
 });
 
 test('nothing reaches past the token to the raw inset', () => {
