@@ -261,23 +261,37 @@ export function renderToday(container) {
     // The part of the burn you may eat back. Zero when it is already counted,
     // and never negative: IronLog passes a burn straight through as
     // `Number(...) || 0`, so a bad reading can arrive below zero, and a
-    // negative `eatable` makes `combined` smaller than `baseGoal` while still
-    // failing the `eatable > 0` test that decides which ring shows the hint.
-    // That is precisely the two-numbers-that-don't-subtract bug, wearing a
-    // minus sign. Clamping here keeps the ring and its hint on one budget.
+    // negative `eatable` makes `combined` smaller than `baseGoal` — an Eat
+    // Target BELOW the Daily Goal, sitting right beside it. That is precisely
+    // the two-numbers-that-don't-subtract bug, wearing a minus sign, and it
+    // matters more now that the ring is always on screen rather than only when
+    // there was a burn. Clamping here keeps the ring and its hint on one
+    // budget: at worst Eat Target equals Daily Goal, never less.
     const eatable     = inTdee ? 0 : Math.max(0, burned);
     // Whether this profile is an IronLog profile at all — read from settings,
     // not from whether a burn happens to have arrived. Settings are loaded
     // before the first paint and cached offline, so the answer is the same on
-    // every frame; deriving it from the payload would make the ring appear a
+    // every frame; deriving it from the payload would make the rings appear a
     // round trip late, which is the flicker the memo above exists to stop.
+    //
+    // This one flag decides BOTH side rings, and that is the point: the card is
+    // three rings for an IronLog profile and one for everyone else, and it does
+    // not change shape again after that.
     //
     // The Workout ring used to draw unconditionally, so someone who has never
     // touched IronLog got a third ring reading "0 rest day" every day forever.
     // The IronLog panel further down has always hidden itself this way, and
     // Settings hides the Admin section on the same principle: derive it, don't
-    // ask. (The Eat Target ring needs no such rule — it is drawn from a burn,
-    // so it has never appeared for a profile without one.)
+    // ask.
+    //
+    // The Eat Target ring went the other way. It was drawn only when there was
+    // a burn to eat back (eatable > 0) — correct arithmetic, and a screen that
+    // would not sit still: a rest day, a sync that had not landed, or an
+    // activity level that already counts training each took a ring away and
+    // shuffled the other two. On those days Eat Target and Daily Goal carry the
+    // same number, and that is not a duplicate to hide but the answer to the
+    // question the ring asks: today, your target IS your goal. A repeated
+    // figure reads better than a card that rearranges itself.
     const usesIronlog = !!String(settings.ironlog_api_url || '').trim();
     // Configured, but nothing has come back yet — the very first paint, or
     // IronLog unreachable. The burn is UNKNOWN, and 0 is not a synonym for it:
@@ -450,7 +464,7 @@ export function renderToday(container) {
       <div style="padding:0 16px 14px">
         <div class="card" id="goal-card">
           <div class="tri-rings">
-            ${eatable > 0 ? `
+            ${usesIronlog ? `
             <div class="ring-col">
               <div class="ring-title">Eat Target</div>
               <div class="ring-wrap-relative">
