@@ -388,7 +388,11 @@ export function renderProfileBar() {
   if (!bar) return;
   if (!currentProfile) { bar.innerHTML = ''; return; }
   const c = currentProfile.accent_color || '#c8b8ff';
-  bar.innerHTML = `<span class="profile-pill" style="background:${c}1f;color:${accentInk(c)};border-color:${c}66">${esc(currentProfile.name)}</span>`;
+  // 1f/66 was a 12% fill behind a 40% border — on a phone, under the Dynamic
+  // Island's black mass, the whole chip read as absent ("the name tag is kinda
+  // gone"). It sits in the hardest place on the screen to see anything, so it
+  // gets a fill you can actually find: 20% behind a 60% border.
+  bar.innerHTML = `<span class="profile-pill" style="background:${c}33;color:${accentInk(c)};border-color:${c}99">${esc(currentProfile.name)}</span>`;
 }
 
 // Called by Settings after rename / colour change so the pill stays in sync

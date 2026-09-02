@@ -788,9 +788,16 @@ function phaseBadge(phase) {
     bulk:     { glyph: ICON_TREND_UP,   color: '#c8b8ff' },
   };
   const { glyph, color } = map[phase] || map.maintain;
-  // Tint and border stay at the raw hex (they're 9%/27% washes, fine on either
-  // ground); only the text runs through accentInk so it darkens in light mode.
-  return `<span style="font-size:11px;font-weight:700;color:${accentInk(color)};background:${color}18;padding:3px 10px;border-radius:999px;border:1px solid ${color}44;display:inline-flex;align-items:center;gap:4px">${icon(glyph, 12)} ${(phase||'maintain').toUpperCase()}</span>`;
+  // Tint and border stay at the raw hex (washes work on either ground); only the
+  // text runs through accentInk so it darkens in light mode.
+  //
+  // Sizes and alphas raised after a screenshot of the real phone: 11px on a 9%
+  // wash with a 27% border reads as a smudge at arm's length, which is what
+  // "the cut banner is blurry" meant — the chip was never a shape, just tinted
+  // text. 12px, a 15% fill and a 50% border make it an object you can find
+  // before you read it. Text contrast is still 5.8:1 on the page (it was 6.3
+  // — a stronger fill costs a little, and a chip you cannot locate costs more).
+  return `<span style="font-size:12px;font-weight:700;color:${accentInk(color)};background:${color}26;padding:4px 11px;border-radius:999px;border:1px solid ${color}80;display:inline-flex;align-items:center;gap:4px">${icon(glyph, 12)} ${(phase||'maintain').toUpperCase()}</span>`;
 }
 
 // phaseProgressCard lived here: net-vs-target with its own progress bar. It was

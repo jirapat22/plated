@@ -1348,7 +1348,10 @@ canvas { max-width: 100%; }
   padding: calc(var(--safe-top, 0px) + 8px) 16px 6px;
 }
 .profile-pill {
-  font-size: calc(13px * var(--ui-scale));
+  /* 14, not 13. It names whose day you are looking at on a shared phone, it is
+     the smallest text on the screen, and it sits in the one band the Dynamic
+     Island is already competing for. */
+  font-size: calc(14px * var(--ui-scale));
   font-weight: 700;
   letter-spacing: 0.02em;
   padding: 5px 16px;
