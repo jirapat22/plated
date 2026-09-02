@@ -499,6 +499,10 @@ export function renderToday(container) {
               </div>
             </div>` : ''}
           </div>
+          ${inTdee && hasWorkout ? `
+          <div style="margin-top:10px;font-size:11px;line-height:1.45;color:var(--text-muted);text-align:center">
+            Your ${fmtE(burned)} ${ul} workout is already inside your goal, so your eat target is unchanged.
+          </div>` : ''}
           <div id="macro-bar-root" style="margin-top:12px"></div>
         </div>
       </div>

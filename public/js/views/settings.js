@@ -19,6 +19,36 @@ const eOut = v => { const n = parseFloat(v); return Number.isFinite(n) ? String(
 // Reads an energy input's current value back as kcal.
 const eRead = el => (el ? parseFloat(eOut(el.value)) : NaN);
 
+// Which way round this profile's workouts count, in words.
+//
+// tdee_includes_workouts decides whether a training day raises what you may
+// eat, and it is worth several hundred kcal a day — but it is not set in
+// Plated. It arrives from IronLog's own profile on sync, and until now it
+// appeared nowhere on this screen at all: the only trace of it was one word on
+// Today's Workout ring ("burned" vs "already counted"), on days you trained.
+// A number that size deciding itself out of sight is how someone eats 300 over
+// every training day for a month with the app agreeing the whole time.
+//
+// Read-only on purpose. The value syncs FROM IronLog, so a switch here would be
+// overwritten on the next sync unless "manual wins" were built too — two
+// sources of truth for a figure that changes what you eat. Fix it at the
+// source: the activity level in IronLog.
+function ironlogModeNote(s) {
+  if (!String(s.ironlog_api_url || '').trim()) return '';   // nothing connected yet
+  const flag = s.tdee_includes_workouts;
+  const [tone, body] = flag === '1'
+    ? ['var(--text-muted)', `Your IronLog activity level <strong>already includes training</strong>, so a
+       workout is shown but not added — your eat target stays at your daily goal. To have sessions earn
+       food back, set a baseline activity level in IronLog (what you burn on a non-training day).`]
+    : flag === '0'
+      ? ['var(--text-muted)', `Your IronLog activity level is a <strong>baseline without training</strong>,
+         so each workout is added on top of your goal and raises your eat target for the day.`]
+      : ['var(--text-faint)', `Not synced yet — once IronLog answers, this says whether your workouts add to
+         your daily target or are already inside it.`];
+  return `<div style="margin-top:10px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--surface-2);
+    border:1px solid var(--border);font-size:11px;line-height:1.5;color:${tone}">${body}</div>`;
+}
+
 export function renderSettings(container) {
   container.innerHTML = `
     <div class="today-header"><div class="today-date">Settings</div></div>
@@ -258,8 +288,8 @@ export function renderSettings(container) {
         <div style="padding:14px 16px">
           <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;line-height:1.5">
             Connecting IronLog pulls your workout burn, bodyweight and goals into Plated.
-            Burn is added <em>on top</em> of your daily target, so a training day lets you eat
-            more without changing any setting. Optional — everything else works without it.<br><br>
+            Whether a workout is <em>added on top</em> of your daily target depends on your
+            IronLog activity level — see below. Optional — everything else works without it.<br><br>
             <strong>How to connect:</strong> in IronLog, go to <em>Settings → API Key</em>, tap Copy, then paste it below.
             The URL is your IronLog web address (e.g. https://ironlog-production-….up.railway.app). Each person uses their own IronLog key.
           </div>
@@ -272,6 +302,7 @@ export function renderSettings(container) {
             <button class="btn btn-secondary" id="ironlog-test" style="flex:1;min-width:100px">Test</button>
           </div>
           <div style="font-size:11px;color:var(--text-faint);margin-top:6px">Pulling fresh goals from IronLog happens in Goal Phase above (① Maintenance).</div>
+          ${ironlogModeNote(s)}
           <div id="ironlog-status" style="margin-top:10px;font-size:12px;color:var(--text-muted);user-select:text;-webkit-user-select:text"></div>
         </div>
       </div>
