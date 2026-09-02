@@ -266,6 +266,24 @@ export function renderToday(container) {
     // That is precisely the two-numbers-that-don't-subtract bug, wearing a
     // minus sign. Clamping here keeps the ring and its hint on one budget.
     const eatable     = inTdee ? 0 : Math.max(0, burned);
+    // Whether this profile is an IronLog profile at all — read from settings,
+    // not from whether a burn happens to have arrived. Settings are loaded
+    // before the first paint and cached offline, so the answer is the same on
+    // every frame; deriving it from the payload would make the ring appear a
+    // round trip late, which is the flicker the memo above exists to stop.
+    //
+    // The Workout ring used to draw unconditionally, so someone who has never
+    // touched IronLog got a third ring reading "0 rest day" every day forever.
+    // The IronLog panel further down has always hidden itself this way, and
+    // Settings hides the Admin section on the same principle: derive it, don't
+    // ask. (The Eat Target ring needs no such rule — it is drawn from a burn,
+    // so it has never appeared for a profile without one.)
+    const usesIronlog = !!String(settings.ironlog_api_url || '').trim();
+    // Configured, but nothing has come back yet — the very first paint, or
+    // IronLog unreachable. The burn is UNKNOWN, and 0 is not a synonym for it:
+    // 0 draws a rest day, which is a claim about the day rather than about the
+    // connection. Same rule as the Eat Target ring one line up.
+    const burnKnown   = !!ironlog;
     const combined    = baseGoal + eatable;         // eat target
     const hasWorkout  = burned > 0;
     const eaten       = t.calories;
@@ -455,16 +473,17 @@ export function renderToday(container) {
                 </div>
               </div>
             </div>
+            ${usesIronlog ? `
             <div class="ring-col">
               <div class="ring-title">Workout</div>
               <div class="ring-wrap-relative">
                 ${calRingSvg(rightPct, 'workout', true, 0, false, hasWorkout ? 'earned' : '')}
                 <div class="ring-center">
-                  <div class="num ring-kcal-sm">${fmtE(burned)} ${icon(ICON_FLAME, 12, -2)}</div>
-                  <div class="ring-goal-sm">${!hasWorkout ? 'rest day' : inTdee ? 'already counted' : 'burned'}</div>
+                  <div class="num ring-kcal-sm">${burnKnown ? `${fmtE(burned)} ${icon(ICON_FLAME, 12, -2)}` : '—'}</div>
+                  <div class="ring-goal-sm">${!burnKnown ? 'not synced' : !hasWorkout ? 'rest day' : inTdee ? 'already counted' : 'burned'}</div>
                 </div>
               </div>
-            </div>
+            </div>` : ''}
           </div>
           <div id="macro-bar-root" style="margin-top:12px"></div>
         </div>
