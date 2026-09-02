@@ -1,5 +1,5 @@
 import { api }                            from '../api.js';
-import { showToast, accentInk }            from '../app.js';
+import { showToast, accentInk, getProfile } from '../app.js';
 import { openFoodEntry, openQuickLog, renderMealCard, lazySession } from './log.js';
 import { renderMacroBar }                  from '../components/macroBar.js';
 import { fmtE, unitLabel } from '../utils/energy.js';
@@ -7,6 +7,7 @@ import { localDate }                       from '../utils/date.js';
 import { classifyDay, isFlagged, LOG_STRONG } from '../utils/logCheck.js';
 import { assert } from '../utils/bugReport.js';
 import { trendWeightNow } from '../utils/stats.js';
+import { classifyIronlog } from '../utils/ironlogState.js';
 import { openOnboarding } from '../components/onboarding.js';
 
 const CIRC = 2 * Math.PI * 60;
@@ -74,13 +75,31 @@ function timeAgo(iso) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+// Three answers, not two: the payload, null (no IronLog here) or undefined
+// (could not ask). classifyIronlog explains why that distinction is the whole
+// bug; a thrown request is the same "could not ask".
 async function fetchIronLog(dateStr) {
   try {
-    const data = await api.get(`/api/ironlog/today?date=${dateStr}&tz=${new Date().getTimezoneOffset()}`);
-    if (data.connected) return data;
-    return data.last_synced ? { ...data, _stale: true } : null;
-  } catch { return null; }
+    return classifyIronlog(
+      await api.get(`/api/ironlog/today?date=${dateStr}&tz=${new Date().getTimezoneOffset()}`));
+  } catch { return undefined; }
 }
+
+// The last answer IronLog gave, so Today can draw the Eat Target ring on its
+// FIRST frame instead of adding it a round trip later.
+//
+// Every load() painted with ironlog = null and then repainted with the real
+// thing once the fetch landed. That is deliberate — waiting for IronLog before
+// the first paint costs a second serialised round trip — but it meant the ring
+// disappeared and came back on every single load: opening the tab, logging a
+// meal, saving a weight, changing a setting. And the card does not just lose a
+// ring, it goes from three columns to two, so the whole screen below it jumps.
+//
+// Module scope rather than a closure inside renderToday, because Today remounts
+// on every tab switch and that was one of the flickers. Keyed by profile and
+// date so a shared phone never shows one person's burn on another's screen,
+// even for a frame.
+let ironlogMemo = { key: null, data: null };
 
 // ── Main render ──────────────────────────────────────────────
 export function renderToday(container) {
@@ -89,6 +108,7 @@ export function renderToday(container) {
   // which also kills the accidental swipe-to-change-day. viewDate is re-read
   // from localDate() on every load so it rolls over correctly past midnight.
   let viewDate      = localDate();
+  const memoKey = () => `${getProfile()?.id ?? '?'}|${viewDate}`;
   let ironlogExpanded = false;
   let loadGen = 0;             // increments on each load; stale responses discarded
   let onboardingShown = false; // first-run sheet fires at most once per mount
@@ -140,7 +160,8 @@ export function renderToday(container) {
       // already holds. IronLog itself measures 20-94ms from Railway, so this
       // isn't about a slow service: it's the extra serialised leg over mobile
       // data, bounded only by the route's 6s timeout when the other end stalls.
-      render(mealData, settings, null, todayWeight, weightHistory);
+      const remembered = ironlogMemo.key === memoKey() ? ironlogMemo.data : null;
+      render(mealData, settings, remembered, todayWeight, weightHistory);
       showStaleBanner(staleAt);   // after render — it owns container.innerHTML
 
       // Nothing below this line can work without a connection: IronLog is a
@@ -163,7 +184,19 @@ export function renderToday(container) {
       }
 
       const ironlog = await fetchIronLog(viewDate);   // always today — fetch fresh
-      if (myGen !== loadGen || !ironlog) return;      // superseded, or nothing to add
+      if (myGen !== loadGen) return;                  // superseded
+      if (ironlog === undefined) {
+        // Couldn't reach IronLog. What's already drawn is the last answer it
+        // gave, which beats a fabricated zero — but it is no longer live, and
+        // the panel says so rather than letting an old burn pass for today's.
+        if (remembered && !remembered._stale) {
+          ironlogMemo = { key: memoKey(), data: { ...remembered, _stale: true } };
+          render(mealData, settings, ironlogMemo.data, todayWeight, weightHistory);
+        }
+        return;
+      }
+      ironlogMemo = { key: memoKey(), data: ironlog };
+      if (!ironlog && !remembered) return;            // nothing to add, nothing to take away
       // ponytail: a second full render rather than patching just the IronLog
       // panel — one extra paint on the slow path. Make it surgical if it ever
       // interrupts a scroll.

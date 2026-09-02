@@ -186,9 +186,14 @@ router.get('/today', async (req, res) => {
     ]);
 
     if (profileRes.status !== 'fulfilled') {
+      // calories_burned null, not 0. A failed request knows nothing about
+      // today's training, and 0 is an answer: it draws a filled "rest day"
+      // ring and takes the Eat Target ring off the screen, which is how a
+      // Railway-side blip came to look like a day off. null says unknown, and
+      // Today keeps showing the last figure it actually got.
       return res.json({
         connected: false, error: profileRes.reason?.message,
-        profile: null, calories_burned: 0, calorie_target: null, last_synced,
+        profile: null, calories_burned: null, calorie_target: null, last_synced,
       });
     }
 
@@ -270,7 +275,8 @@ router.get('/today', async (req, res) => {
       last_synced:     now,
     });
   } catch (err) {
-    res.json({ connected: false, error: err.message, profile: null, calories_burned: 0, calorie_target: null, last_synced });
+    // Same reasoning as the profile-fetch failure above: unknown is null.
+    res.json({ connected: false, error: err.message, profile: null, calories_burned: null, calorie_target: null, last_synced });
   }
 });
 

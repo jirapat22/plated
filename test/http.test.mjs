@@ -371,3 +371,24 @@ test('a favourite still outranks the plain-food rule', async () => {
   assert.strictEqual(after[0].id, dish.id, 'a favourited food must come first');
   await api('PATCH', `/api/foods/${dish.id}/favourite`);   // toggled back off
 });
+
+// ── an unreachable IronLog reports nothing, not zero ────────────────────────
+// The Eat Target ring is drawn from calories_burned. This route answers
+// `connected: false` both when there is no IronLog and when there is one it
+// could not reach, and it used to send `calories_burned: 0` with it — a
+// confident "you trained for nothing today" every time the hop between Railway
+// and IronLog failed. Unknown has to travel as null.
+test('an IronLog that cannot be reached reports an unknown burn, not a zero', async () => {
+  // .invalid never resolves (RFC 2606), so this fails DNS immediately rather
+  // than sitting on the route's 6s ceiling. It passes the URL guard: a real
+  // public-looking hostname, which is the point — the failure is the fetch.
+  const set = await api('PATCH', '/api/settings', { ironlog_api_url: 'https://ironlog.invalid' });
+  assert.strictEqual(set.status, 200, await set.text());
+
+  const body = await (await api('GET', '/api/ironlog/today?date=2026-09-02&tz=0')).json();
+  assert.strictEqual(body.connected, false, 'ironlog.invalid should not have answered');
+  assert.strictEqual(body.calories_burned, null,
+    `an unreachable IronLog reported ${body.calories_burned} calories burned`);
+
+  await api('PATCH', '/api/settings', { ironlog_api_url: '' });
+});

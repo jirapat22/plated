@@ -15,12 +15,52 @@ let appVersion = 'unknown';
   } catch { /* caches unavailable */ }
 })();
 
+// What the page thinks the screen is.
+//
+// "It doesn't fit properly" arrives from an iPhone in Safari, and there is no
+// way to reproduce iOS's viewport from a desktop browser — dvh, the safe-area
+// insets and the floating address bar are all things only the real device
+// knows. Two rounds of fixes for the same complaint were reasoned from the
+// spec rather than from the device, which is the wrong way round. These are the
+// six numbers that would have settled it.
+//
+// The insets have to be measured, not asked for: env() only exists inside CSS,
+// so a hidden probe takes them as padding and reads them back.
+function viewportContext() {
+  try {
+    if (!document.body) return null;          // an early crash, before the shell
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;top:0;left:0;width:0;visibility:hidden;height:100dvh;'
+      + 'padding:env(safe-area-inset-top) env(safe-area-inset-right)'
+      + ' env(safe-area-inset-bottom) env(safe-area-inset-left)';
+    document.body.appendChild(probe);
+    const cs = getComputedStyle(probe);
+    const px = v => Math.round(parseFloat(v) || 0);
+    const out = {
+      inner:   `${innerWidth}x${innerHeight}`,
+      screenPx: `${screen.width}x${screen.height}`,
+      visual:  window.visualViewport
+        ? `${Math.round(visualViewport.width)}x${Math.round(visualViewport.height)}` : null,
+      dvh:     px(cs.height),
+      // top,right,bottom,left — the order the CSS shorthand uses.
+      insets:  [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].map(px).join(','),
+      standalone: !!(navigator.standalone
+        || window.matchMedia?.('(display-mode: standalone)').matches),
+      uiScale: getComputedStyle(document.documentElement)
+        .getPropertyValue('--ui-scale').trim() || null,
+    };
+    probe.remove();
+    return out;
+  } catch { return null; }   // never break a bug report over its own context
+}
+
 function baseContext(extra = {}) {
   return {
     url: location.href,
     screen: location.hash || location.pathname || '/',
     version: appVersion,
     userAgent: navigator.userAgent,
+    viewport: viewportContext(),
     ...extra,
   };
 }
