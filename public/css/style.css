@@ -211,20 +211,22 @@ img { display: block; max-width: 100%; }
 
 /* ─── App Shell ──────────────────────────────────────────── */
 .app {
+  /* inset:0, not height:100dvh — reverting 851372f, which was reasoned from the
+     spec and is wrong on the device.
+     Measured on an iPhone 15 Plus home-screen app: screen 932 tall, and both
+     innerHeight and 100dvh report 873, exactly 932 minus the 59px top inset.
+     But the page is NOT laid out below the status bar — it starts at the top of
+     the screen (which is why .profile-bar has to pad itself clear of the
+     island) and .bottom-nav's `bottom: 0` lands flush at the true bottom, 932.
+     So dvh under-reports the viewport by the top inset, and sizing the shell
+     from it left the column 59px short: the scroll area ended above the nav
+     instead of behind it, and the bottom of the screen went unused. That is the
+     "not fully at the bottom" report.
+     inset:0 asks no questions. A fixed element's box resolves against the
+     viewport the browser is actually painting, whatever it decides that is,
+     which is the one number here that has been right all along. */
   position: fixed;
-  top: 0; left: 0; right: 0;
-  /* 100dvh rather than letting inset:0 set the height. A fixed element's
-     bottom:0 resolves against the LAYOUT viewport, and iOS Safari keeps that at
-     its full height whether or not the address bar is on screen. With the bar
-     showing, the shell was therefore taller than the screen: the column
-     stretched, everything sat higher than it should, and the bottom of the
-     scroll area hung below the fold — content too high, dead space underneath.
-     dvh tracks the viewport you can actually see and shrinks when the bar
-     appears. Installed to the home screen there is no bar and the two are the
-     same: measured at a simulated 430x932 with the island and home-indicator
-     insets, the nav sits flush at the bottom and the scroll area clears it by
-     14px, before and after this change. */
-  height: 100dvh;
+  inset: 0;
   display: flex;
   flex-direction: column;
 }
@@ -1345,7 +1347,12 @@ canvas { max-width: 100%; }
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: calc(var(--safe-top, 0px) + 8px) 16px 6px;
+  /* +20, not +8. The inset clears the status bar; it does not clear the Dynamic
+     Island, which hangs below it and is a black mass on a black background. At
+     +8 the pill landed about 19px under the island's bottom edge and read as
+     part of it — "still blurry under the island". +20 puts real space there.
+     The 12px this costs comes back many times over from the shell fix above. */
+  padding: calc(var(--safe-top, 0px) + 20px) 16px 6px;
 }
 .profile-pill {
   /* 14, not 13. It names whose day you are looking at on a shared phone, it is
