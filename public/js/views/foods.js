@@ -76,14 +76,33 @@ export function renderFoods(container) {
   let currentTab = 'all';
   let query = '';
 
+  // Which list request is the current one.
+  //
+  // #foods-list is a single div that every tab renders into, and it is never
+  // detached — so switching tabs does NOT tear it down the way switching views
+  // does, and the isConnected guard in the view renders cannot see this. Tap
+  // Batches then Favourites on a slow connection and the batches response
+  // lands afterwards and draws itself under a highlighted Favourites tab. The
+  // food tabs race each other the same way; typing in the search box makes it
+  // easy, because every keystroke starts another one.
+  //
+  // A counter rather than aborting the request: the answer may still be worth
+  // caching, it just is not worth drawing.
+  let listGen = 0;
+
   async function loadList() {
+    const myGen = ++listGen;
+    const current = () => myGen === listGen;
     const list = document.getElementById('foods-list');
     if (!list) return;   // view torn down (tab switch) before/while loading
     // Batches are their own thing, not a food list.
     const nonFoodTab = currentTab === 'batches';
     document.getElementById('foods-search').closest('.search-input-wrap').style.display = nonFoodTab ? 'none' : '';
     document.getElementById('add-custom-btn').style.display = nonFoodTab ? 'none' : '';
-    if (currentTab === 'batches')   { renderBatches(list); return; }
+    // Batches runs its own fetches, so it needs to know when it has been
+    // superseded too. Its own reloads — after portioning, deleting, renaming —
+    // do not advance listGen, so they still draw.
+    if (currentTab === 'batches')   { renderBatches(list, current); return; }
     list.innerHTML = '<div class="skeleton skel-line" style="margin:8px 16px"></div>';
 
     try {
@@ -99,8 +118,10 @@ export function renderFoods(container) {
       } else {
         rows = await api.get('/api/foods/recent');
       }
+      if (!current()) return;          // a newer tab or query superseded this one
       renderList(list, rows);
     } catch (err) {
+      if (!current()) return;          // and its error is just as stale
       list.innerHTML = `<div class="empty-state"><div class="empty-text">${esc(err.message)}</div></div>`;
     }
   }

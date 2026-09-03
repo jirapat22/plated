@@ -24,7 +24,11 @@ const g1  = n => {                                                      // 1dp, 
 
 // Renders the Batches view (active meal-prep batches + a "new batch" builder)
 // into the given container.
-export function renderBatches(container) {
+// isCurrent: Foods owns the container and swaps tabs inside it without ever
+// detaching it, so isConnected cannot tell whether this view is still the one
+// being shown. Foods passes its own "is this still the batches tab" check.
+// Defaults to yes for any caller that owns its container outright.
+export function renderBatches(container, isCurrent = () => true) {
   container.innerHTML = '<div class="skeleton skel-line" style="margin:8px 16px"></div>';
   load();
 
@@ -45,7 +49,7 @@ export function renderBatches(container) {
     // the render looks fine right up until a document.getElementById() below
     // returns null and the view dies. foods.js and history.js already bail this
     // way; the lesson never made it to the other three.
-    if (!container.isConnected) return;
+    if (!container.isConnected || !isCurrent()) return;
     const ul = unitLabel();
     container.innerHTML = `
       <div style="padding:0 16px 12px">
