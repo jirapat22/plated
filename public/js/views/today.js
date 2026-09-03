@@ -208,6 +208,13 @@ export function renderToday(container) {
   }
 
   function render(mealData, settings, ironlog, todayWeight, weightHistory = []) {
+    // The tab can be switched while the fetch above is still out, and switchView
+    // empties #view-container — which DETACHES this wrapper without emptying it.
+    // innerHTML and container.querySelectorAll still work on a detached node, so
+    // the render looks fine right up until a document.getElementById() below
+    // returns null and the view dies. foods.js and history.js already bail this
+    // way; the lesson never made it to the other three.
+    if (!container.isConnected) return;
     const today  = localDate();
     const isToday = viewDate === today;
     const ul     = unitLabel();

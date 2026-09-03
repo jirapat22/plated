@@ -39,6 +39,13 @@ export function renderBatches(container) {
   }
 
   function render(batches, leftovers) {
+    // The tab can be switched while the fetch above is still out, and switchView
+    // empties #view-container — which DETACHES this wrapper without emptying it.
+    // innerHTML and container.querySelectorAll still work on a detached node, so
+    // the render looks fine right up until a document.getElementById() below
+    // returns null and the view dies. foods.js and history.js already bail this
+    // way; the lesson never made it to the other three.
+    if (!container.isConnected) return;
     const ul = unitLabel();
     container.innerHTML = `
       <div style="padding:0 16px 12px">
@@ -72,7 +79,7 @@ export function renderBatches(container) {
         try { await api.patch(`/api/leftovers/${btn.dataset.loRename}`, { name: name.trim() }); load(); }
         catch (err) { showToast(err.message, 'error'); }
       }));
-    document.getElementById('new-batch').addEventListener('click', () => openBuilder(load));
+    container.querySelector('#new-batch').addEventListener('click', () => openBuilder(load));
     container.querySelectorAll('[data-portion]').forEach(btn =>
       btn.addEventListener('click', () => openPortion(find(btn.dataset.portion), load)));
     container.querySelectorAll('[data-edit]').forEach(btn =>
