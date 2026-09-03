@@ -127,7 +127,13 @@
   --alert:        #c2410c;
   --mint:         #0f8f70;
   --shadow:       rgba(24,20,40,.16);
-  --ink-mix:      52%;
+  /* 45, not 52. accentInk() text sits on a wash of the SAME accent, and f104ebe
+     raised those washes (pill 12%->20%, phase chip 9%->15%) to make the chips
+     findable — which lightens the ground under the text as well. At 52% the
+     pill fell to 4.39:1 on #7ee7c7 and 4.14:1 on #ffd98e, under the 4.5 floor;
+     the gold one had been under it since before the change. 45% clears every
+     accent with room: pill 5.20:1 worst case, phase chip 6.18:1. */
+  --ink-mix:      45%;
 }
 
 /* ─── Accessibility overrides ────────────────────────────── */

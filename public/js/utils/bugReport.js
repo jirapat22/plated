@@ -34,6 +34,10 @@ function viewportContext() {
       + 'padding:env(safe-area-inset-top) env(safe-area-inset-right)'
       + ' env(safe-area-inset-bottom) env(safe-area-inset-left)';
     document.body.appendChild(probe);
+    // finally, not a plain call at the end: anything in between throwing —
+    // a browser that blocks screen or matchMedia — left the probe in the DOM
+    // for the life of the page, one more per failed report.
+    try {
     const cs = getComputedStyle(probe);
     const px = v => Math.round(parseFloat(v) || 0);
     const out = {
@@ -49,8 +53,8 @@ function viewportContext() {
       uiScale: getComputedStyle(document.documentElement)
         .getPropertyValue('--ui-scale').trim() || null,
     };
-    probe.remove();
     return out;
+    } finally { probe.remove(); }
   } catch { return null; }   // never break a bug report over its own context
 }
 
