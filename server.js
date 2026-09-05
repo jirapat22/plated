@@ -89,7 +89,11 @@ app.get('/api/orbit-summary', orbitRoutes.requireOrbitKey, (req, res) => {
   }
 });
 
-// Orbit admin feed — public by default (optional ORBIT_API_KEY gate inside)
+// Orbit admin feed — gated on ORBIT_API_KEY, and FAILS CLOSED when it is unset
+// (503, not a pass-through). This comment said "public by default" long after
+// that stopped being true, which is the more dangerous direction for a comment
+// about an auth gate to be wrong in: it invites the next person to add a second
+// route beside it on the belief that the feed is meant to be open.
 app.use('/api/orbit', orbitRoutes);
 
 app.use(express.static(path.join(__dirname, 'public')));

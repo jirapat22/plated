@@ -165,3 +165,51 @@ test('a file that is not an export is refused', async () => {
     assert.strictEqual(r.status, 400, `accepted ${JSON.stringify(junk)}`);
   }
 });
+
+// ── a batch's food belongs to that batch ────────────────────────────────────
+// Found by probing the restore rather than reading it. The import merges foods
+// by name so a restore does not duplicate the shared catalogue — but a batch
+// mints its OWN food, named after the batch, holding that batch's per-100g
+// macros. Two live batches called "Chilli" is an ordinary thing to have, and
+// merging their foods cross-wires them.
+//
+// Portioning survives it, because that route addresses the batch by id. The
+// damage shows up when a portion is corrected or deleted: adjustBatchStock
+// finds the batch by FOOD, lands on the wrong one, and the ceiling clamp eats
+// the grams in silence.
+test('two batches with the same name stay separate across a restore', async () => {
+  const A = as(alice);
+  const mk = (name, cooked, foodId) =>
+    A('POST', '/api/batches', { name, cooked_g: cooked, items: [{ food_id: foodId, quantity_g: cooked }] });
+  await mk('Sunday chilli', 1000, 1);
+  await mk('Sunday chilli', 500, 2);
+
+  const dump = await (await A('GET', '/api/settings/export')).json();
+  const minted = dump.foods.filter(f => f.source === 'batch' && f.name === 'Sunday chilli');
+  assert.strictEqual(minted.length, 2, 'the two batches did not mint two foods');
+
+  await A('POST', '/api/settings/import', dump);
+  const batches = (await (await A('GET', '/api/batches')).json())
+    .filter(b => b.name === 'Sunday chilli')
+    .sort((x, y) => y.cooked_g - x.cooked_g);
+  assert.strictEqual(batches.length, 2, 'a batch was lost in the restore');
+
+  // Take 100g out of the SMALLER one, then take the portion back off the day.
+  // The grams have to return to the batch they came from.
+  const small = batches[1];
+  const p = await A('POST', `/api/batches/${small.id}/portion`, { grams: 100 });
+  assert.strictEqual(p.status, 201, await p.text());
+
+  const today = new Date().toISOString().slice(0, 10);
+  const day = await (await A('GET', `/api/meals/day/${today}`)).json();
+  const entry = day.sessions.flatMap(s => s.entries).filter(e => e.food_name === 'Sunday chilli').at(-1);
+  assert.ok(entry, 'the portion did not appear on the day');
+  assert.strictEqual((await A('DELETE', `/api/meals/entries/${entry.id}`)).status, 200);
+
+  const after = (await (await A('GET', '/api/batches')).json())
+    .filter(b => b.name === 'Sunday chilli')
+    .sort((x, y) => y.cooked_g - x.cooked_g);
+  assert.strictEqual(after[1].remaining_g, 500,
+    `the 100g went somewhere else — small batch ${after[1].remaining_g}/500, large ${after[0].remaining_g}/1000`);
+  assert.strictEqual(after[0].remaining_g, 1000, 'the large batch was credited with grams it never held');
+});

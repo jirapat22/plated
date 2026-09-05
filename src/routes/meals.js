@@ -773,29 +773,37 @@ router.post('/sessions/:id/entries', (req, res) => {
     if (!food) return res.status(404).json({ error: 'Food not found' });
 
     const macros = calcMacros(food, quantity_g);
-    const result = db.prepare(`
-      INSERT INTO meal_entries
-        (meal_session_id, food_id, quantity_g, calories, protein, carbs, fat, fiber)
-      VALUES
-        ($sid, $food_id, $quantity_g, $calories, $protein, $carbs, $fat, $fiber)
-    `).run({
-      sid: id, food_id, quantity_g,
-      calories: macros.calories, protein: macros.protein,
-      carbs: macros.carbs, fat: macros.fat, fiber: macros.fiber,
-    });
+    // Three writes that describe one act of eating: the entry, the grams it
+    // took out of a batch, and the "you eat this a lot, at about this size"
+    // counter behind recent foods and the pre-filled portion.
+    let result;
+    db.exec('BEGIN');
+    try {
+      result = db.prepare(`
+        INSERT INTO meal_entries
+          (meal_session_id, food_id, quantity_g, calories, protein, carbs, fat, fiber)
+        VALUES
+          ($sid, $food_id, $quantity_g, $calories, $protein, $carbs, $fat, $fiber)
+      `).run({
+        sid: id, food_id, quantity_g,
+        calories: macros.calories, protein: macros.protein,
+        carbs: macros.carbs, fat: macros.fat, fiber: macros.fiber,
+      });
 
-    // Batch foods are hidden from search, so the only way one reaches this route
-    // is copying an existing portion — which is still eating the batch. DELETE
-    // and PATCH both adjust stock already; creation was the missing half.
-    adjustBatchStock(db, req.profileId, food_id, -quantity_g);
+      // Batch foods are hidden from search, so the only way one reaches this
+      // route is copying an existing portion — which is still eating the batch.
+      // DELETE and PATCH both adjust stock already; creation was the missing half.
+      adjustBatchStock(db, req.profileId, food_id, -quantity_g);
 
-    db.prepare(`
-      INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used, last_qty_g)
-      VALUES ($pid, $fid, 1, datetime('now'), $qty)
-      ON CONFLICT(profile_id, food_id)
-      DO UPDATE SET use_count = use_count + 1, last_used = datetime('now'),
-                    last_qty_g = excluded.last_qty_g
-    `).run({ pid: req.profileId, fid: food_id, qty: quantity_g });
+      db.prepare(`
+        INSERT INTO profile_food_stats (profile_id, food_id, use_count, last_used, last_qty_g)
+        VALUES ($pid, $fid, 1, datetime('now'), $qty)
+        ON CONFLICT(profile_id, food_id)
+        DO UPDATE SET use_count = use_count + 1, last_used = datetime('now'),
+                      last_qty_g = excluded.last_qty_g
+      `).run({ pid: req.profileId, fid: food_id, qty: quantity_g });
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
 
     const entry = db.prepare(`
       SELECT me.*, f.name AS food_name, f.brand AS food_brand, f.serving_size_g
@@ -835,15 +843,19 @@ router.patch('/entries/:id', (req, res) => {
     if (!food) return res.status(409).json({ error: "That food no longer exists — delete this entry and re-add it" });
     const macros = calcMacros(food, quantity_g);
 
-    db.prepare(`
-      UPDATE meal_entries
-      SET quantity_g = $qty, calories = $calories, protein = $protein,
-          carbs = $carbs, fat = $fat, fiber = $fiber
-      WHERE id = $id
-    `).run({ id, qty: quantity_g, ...macros });
+    db.exec('BEGIN');
+    try {
+      db.prepare(`
+        UPDATE meal_entries
+        SET quantity_g = $qty, calories = $calories, protein = $protein,
+            carbs = $carbs, fat = $fat, fiber = $fiber
+        WHERE id = $id
+      `).run({ id, qty: quantity_g, ...macros });
 
-    // Resizing a batch portion moves stock: shrinking gives grams back.
-    adjustBatchStock(db, req.profileId, entry.food_id, entry.quantity_g - quantity_g);
+      // Resizing a batch portion moves stock: shrinking gives grams back.
+      adjustBatchStock(db, req.profileId, entry.food_id, entry.quantity_g - quantity_g);
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
 
     const updated = db.prepare(`
       SELECT me.*, f.name AS food_name, f.brand AS food_brand, f.serving_size_g
@@ -871,8 +883,17 @@ router.delete('/entries/:id', (req, res) => {
     `).get({ id: req.params.id, pid: req.profileId });
     if (!entry) return res.status(404).json({ error: 'Entry not found' });
 
-    db.prepare('DELETE FROM meal_entries WHERE id = $id').run({ id: req.params.id });
-    adjustBatchStock(db, req.profileId, entry.food_id, entry.quantity_g);
+    // The entry write and the batch's stock have to move together. Every other
+    // multi-row path in this file is already wrapped; these four were not, and
+    // they are the ones that hand grams BACK — so a throw between the two
+    // statements leaves the entry gone and the grams nowhere, which is the
+    // silent divergence adjustBatchStock exists to prevent.
+    db.exec('BEGIN');
+    try {
+      db.prepare('DELETE FROM meal_entries WHERE id = $id').run({ id: req.params.id });
+      adjustBatchStock(db, req.profileId, entry.food_id, entry.quantity_g);
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -893,9 +914,15 @@ router.delete('/sessions/:id', (req, res) => {
     const entries = db.prepare('SELECT food_id, quantity_g FROM meal_entries WHERE meal_session_id = $s')
       .all({ s: req.params.id });
 
-    db.prepare('DELETE FROM meal_sessions WHERE id = $id AND profile_id = $pid')
-      .run({ id: req.params.id, pid: req.profileId });
-    for (const e of entries) adjustBatchStock(db, req.profileId, e.food_id, e.quantity_g);
+    // Worst of the four: the loop can fail partway, returning some entries'
+    // grams and losing the rest, with the rows that said how much already gone.
+    db.exec('BEGIN');
+    try {
+      db.prepare('DELETE FROM meal_sessions WHERE id = $id AND profile_id = $pid')
+        .run({ id: req.params.id, pid: req.profileId });
+      for (const e of entries) adjustBatchStock(db, req.profileId, e.food_id, e.quantity_g);
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

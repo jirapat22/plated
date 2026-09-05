@@ -283,7 +283,22 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
       const foodIdMap = new Map();
       for (const f of foods) {
         const brand = f.brand ?? null;
-        const existing = findFood.get({ name: f.name, brand });
+        // A batch's or a leftover's backing food belongs to that ONE batch or
+        // leftover — it is minted by it, hidden from search, and carries that
+        // batch's per-100g macros. Matching it by name the way a shared
+        // catalogue food is matched merges two of them, and two live batches
+        // with the same name is an ordinary thing to have ("Chilli", cooked
+        // again on Wednesday before Sunday's ran out).
+        //
+        // Measured: two 'Chilli' batches, 1000g and 500g, exported and
+        // restored. Portioning still worked, because that route addresses the
+        // batch by id — but adjustBatchStock finds a batch by FOOD, so
+        // deleting the portion handed the 100g to the first Chilli, which was
+        // already full, where the min(cooked_g, ...) ceiling swallowed it.
+        // 100g of food left the system: the entry was gone and no batch got it
+        // back. That is the exact failure adjustBatchStock exists to prevent.
+        const privateToOneOwner = f.source === 'batch' || f.source === 'leftover';
+        const existing = privateToOneOwner ? null : findFood.get({ name: f.name, brand });
         if (existing) { foodIdMap.set(f.id, existing.id); continue; }
         const newId = insertFood.run({
           name: f.name, brand,
