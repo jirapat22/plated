@@ -42,7 +42,24 @@ const PORT = process.env.PORT || 3000;
 // internet as one client — one attacker would lock everybody out.
 app.set('trust proxy', 1);
 
-app.use(cors({ origin: true, credentials: true }));
+// CORS only where something off-origin actually reads.
+//
+// This was `cors({ origin: true, credentials: true })` on every route, which
+// reflects whatever Origin asks and permits credentials with it. The app itself
+// never needed a byte of that: the PWA is served from this same origin, so its
+// fetches are same-origin and CORS does not enter into it. What the header did
+// was tell every other site on the internet that their scripts may read our
+// responses — harmless today only because auth is a Bearer token in a header
+// rather than a cookie, so a cross-site page has nothing to send. That is one
+// refactor away from mattering, and it is a strange thing to be relying on.
+//
+// The Orbit dashboard is the one genuine cross-origin reader, so it keeps CORS
+// and nothing else does. No `credentials`: Orbit authenticates with an API key
+// header, which needs no cookie. Mounted by path with app.use so preflight
+// OPTIONS is covered too.
+const orbitCors = cors({ origin: true });
+app.use('/api/orbit-summary', orbitCors);
+app.use('/api/orbit', orbitCors);
 // Everything below this line goes out gzipped. Nothing was compressed at all,
 // so a cold load shipped ~550kb of JS and CSS uncompressed — settings.js 83kb,
 // trends.js 81kb, style.css 59kb — over cellular, to a phone, on a codebase

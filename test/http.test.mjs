@@ -392,3 +392,25 @@ test('an IronLog that cannot be reached reports an unknown burn, not a zero', as
 
   await api('PATCH', '/api/settings', { ironlog_api_url: '' });
 });
+
+// ── CORS reaches only the thing that needs it ───────────────────────────────
+// Every route used to answer with an Access-Control-Allow-Origin echoing
+// whatever asked, plus credentials — telling any site on the internet that its
+// scripts may read our replies. Harmless only because auth is a header token
+// rather than a cookie, which is a thing to fix rather than a thing to rely on.
+// Node's fetch does not enforce CORS, so nothing here would have noticed: this
+// checks the header the browser would act on.
+test('the app API does not invite other origins to read it', async () => {
+  const r = await fetch(`${BASE}/api/auth/status`, { headers: { Origin: 'https://evil.example' } });
+  assert.strictEqual(r.headers.get('access-control-allow-origin'), null,
+    'a cross-origin page is being told it may read this');
+  assert.strictEqual(r.headers.get('access-control-allow-credentials'), null);
+});
+
+test('the Orbit feed still may be read cross-origin', async () => {
+  // It is a dashboard on another host; taking CORS away breaks it. Still 401/503
+  // without the key — CORS decides who may READ the answer, not who gets one.
+  const r = await fetch(`${BASE}/api/orbit-summary`, { headers: { Origin: 'https://orbit.example' } });
+  assert.strictEqual(r.headers.get('access-control-allow-origin'), 'https://orbit.example');
+  assert.ok([401, 503].includes(r.status), `unkeyed Orbit answered ${r.status}`);
+});
