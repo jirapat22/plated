@@ -33,6 +33,7 @@ const bugReportsRoutes = require('./src/routes/bugReports');
 const batchesRoutes    = require('./src/routes/batches');
 const connectionsRoutes = require('./src/routes/connections');
 const leftoversRoutes   = require('./src/routes/leftovers');
+const presetsRoutes     = require('./src/routes/presets');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -135,6 +136,7 @@ app.use('/api/ironlog',    requireProfile, ironlogRoutes);
 app.use('/api/batches',    requireProfile, batchesRoutes);
 app.use('/api/leftovers',  requireProfile, leftoversRoutes);
 app.use('/api/connections', requireProfile, connectionsRoutes);
+app.use('/api/presets',    requireProfile, presetsRoutes);
 
 // SPA fallback
 app.get('*', (req, res) => {

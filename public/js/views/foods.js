@@ -3,6 +3,7 @@ import { showToast, showSheet, hideSheet, showPrompt, getProfile } from '../app.
 import { getFoodIcon }  from '../utils/foodIcon.js';
 import { wireEnergyUnitToggle, wireDualNutrition, fmtE, unitLabel } from '../utils/energy.js';
 import { renderBatches } from './batches.js';
+import { renderPresets } from './presets.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -65,6 +66,7 @@ export function renderFoods(container) {
         <button class="search-tab active" data-tab="all">🕐 Recent</button>
         <button class="search-tab" data-tab="favourites">★ Favourites</button>
         <button class="search-tab" data-tab="batches">🍱 Batches</button>
+        <button class="search-tab" data-tab="presets">📋 Presets</button>
         <button class="search-tab" data-tab="custom">Custom</button>
         <button class="search-tab" data-tab="scanned">Scanned</button>
       </div>
@@ -96,13 +98,14 @@ export function renderFoods(container) {
     const list = document.getElementById('foods-list');
     if (!list) return;   // view torn down (tab switch) before/while loading
     // Batches are their own thing, not a food list.
-    const nonFoodTab = currentTab === 'batches';
+    const nonFoodTab = currentTab === 'batches' || currentTab === 'presets';
     document.getElementById('foods-search').closest('.search-input-wrap').style.display = nonFoodTab ? 'none' : '';
     document.getElementById('add-custom-btn').style.display = nonFoodTab ? 'none' : '';
     // Batches runs its own fetches, so it needs to know when it has been
     // superseded too. Its own reloads — after portioning, deleting, renaming —
     // do not advance listGen, so they still draw.
     if (currentTab === 'batches')   { renderBatches(list, current); return; }
+    if (currentTab === 'presets')   { renderPresets(list, current); return; }
     list.innerHTML = '<div class="skeleton skel-line" style="margin:8px 16px"></div>';
 
     try {

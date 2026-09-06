@@ -182,6 +182,31 @@ function initDb() {
       created_at  TEXT    DEFAULT (datetime('now'))
     );
 
+    -- ── Presets: a saved recipe, or a saved set of foods ───────
+    -- NOT called meal_templates. That pair of tables is DROPped unconditionally
+    -- on every boot a few hundred lines below (the July removal), so reusing
+    -- the name would delete this table on the next deploy.
+    --
+    -- One table for both kinds because they are the same thing stored: a name
+    -- and a list of (food, grams). Only what USING one does differs — a 'batch'
+    -- preset opens the batch builder with the ingredients filled in and the
+    -- cooked weight left blank, a 'meal' preset opens a confirm sheet and lands
+    -- on a day.
+    CREATE TABLE IF NOT EXISTS presets (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      name       TEXT    NOT NULL,
+      kind       TEXT    NOT NULL,                  -- 'batch' | 'meal'
+      created_at TEXT    DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS preset_items (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      preset_id  INTEGER NOT NULL REFERENCES presets(id) ON DELETE CASCADE,
+      food_id    INTEGER NOT NULL REFERENCES foods(id),
+      quantity_g REAL    NOT NULL,
+      sort       INTEGER NOT NULL DEFAULT 0
+    );
+
     -- ── Bug reports / feature ideas (forwarded to Orbit) ───────
     CREATE TABLE IF NOT EXISTS bug_reports (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -397,6 +422,8 @@ function ensureIndexes(db) {
     -- The bug-report dedupe filters on source + created_at on every capture.
     CREATE INDEX IF NOT EXISTS idx_bug_reports_recent     ON bug_reports(source, created_at);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_connect_code ON profiles(connect_code) WHERE connect_code IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_presets_profile        ON presets(profile_id);
+    CREATE INDEX IF NOT EXISTS idx_preset_items_preset    ON preset_items(preset_id);
     CREATE INDEX IF NOT EXISTS idx_profile_connections_a  ON profile_connections(profile_a_id);
     CREATE INDEX IF NOT EXISTS idx_profile_connections_b  ON profile_connections(profile_b_id);
   `);

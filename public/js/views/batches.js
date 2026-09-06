@@ -3,6 +3,7 @@ import { showToast, showSheet, hideSheet } from '../app.js';
 import { renderFoodSearch }           from '../components/foodSearch.js';
 import { fmtE, unitLabel }            from '../utils/energy.js';
 import { localDate }                  from '../utils/date.js';
+import { savePresetFrom }             from './presets.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const g0  = n => Math.round(n || 0);                                    // whole grams
@@ -88,6 +89,18 @@ export function renderBatches(container, isCurrent = () => true) {
       btn.addEventListener('click', () => openPortion(find(btn.dataset.portion), load)));
     container.querySelectorAll('[data-edit]').forEach(btn =>
       btn.addEventListener('click', () => openBuilder(load, find(btn.dataset.edit))));
+    container.querySelectorAll('[data-preset]').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const b = find(btn.dataset.preset);
+        // The ingredients, not the cooked weight — that is the whole point of a
+        // recipe. An ingredient with no food_id (an old hand-typed row) cannot
+        // be saved: a preset item needs a real food to compute macros from.
+        const items = (b?.ingredients || [])
+          .filter(i => i.food_id && i.grams > 0)
+          .map(i => ({ food_id: i.food_id, quantity_g: i.grams }));
+        if (!items.length) return showToast('This batch has no ingredients linked to foods', 'error');
+        savePresetFrom('batch', b.name, items);
+      }));
     container.querySelectorAll('[data-adjust]').forEach(btn =>
       btn.addEventListener('click', () => {
         const b = find(btn.dataset.adjust);
@@ -155,6 +168,7 @@ export function renderBatches(container, isCurrent = () => true) {
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:2px">
             <div style="font-weight:700;font-size:15px">${esc(b.name)}</div>
             <div style="display:flex;gap:8px;flex-shrink:0">
+              <button data-preset="${b.id}" title="Save these ingredients as a recipe" style="color:var(--text-faint);font-size:13px">⭐</button>
               <button data-edit="${b.id}" title="Edit this batch" style="color:var(--text-faint);font-size:13px">✏️</button>
               <button data-del="${b.id}" title="Delete" style="color:var(--error);font-size:15px">✕</button>
             </div>
@@ -232,13 +246,17 @@ function openAdjust(batch, onDone) {
 
 // ── New / edit batch builder ─────────────────────────────────
 // Pass an existing batch to edit it in place; omit for a new one.
-function openBuilder(onDone, batch = null) {
-  const isEdit = !!batch;
+// batch may be a real one (has an id → editing it) or a seed from a preset:
+// { name, ingredients } with no id, which pre-fills the form and still SAVES a
+// new batch. Keying edit-mode on the id rather than on the object is what lets
+// one builder serve both without a second parameter.
+export function openBuilder(onDone, batch = null) {
+  const isEdit = !!batch?.id;
   showSheet(content => {
     // { food_id, name, grams, cal }. On edit, seed from the saved ingredients —
     // cal is refetched below so the running total is right without trusting a
     // stale snapshot.
-    const ingredients = isEdit
+    const ingredients = batch
       ? (batch.ingredients || []).map(i => ({ food_id: i.food_id ?? null, name: i.name, grams: i.grams, cal: 0 }))
       : [];
 
@@ -269,9 +287,12 @@ function openBuilder(onDone, batch = null) {
     // Values set via JS so a name with quotes/angle brackets can't break out.
     const nameInput   = document.getElementById('b-name');
     const cookedInput = document.getElementById('b-cooked');
-    if (isEdit) {
-      nameInput.value   = batch.name;
-      cookedInput.value = g0(batch.cooked_g);
+    if (batch) {
+      nameInput.value = batch.name || '';
+      // Only an actual batch carries a cooked weight forward. A preset leaves it
+      // blank on purpose: the same recipe rarely cooks down to the same weight,
+      // and a carried-over one would rescale every portion's macros in silence.
+      if (batch.cooked_g) cookedInput.value = g0(batch.cooked_g);
     }
 
     renderFoodSearch(document.getElementById('b-search'), food => {

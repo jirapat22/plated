@@ -211,6 +211,16 @@ router.get('/export', (req, res) => {
       // makes logging fast — without it "recent foods" is empty and every
       // quantity sheet forgets the portion you always take.
       food_stats:    db.prepare('SELECT food_id, use_count, last_used, last_qty_g FROM profile_food_stats WHERE profile_id = $pid').all({ pid }),
+      // Presets, carried from the day they were built rather than after
+      // someone lost them. Two arrays rather than a nested shape so the import
+      // can remap food ids the same way it does everywhere else.
+      presets: db.prepare('SELECT * FROM presets WHERE profile_id = $pid ORDER BY id').all({ pid }),
+      preset_items: db.prepare(`
+        SELECT pi.* FROM preset_items pi
+        JOIN presets p ON p.id = pi.preset_id
+        WHERE p.profile_id = $pid
+        ORDER BY pi.preset_id, pi.sort, pi.id
+      `).all({ pid }),
       settings:      allSettings(db, pid),
     };
     const filename = `plated-export-${new Date().toISOString().split('T')[0]}.json`;
@@ -251,6 +261,11 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
     const overrides     = Array.isArray(body.daily_overrides) ? body.daily_overrides : null;
     const foodStats     = Array.isArray(body.food_stats) ? body.food_stats : null;
     const leftovers     = Array.isArray(body.leftovers) ? body.leftovers : null;
+    // null-not-empty again: a backup taken before presets existed leaves the
+    // presets you have alone instead of wiping them to match a file that never
+    // knew about them.
+    const presets       = Array.isArray(body.presets) ? body.presets : null;
+    const presetItems   = Array.isArray(body.preset_items) ? body.preset_items : [];
     const settings      = (body.settings && typeof body.settings === 'object') ? body.settings : {};
 
     if (!body.exported_at || !Array.isArray(body.meal_sessions)) {
@@ -264,6 +279,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
     let measurementsImported = 0;
     let overridesImported = 0;
     let leftoversImported = 0;
+    let presetsImported = 0;
     let sessionsImported = 0;
     let weightImported = 0;
     // Rows the file carried that no live route would have accepted. Reported
@@ -491,6 +507,38 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
         }
       }
 
+      if (presets) {
+        // Replace wholesale, like every other owned table here: cascade takes
+        // the items, then rebuild from the file. A preset item whose food did
+        // not come across is DROPPED rather than written with a null food —
+        // preset_items.food_id is NOT NULL, and a recipe line with no food is
+        // not a recipe line. It is counted as skipped so the restore says so.
+        db.prepare('DELETE FROM presets WHERE profile_id = $pid').run({ pid });
+        const insP = db.prepare(
+          "INSERT INTO presets (profile_id, name, kind, created_at) VALUES ($pid, $n, $k, COALESCE($at, datetime('now')))");
+        const insPI = db.prepare(
+          'INSERT INTO preset_items (preset_id, food_id, quantity_g, sort) VALUES ($p, $f, $q, $s)');
+        const byPreset = new Map();
+        for (const it of presetItems) {
+          if (!byPreset.has(it.preset_id)) byPreset.set(it.preset_id, []);
+          byPreset.get(it.preset_id).push(it);
+        }
+        for (const pr of presets) {
+          if (!pr.name || (pr.kind !== 'batch' && pr.kind !== 'meal')) { skipped++; continue; }
+          const rows = (byPreset.get(pr.id) || [])
+            .map(it => ({ ...it, fid: foodIdMap.get(it.food_id) ?? null }))
+            .filter(it => it.fid != null && it.quantity_g > 0);
+          const lost = (byPreset.get(pr.id) || []).length - rows.length;
+          if (lost) skipped += lost;
+          // A preset with nothing left in it would be a name that does nothing.
+          if (rows.length === 0) { skipped++; continue; }
+          const newId = insP.run({ pid, n: String(pr.name).slice(0, 40), k: pr.kind, at: pr.created_at ?? null })
+            .lastInsertRowid;
+          rows.forEach((it, i) => insPI.run({ p: newId, f: it.fid, q: it.quantity_g, s: it.sort ?? i }));
+          presetsImported++;
+        }
+      }
+
       // Sweep minted leftover foods nothing points at any more.
       //
       // Import matches foods by name+brand, and a whole-meal leftover names its
@@ -541,7 +589,8 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
       // counts, which stopped being true the moment anything could be rejected.
       imported: { meals: sessionsImported, entries: entriesImported, weight: weightImported,
         foods_added: foodsAdded, batches: batchesImported, goal_rows: goalRowsImported,
-        measurements: measurementsImported, day_notes: overridesImported, leftovers: leftoversImported },
+        measurements: measurementsImported, day_notes: overridesImported, leftovers: leftoversImported,
+        presets: presetsImported },
       skipped,
     });
   } catch (err) {

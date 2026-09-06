@@ -1,6 +1,7 @@
 import { api }                            from '../api.js';
 import { showToast, showSheet, hideSheet, getProfile } from '../app.js';
 import { queueWrite }                     from '../utils/writeQueue.js';
+import { savePresetFrom }                 from './presets.js';
 import { newClientId }                    from '../utils/offlineStore.js';
 import { renderFoodSearch }               from '../components/foodSearch.js';
 import { fmtE, unitLabel, toKcal, wireEnergyUnitToggle } from '../utils/energy.js';
@@ -966,6 +967,7 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
       ${showMoveToday ? `<button class="sm-copy-today" style="display:block;width:100%;text-align:left;padding:12px 16px;font-size:13px;color:var(--text)">↻ Eat this again today</button>` : ''}
       <button class="sm-move" style="display:block;width:100%;text-align:left;padding:12px 16px;font-size:13px;color:var(--text)">Move to another day</button>
       <button class="sm-copy" style="display:block;width:100%;text-align:left;padding:12px 16px;font-size:13px;color:var(--text)">Copy to…</button>
+      <button class="sm-preset" style="display:block;width:100%;text-align:left;padding:12px 16px;font-size:13px;color:var(--text)">⭐ Save as a preset</button>
     </div>
   `;
 
@@ -1075,6 +1077,17 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
   });
   menu.querySelector('.sm-move').addEventListener('click', () => { closeMenu(); openMoveMeal(session, viewDate, onDone); });
   menu.querySelector('.sm-copy').addEventListener('click', () => { closeMenu(); openCopyMeal(session, viewDate, onDone); });
+  menu.querySelector('.sm-preset').addEventListener('click', () => {
+    closeMenu();
+    // Quick Log entries are a calories-only stand-in food logged at exactly
+    // 100g; saving one into a preset would reuse that one-off row every time,
+    // so they are left out and said so.
+    const items = (session.entries || [])
+      .filter(e => e.food_id && e.quantity_g > 0)
+      .map(e => ({ food_id: e.food_id, quantity_g: e.quantity_g }));
+    if (!items.length) return showToast('Nothing in this meal can be saved as a preset', 'error');
+    savePresetFrom('meal', session.name || 'Saved meal', items);
+  });
   menu.querySelector('.sm-left')?.addEventListener('click', () => { closeMenu(); openMealLeftover(session, onDone); });
   sessionEl.querySelector('.session-del-btn').addEventListener('click', async () => {
     if (!confirm(`Delete "${session.name}" and all its entries?`)) return;

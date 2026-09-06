@@ -213,3 +213,43 @@ test('two batches with the same name stay separate across a restore', async () =
     `the 100g went somewhere else — small batch ${after[1].remaining_g}/500, large ${after[0].remaining_g}/1000`);
   assert.strictEqual(after[0].remaining_g, 1000, 'the large batch was credited with grams it never held');
 });
+
+// ── presets ride along ──────────────────────────────────────────────────────
+// Written the same day presets were, rather than after someone restored and
+// found their recipes gone. Every other table in this file earned its line in
+// the export that way; this one does not have to.
+test('presets survive a restore, with their food links intact', async () => {
+  const A = as(alice);
+  const made = await (await A('POST', '/api/presets', {
+    kind: 'batch', name: 'Weekly chilli',
+    items: [{ food_id: 1, quantity_g: 800 }, { food_id: 2, quantity_g: 300 }],
+  })).json();
+  assert.ok(made.id, `preset not created: ${JSON.stringify(made)}`);
+  await A('POST', '/api/presets', { kind: 'meal', name: 'Usual breakfast', items: [{ food_id: 1, quantity_g: 120 }] });
+
+  const dump = await (await A('GET', '/api/settings/export')).json();
+  assert.ok(Array.isArray(dump.presets), 'the export carries no presets');
+  assert.strictEqual(dump.presets.length, 2);
+  assert.strictEqual(dump.preset_items.length, 3);
+
+  await A('POST', '/api/settings/import', dump);
+  const back = await (await A('GET', '/api/presets')).json();
+  assert.strictEqual(back.length, 2, 'a preset was lost or duplicated by the restore');
+  const chilli = back.find(p => p.name === 'Weekly chilli');
+  assert.strictEqual(chilli.kind, 'batch');
+  // The food links have to be REMAPPED, not carried: ids are per-database.
+  assert.deepStrictEqual(chilli.items.map(i => i.quantity_g), [800, 300]);
+  assert.ok(chilli.items.every(i => i.food_name), 'an item lost its food');
+});
+
+test('a backup taken before presets existed leaves the ones you have alone', async () => {
+  // The same null-not-empty rule batches and goal history each needed. An older
+  // file has no presets key at all; that is not the same as "no presets".
+  const A = as(alice);
+  const older = { ...await (await A('GET', '/api/settings/export')).json() };
+  delete older.presets;
+  delete older.preset_items;
+  await A('POST', '/api/settings/import', older);
+  const back = await (await A('GET', '/api/presets')).json();
+  assert.strictEqual(back.length, 2, 'restoring an older backup wiped the presets');
+});
