@@ -172,7 +172,24 @@
 
 /* ─── Reset ──────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 14px; -webkit-tap-highlight-color: transparent; }
+html {
+  font-size: 14px;
+  -webkit-tap-highlight-color: transparent;
+  /* Turn WebKit's text autosizing OFF. Reported from the phone as "when phone
+     rotate, the fonts got messed up. Larger", and it is not this app doing it:
+     nothing in the JS listens for a rotation and nothing writes a font size.
+     iOS inflates text on its own when the viewport gets wider, which on a
+     portrait-shaped app means every rotation to landscape blows the type up and
+     every rotation back shrinks it. width=device-width does not stop it — the
+     idempotent autosizer added in iOS 13 scales from the viewport width itself.
+     100%, never none: none also stops the type growing for someone who has
+     turned text size up in Settings, and the person this app is built for is
+     exactly that someone. 100% means "leave my sizes alone", which is all that
+     was wrong here. (The same line normalize.css has carried for a decade,
+     with the same one-line reason.) */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg);

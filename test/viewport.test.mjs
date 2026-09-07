@@ -78,3 +78,18 @@ test('nothing reaches past the token to the raw inset', () => {
   assert.deepStrictEqual(uses, ['--safe-top'],
     'read the top inset through var(--safe-top), not env() directly');
 });
+
+// ── rotation must not resize the type ───────────────────────────────────────
+// Invisible on every desktop browser and on the test runner: WebKit is the
+// only engine that inflates text when the viewport widens, so the only way
+// this regression shows up is someone turning their phone sideways. Pinned
+// here because "delete the odd-looking vendor property" is a very easy edit.
+test('WebKit text autosizing is switched off', () => {
+  const css = fs.readFileSync(new URL('../public/css/style.css', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const value = /-webkit-text-size-adjust:\s*([^;]+);/.exec(css)?.[1]?.trim();
+  assert.strictEqual(value, '100%',
+    value === undefined
+      ? 'without this, iOS grows every font on rotation to landscape'
+      : "'none' also blocks the reader's own text-size setting — 100% is the one that only stops iOS guessing");
+});
