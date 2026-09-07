@@ -38,27 +38,25 @@ function debounce(fn, ms) {
 export function renderFoods(container) {
   container.innerHTML = `
     <div class="today-header"><div class="today-date">Foods</div></div>
-    <div style="padding:0 16px 10px">
-      <div class="search-input-wrap">
+    <!-- "+ Add" lives up here with the search box, not down in the tab strip.
+         Finding a food and adding one you cannot find are the same errand, and
+         it was the thing stopping the six tabs from having the full width. -->
+    <div style="padding:0 16px 10px;display:flex;gap:8px;align-items:center">
+      <div class="search-input-wrap" style="flex:1;min-width:0">
         <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
           <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"/>
           <path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
         </svg>
         <input class="input" id="foods-search" placeholder="Search foods…" autocomplete="off" />
       </div>
+      <button class="btn btn-secondary" id="add-custom-btn" style="height:40px;font-size:12px;flex-shrink:0;padding:0 14px">+ Add</button>
     </div>
-    <!-- Wraps rather than scrolls sideways. At 390px the five pills need 388px
-         against 259px of room, so "Custom" and "Scanned" sat off the right edge
-         behind a horizontal scroll with no fade, arrow or cut-off pill to hint
-         they were there — at Largest text three of the five were gone. Wrapping
-         is what the Appearance copy already promises ("you'll scroll more"), and
-         vertical scrolling is the one people look for.
-         The row wraps too. A bare flex:1 on the pills squeezed them into a
-         147px column and stacked all five one-per-row down the page. Given a
-         basis to work from they keep the width they need, and "+ Add" drops to
-         its own line only when there is genuinely no room beside them. -->
-    <div style="padding:0 16px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <div class="search-tabs" id="foods-tabs" style="padding:0;flex:1 1 240px;min-width:0;flex-wrap:wrap;row-gap:6px">
+    <!-- Still no sideways scroll — that was rejected once for hiding tabs off
+         the right edge with nothing to hint they were there, and it would be
+         worse now there are six. They are an even grid instead; .tab-grid in
+         style.css has the measurements. -->
+    <div style="padding:0 16px 10px">
+      <div class="search-tabs tab-grid" id="foods-tabs" style="padding:0">
         <!-- Labelled "All" but it serves /foods/recent — your 40 most-logged.
              A fresh profile tapped it and read "No foods found" with ~4,800
              seeded foods sitting right there. Cheapest honest fix: call it
@@ -70,7 +68,6 @@ export function renderFoods(container) {
         <button class="search-tab" data-tab="custom">Custom</button>
         <button class="search-tab" data-tab="scanned">Scanned</button>
       </div>
-      <button class="btn btn-secondary" id="add-custom-btn" style="height:36px;font-size:12px;flex-shrink:0">+ Add</button>
     </div>
     <div id="foods-list"></div>
   `;

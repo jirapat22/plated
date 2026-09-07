@@ -820,6 +820,31 @@ canvas { max-width: 100%; }
   color: var(--accent);
   border-color: var(--accent-dim);
 }
+/* Foods' tab strip, which flex-wrap could not lay out evenly once there were
+   six of them. Measured at 390px: the pills need 535px against 358px of row, so
+   they broke two / three / one, with "+ Add" parked beside the first line.
+   Ragged, and three lines tall for two lines of content.
+   A grid makes every pill the same width and every row full. auto-fit is what
+   keeps it honest at larger text sizes: the whole app is scaled with zoom, so
+   at 130% the usable width is ~268 CSS px and three 100px columns no longer
+   fit — it drops to two columns of two rows rather than overflowing or
+   squeezing the labels. Scoped to this strip, because .search-tabs is also the
+   day chips, the bug/idea toggle and the Trends metric row, none of which want
+   to be a grid. */
+.search-tabs.tab-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 6px;
+}
+/* The cell decides the width now, so a long label ellipsises instead of
+   pushing its pill wider than its neighbours. */
+.search-tabs.tab-grid .search-tab {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Food search chips ───────────────────────────────────── */
 .fs-chip {
   height: 28px;
