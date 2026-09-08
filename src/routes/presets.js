@@ -16,6 +16,7 @@ const { getDb } = require('../db');
 const { isRealDate, todayLocal, tzFor } = require('../utils/tz');
 const { qtyError, trimName } = require('../utils/validate');
 const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
+const { usableFood } = require('../utils/foodAccess');
 
 const router = express.Router();
 
@@ -56,7 +57,10 @@ function cleanItems(db, pid, raw) {
   raw.forEach((it, i) => {
     const bad = qtyError(it?.quantity_g);
     if (bad) { const e = new Error(bad); e.status = 400; throw e; }
-    const food = db.prepare('SELECT id FROM foods WHERE id = $id').get({ id: parseInt(it.food_id) });
+    // usableFood, not a bare id lookup: another profile's quick/batch/leftover
+    // rows are private notes, and readPreset hands back the name and every
+    // macro. This route was a second doorway to what GET /api/foods/:id gates.
+    const food = usableFood(db, it.food_id, pid);
     if (!food) { const e = new Error('Food not found'); e.status = 404; throw e; }
     out.push({ food_id: food.id, quantity_g: parseFloat(it.quantity_g), sort: i });
   });

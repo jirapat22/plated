@@ -9,6 +9,13 @@ const require_ = createRequire(import.meta.url);
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'plated-batch-'));
 const { initDb, getDb } = require_('../src/db.js');
 
+// computeTotals takes the profile now: ingredients come off a request, so
+// another profile's private quick/batch/leftover rows must not resolve into
+// someone else's pot. Nothing seeded here is private, so the value only has to
+// exist — and it is deliberately required rather than defaulted, because a
+// route that forgot it would otherwise silently drop your own batch
+// ingredients instead of failing.
+const PID = 1;
 let db, computeTotals, mkFood;
 before(() => {
   initDb();
@@ -27,7 +34,7 @@ test('a macro no ingredient recorded comes out NULL, not 0', () => {
   const rice = mkFood('Rice, plain', { cal: 130 });           // knows only calories
   const { t } = computeTotals(db, [
     { food_id: oil, quantity_g: 100 }, { food_id: rice, quantity_g: 200 },
-  ]);
+  ], PID);
   assert.strictEqual(t.fiber, null, 'nothing in the pot knew fiber');
   assert.strictEqual(t.protein, null, 'nothing in the pot knew protein');
   assert.strictEqual(t.fat, 100, 'fat was known and must survive');
@@ -36,7 +43,7 @@ test('a macro no ingredient recorded comes out NULL, not 0', () => {
 
 test('a genuine zero is preserved as zero, not turned into unknown', () => {
   const water = mkFood('Water', { cal: 0, p: 0, c: 0, f: 0, fb: 0 });
-  const { t } = computeTotals(db, [{ food_id: water, quantity_g: 500 }]);
+  const { t } = computeTotals(db, [{ food_id: water, quantity_g: 500 }], PID);
   assert.strictEqual(t.fiber, 0, 'a recorded 0 is a fact, not a gap');
   assert.strictEqual(t.protein, 0);
 });
@@ -46,7 +53,7 @@ test('one knowing ingredient is enough to make the total real', () => {
   const milk = mkFood('Milk', { cal: 64 });
   const { t } = computeTotals(db, [
     { food_id: oats, quantity_g: 100 }, { food_id: milk, quantity_g: 200 },
-  ]);
+  ], PID);
   assert.strictEqual(t.fiber, 10, 'known from one ingredient, absent from the other');
 });
 
@@ -56,7 +63,7 @@ test('ingredients with no food row or no weight are skipped, not counted as zero
     { food_id: oats, quantity_g: 100 },
     { food_id: 999999, quantity_g: 50 },   // no such food
     { food_id: oats, quantity_g: 0 },      // no weight
-  ]);
+  ], PID);
   assert.strictEqual(ing.length, 1);
   assert.strictEqual(t.fiber, 10);
 });

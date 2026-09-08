@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDb } = require('../db');
 const { todayLocal, tzFor, isRealDate } = require('../utils/tz');
+const { VISIBLE_SQL } = require('../utils/foodAccess');
 const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
 
 const router = express.Router();
@@ -12,9 +13,13 @@ const safeParse = s => { try { return s ? JSON.parse(s) : []; } catch { return [
 
 // Sum whole-batch nutrition from ingredients, using the foods table as the
 // source of truth (don't trust client-sent macros).
-function computeTotals(db, items) {
+// pid: ingredients come straight off the request, so another profile's private
+// quick/batch/leftover rows must not resolve here — `ing` carries f.name back
+// out. An unusable id is skipped exactly like a missing one, which is what the
+// loop already did for a food that had been deleted.
+function computeTotals(db, items, pid) {
   const get = db.prepare(`SELECT name, calories_per_100g, protein_per_100g, carbs_per_100g,
-    fat_per_100g, fiber_per_100g FROM foods WHERE id = $id`);
+    fat_per_100g, fiber_per_100g FROM foods WHERE id = $id AND ${VISIBLE_SQL}`);
   const t = { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
   // Which macros ANY ingredient actually knew. Summing `|| 0` alone cannot tell
   // "every ingredient had 0 g fiber" from "nothing in this pot recorded fiber",
@@ -26,7 +31,7 @@ function computeTotals(db, items) {
   const ing = [];
   for (const it of (items || [])) {
     const g = parseFloat(it.quantity_g);
-    const f = it.food_id != null ? get.get({ id: it.food_id }) : null;
+    const f = it.food_id != null ? get.get({ id: it.food_id, pid }) : null;
     if (!f || !(g > 0)) continue;
     const r = g / 100;
     t.calories += (f.calories_per_100g || 0) * r;
@@ -108,7 +113,7 @@ router.post('/', (req, res) => {
     if (!(cg > 0)) return res.status(400).json({ error: 'cooked weight must be greater than 0' });
     if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: 'add at least one ingredient' });
 
-    const { t, ing } = computeTotals(db, items);
+    const { t, ing } = computeTotals(db, items, req.profileId);
     if (t.calories <= 0) return res.status(400).json({ error: 'those ingredients have no calorie data' });
 
     // null in, null out — an unknown macro must not become a 0 in the food row.
@@ -260,7 +265,7 @@ router.patch('/:id', (req, res) => {
       if (!Array.isArray(req.body.items) || !req.body.items.length) {
         return res.status(400).json({ error: 'add at least one ingredient' });
       }
-      const { t, ing } = computeTotals(db, req.body.items);
+      const { t, ing } = computeTotals(db, req.body.items, req.profileId);
       if (t.calories <= 0) return res.status(400).json({ error: 'those ingredients have no calorie data' });
       totals = { calories: round1(t.calories), protein: round1(t.protein), carbs: round1(t.carbs), fat: round1(t.fat), fiber: round1(t.fiber) };
       ingredients = JSON.stringify(ing);

@@ -341,9 +341,16 @@ export function openBuilder(onDone, batch = null) {
     }
     renderList();
 
-    // Editing needs each ingredient's per-100g calories to show a running
-    // total; the saved batch only stores name + grams.
-    if (isEdit && ingredients.length) {
+    // Seeded ingredients arrive with no per-100g calories — a saved batch stores
+    // name + grams, and so does a recipe preset — so the running total has to
+    // fetch them. Gated on `isEdit` until presets arrived, when "seeded from a
+    // batch" stopped being the same thing as "editing one": cooking a recipe
+    // again seeds ingredients with NO batch id, so the fetch never ran and the
+    // total read "≈ 0 kcal from 2 ingredients" all the way to Save, next to a
+    // preset card saying 4560. Display only — the save posts food_id + grams and
+    // the server computes from the food — but it is wrong exactly where you'd
+    // check the pot against the recipe.
+    if (ingredients.length) {
       Promise.all(ingredients.map(it =>
         it.food_id != null ? api.get(`/api/foods/${it.food_id}`).catch(() => null) : null
       )).then(foods => {

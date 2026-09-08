@@ -3,6 +3,7 @@ const { getDb, canView } = require('../db');
 const { todayLocal, tzFor, isRealDate } = require('../utils/tz');
 const { goalsOn, stampGoals } = require('../utils/goals');
 const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
+const { usableFood } = require('../utils/foodAccess');
 const { qtyError } = require('../utils/validate');
 
 const router = express.Router();
@@ -691,7 +692,9 @@ router.post('/log', (req, res) => {
           f: n(quick.fat_per_100g), fb: n(quick.fiber_per_100g), by: pid,
         }).lastInsertRowid;
       }
-      const food = db.prepare('SELECT * FROM foods WHERE id = $id').get({ id: fid });
+      // A quick food minted a moment ago is this profile's own, so it passes
+      // the same gate the caller-supplied id has to clear.
+      const food = usableFood(db, fid, pid);
       if (!food) throw Object.assign(new Error('Food not found'), { status: 404 });
 
       // 2. The session. An explicit session_id is honoured only if it is yours
@@ -769,7 +772,7 @@ router.post('/sessions/:id/entries', (req, res) => {
       .get({ id, pid: req.profileId });
     if (!session) return res.status(404).json({ error: 'Meal session not found' });
 
-    const food = db.prepare('SELECT * FROM foods WHERE id = $id').get({ id: food_id });
+    const food = usableFood(db, food_id, req.profileId);
     if (!food) return res.status(404).json({ error: 'Food not found' });
 
     const macros = calcMacros(food, quantity_g);
