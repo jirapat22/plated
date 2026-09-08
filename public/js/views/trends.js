@@ -634,15 +634,26 @@ export function renderTrends(container) {
 
     const weekData = Object.entries(weekMap)
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([mon, arr]) => ({
-        mon, kg: weekKg(mon),
-        cal: avgOf(arr, 'calories'), protein: avgOf(arr, 'protein'),
-        carbs: avgOf(arr, 'carbs'), fat: avgOf(arr, 'fat'),
-        // Keyed by the metric names drawWeekBars uses, not the row's column
-        // names — 'cal' is the metric, 'calories' is the column.
-        part: { cal: anyPartial(arr, 'calories'), protein: anyPartial(arr, 'protein'),
-                carbs: anyPartial(arr, 'carbs'), fat: anyPartial(arr, 'fat') },
-      }));
+      .map(([mon, arr]) => {
+        // Under-logged days come out, the same way they already do for the
+        // real-maintenance estimate. They used not to, so one day where dinner
+        // never got entered sat in this week's average dragging it down while
+        // being correctly ignored by the verdict card above — the same day
+        // counted in one card and not the other, with nothing saying why.
+        // A week with nothing left reads '–' rather than vanishing from the
+        // list, because a missing row is not something you notice.
+        const kept = arr.filter(r => !isFlagged(r.status));
+        const avg = k => (kept.length ? avgOf(kept, k) : null);
+        return {
+          mon, kg: weekKg(mon), dropped: arr.length - kept.length,
+          cal: avg('calories'), protein: avg('protein'),
+          carbs: avg('carbs'), fat: avg('fat'),
+          // Keyed by the metric names drawWeekBars uses, not the row's column
+          // names — 'cal' is the metric, 'calories' is the column.
+          part: { cal: anyPartial(kept, 'calories'), protein: anyPartial(kept, 'protein'),
+                  carbs: anyPartial(kept, 'carbs'), fat: anyPartial(kept, 'fat') },
+        };
+      });
 
     const macroMeta = {
       cal:     { label: 'Calories', goal, color: 'var(--accent)',  disp: v => fmtE(v) },
@@ -654,7 +665,7 @@ export function renderTrends(container) {
       const m = macroMeta[metric];
       const box = document.getElementById('wk-bars');
       if (!box) return;
-      const max = Math.max(m.goal || 1, ...weekData.map(w => w[metric])) * 1.08;  // headroom
+      const max = Math.max(m.goal || 1, ...weekData.map(w => w[metric]).filter(v => v != null)) * 1.08;  // headroom
       const goalPct = m.goal ? (m.goal / max) * 100 : null;
       const f = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       // A week's weight move counts as progress when it goes the way the phase
@@ -667,11 +678,12 @@ export function renderTrends(container) {
         const mon = new Date(w.mon + 'T00:00:00');
         const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
         const val = w[metric];
+        const none = val == null;   // every day that week was under-logged
         // A floor already past the goal still proves you were over, so the bar and
         // the over-colour stay; only the size of the excess is a minimum, and
         // the '+' says so. Same rule the macro bar follows on Today.
         const unsure = !!w.part?.[metric];
-        const over = m.goal && val > m.goal;
+        const over = m.goal && !none && val > m.goal;
         const kgTxt = w.kg == null ? '–'
           : `${w.kg > 0 ? '+' : w.kg < 0 ? '−' : ''}${Math.abs(w.kg).toFixed(1)}`;
         const kgColor = w.kg == null ? 'var(--text-faint)'
@@ -679,16 +691,16 @@ export function renderTrends(container) {
         return `<div style="display:flex;align-items:center;gap:8px;margin:9px 0">
           <span style="width:74px;flex-shrink:0;font-size:11px;color:var(--text-muted)">${f(mon)}–${sun.getDate()}</span>
           <div style="flex:1;min-width:30px;height:20px;background:var(--surface-2);border-radius:5px;position:relative;overflow:hidden">
-            <div style="height:100%;width:${Math.round(val / max * 100)}%;background:${m.color};border-radius:5px"></div>
+            <div style="height:100%;width:${none ? 0 : Math.round(val / max * 100)}%;background:${m.color};border-radius:5px"></div>
             ${goalPct != null ? `<div title="goal" style="position:absolute;top:-1px;bottom:-1px;left:${goalPct}%;width:2px;background:var(--text);opacity:.5"></div>` : ''}
           </div>
-          <span style="width:46px;text-align:right;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;${over ? 'color:var(--warning)' : ''}">${m.disp(val)}${unsure ? '+' : ''}</span>
+          <span style="width:46px;text-align:right;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;${over ? 'color:var(--warning)' : ''}">${none ? '–' : m.disp(val) + (unsure ? '+' : '')}</span>
           ${anyKg ? `<span title="trend weight change" style="width:52px;text-align:right;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:${kgColor}">${kgTxt}${w.kg == null ? '' : ' kg'}</span>` : ''}
         </div>`;
       }).join('') + `${weekData.some(w => w.part?.[metric]) ? `<div style="font-size:10px;color:var(--text-faint);margin-top:8px">+ = at least this much; a meal that week didn't record ${m.label.toLowerCase()}.</div>` : ''}<div style="display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--text-faint);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
-          <span>avg per logged day</span>
+          <span>avg per fully-logged day</span>
           <span>┃ goal ${m.disp(m.goal)}${anyKg ? ' · kg = 7-day trend move' : ''}</span>
-        </div>${anyKg && weekData.some(w => w.kg == null) ? `<div style="font-size:10px;color:var(--text-faint);margin-top:4px">“–” = no weigh-in that week, so there's nothing to compare.</div>` : ''}`;
+        </div>${anyKg && weekData.some(w => w.kg == null) ? `<div style="font-size:10px;color:var(--text-faint);margin-top:4px">“–” = no weigh-in that week, so there's nothing to compare.</div>` : ''}${weekData.some(w => w.dropped) ? `<div style="font-size:10px;color:var(--text-faint);margin-top:4px">${weekData.reduce((n, w) => n + w.dropped, 0)} under-logged day(s) left out — a day with a meal missing isn't an average worth taking.</div>` : ''}`;
     }
 
     // ── "Is it working?" verdict — intake vs actual weight change ──
@@ -1151,7 +1163,8 @@ export function renderTrends(container) {
       <div class="card" style="margin-bottom:12px;padding:0">
         <div style="padding:14px 16px 4px;font-size:13px;font-weight:700;color:var(--text-muted)">⚠️ NEEDS A LOOK · LAST 2 WEEKS</div>
         <div style="padding:0 16px 10px;font-size:12px;color:var(--text-muted);line-height:1.5">
-          These days look <strong>under-logged</strong> — under 60% of your ${fmtE(goal)} ${ul} goal with only 1–2 meals, so you probably forgot to log something. Tap <strong>Forgot — add</strong> to log the missing food, or <strong>Ate light</strong> if the low day was real (it'll then count normally). Do nothing and a day drops off this list after 2 weeks.
+          These days look <strong>under-logged</strong> — under 60% of your ${fmtE(goal)} ${ul} goal with only 1–2 meals, so you probably forgot to log something. Tap <strong>Forgot — add</strong> to log the missing food.<br><br>
+          <strong>Leaving it alone is safe</strong> — an under-logged day is kept out of your averages and your real-maintenance estimate, and stays out even after it drops off this list in 2 weeks. Only tap <strong>Ate light</strong> if you really did eat that little: that counts the day as it stands, and a day with a meal missing would pull those figures down.
         </div>
         <div style="padding:0 12px 8px">
           ${recentFlagged.slice().reverse().map(r => {
@@ -1168,7 +1181,7 @@ export function renderTrends(container) {
               </div>
               <div style="display:flex;gap:6px;flex-shrink:0">
                 <button class="review-add"   data-date="${r.date}">Forgot — add</button>
-                <button class="review-light" data-date="${r.date}">Ate light</button>
+                <button class="review-light" data-date="${r.date}" data-cal="${fmtE(r.calories)}" data-day="${lbl}">Ate light</button>
               </div>
             </div>`;
           }).join('')}
@@ -1415,6 +1428,16 @@ export function renderTrends(container) {
     });
     document.querySelectorAll('.review-light').forEach(btn => {
       btn.addEventListener('click', async () => {
+        // The only button on this card that can make the numbers worse, and the
+        // easiest one to reach for — it clears the warning in one tap and asks
+        // nothing of you, where "Forgot — add" wants a meal entered. Said out
+        // loud here because the day is otherwise excluded: confirming it is the
+        // act that pulls it back INTO the maintenance estimate.
+        if (!confirm(`Count ${btn.dataset.day} as a light day?
+
+Its ${btn.dataset.cal} ${ul} will then count toward your averages and your real maintenance estimate.
+
+If a meal is just missing, cancel and use "Forgot — add" instead — or leave the day alone, which already keeps it out of those figures.`)) return;
         try {
           await api.post('/api/meals/log-status', { date: btn.dataset.date, status: 'confirmed' });
           showToast('Counted as a light day', 'success');
