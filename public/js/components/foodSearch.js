@@ -44,6 +44,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
         <button class="fs-chip active" data-filter="recent">🕐 Recent</button>
         <button class="fs-chip" data-filter="favourites">⭐ Favourites</button>
         ${opts.onSelectBatch ? '<button class="fs-chip" data-filter="batches">🍱 Batches</button>' : ''}
+        ${opts.onSelectPreset ? '<button class="fs-chip" data-filter="presets">📋 Presets</button>' : ''}
       </div>
     </div>
 
@@ -88,6 +89,21 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
           return;
         }
         batches.forEach(b => results.appendChild(buildBatchRow(b)));
+        return;
+      }
+
+      // Presets aren't foods either. MEAL presets only: a recipe preset is a
+      // thing you cook, and Add Food is not where cooking starts — that one
+      // lives in Foods → Presets, next to the batch it makes.
+      if (filter === 'presets' && !q) {
+        const presets = (await api.get('/api/presets')).filter(p => p.kind === 'meal');
+        results.innerHTML = '';
+        if (!presets.length) {
+          results.innerHTML = `<div class="empty-state"><div class="empty-icon" style="font-size:28px">📋</div>
+            <div class="empty-text">No meal presets yet<br/><span style="font-size:12px;color:var(--text-faint)">Save one from a meal's ⋮ menu, or in Foods → Presets</span></div></div>`;
+          return;
+        }
+        presets.forEach(p => results.appendChild(buildPresetRow(p)));
         return;
       }
 
@@ -232,6 +248,28 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
         <path d="M1 1l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>`;
     el.addEventListener('click', () => opts.onSelectBatch(b));
+    return el;
+  }
+
+  function buildPresetRow(p) {
+    const el = document.createElement('div');
+    el.className = 'food-list-item';
+    const names = (p.items || []).map(i => i.food_name).join(', ');
+    el.innerHTML = `
+      <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--surface-2);
+        display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">🍽️</div>
+      <div class="food-list-info" style="flex:1;min-width:0">
+        <div class="food-list-name">${esc(p.name)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          ${(p.items || []).length} item${(p.items || []).length === 1 ? '' : 's'}${
+            p.calories != null ? ` · ${fmtE(p.calories)} ${unitLabel()}` : ''}
+          <span style="color:var(--text-faint)"> · ${esc(names)}</span>
+        </div>
+      </div>
+      <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style="color:var(--text-faint);flex-shrink:0">
+        <path d="M1 1l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+    el.addEventListener('click', () => opts.onSelectPreset(p));
     return el;
   }
 

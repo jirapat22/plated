@@ -1,7 +1,7 @@
 import { api }                            from '../api.js';
 import { showToast, showSheet, hideSheet, getProfile } from '../app.js';
 import { queueWrite }                     from '../utils/writeQueue.js';
-import { savePresetFrom }                 from './presets.js';
+import { savePresetFrom, openPresetLog }  from './presets.js';
 import { newClientId }                    from '../utils/offlineStore.js';
 import { renderFoodSearch }               from '../components/foodSearch.js';
 import { fmtE, unitLabel, toKcal, wireEnergyUnitToggle } from '../utils/energy.js';
@@ -594,6 +594,15 @@ export function openFoodEntry(sessionId, onSuccess, opts = {}) {
         onSelectBatch: batch => openPortion(batch, onSuccess, {
           sessionId, sessionName: opts.sessionName,
         }),
+        // A meal preset lands its own meal, named after itself — so it is
+        // offered only when the meal being logged into does not exist yet.
+        // lazySession is exactly that case, and it carries the date, which is
+        // the one thing a preset needs. Adding INTO an open meal is a different
+        // act: a preset there would quietly start a SECOND meal beside the one
+        // you were filling, which is not what "+ Add" means.
+        ...(typeof sessionId === 'function' && sessionId.date ? {
+          onSelectPreset: preset => openPresetLog(preset, onSuccess, { date: sessionId.date }),
+        } : {}),
       }
     );
   });

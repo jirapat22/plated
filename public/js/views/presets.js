@@ -146,12 +146,22 @@ export function renderPresets(container, isCurrent = () => true) {
 // ── using a meal preset ─────────────────────────────────────────────────────
 // Pre-filled and editable, nothing written until Log. Adjusting a weight here
 // is for this meal only; the preset keeps its own numbers.
-function openPresetLog(preset, onDone) {
+// opts.date: the day being logged to. Exported because presets belong where you
+// log, not only in the Foods tab — Today's + button and a History day both open
+// this, and both mean "put it on THAT day", not on whatever today happens to be.
+export function openPresetLog(preset, onDone, opts = {}) {
   showSheet(content => {
     const today = localDate();
-    const days = [today, addDaysIso(today, -1), addDaysIso(today, 1)];
-    const dayLabel = d => (d === today ? 'Today' : d === addDaysIso(today, -1) ? 'Yesterday' : 'Tomorrow');
-    let date = today;
+    const near = [today, addDaysIso(today, -1), addDaysIso(today, 1)];
+    const want = opts.date || today;
+    // The three quick chips stay for the common case; a day further back joins
+    // them rather than replacing them, so you can still change your mind.
+    const days = near.includes(want) ? near : [want, ...near];
+    const dayLabel = d => d === today ? 'Today'
+      : d === addDaysIso(today, -1) ? 'Yesterday'
+      : d === addDaysIso(today, 1) ? 'Tomorrow'
+      : new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    let date = want;
     const rows = preset.items.map(i => ({ ...i, grams: i.quantity_g }));
 
     content.innerHTML = `
@@ -161,9 +171,9 @@ function openPresetLog(preset, onDone) {
       </div>
       <div style="padding:0 16px">
         <div class="search-tabs" style="padding:0;margin-bottom:12px">
-          ${days.map(d => `<button type="button" class="fs-chip pl-day${d === today ? ' active' : ''}" data-date="${d}" style="flex-shrink:0">${dayLabel(d)}</button>`).join('')}
+          ${days.map(d => `<button type="button" class="fs-chip pl-day${d === want ? ' active' : ''}" data-date="${d}" style="flex-shrink:0">${dayLabel(d)}</button>`).join('')}
         </div>
-        <label class="form-label">Weights — change any of them for today</label>
+        <label class="form-label">Weights — change any of them just this once</label>
         <div id="pl-list" style="margin:6px 0 4px"></div>
         <div id="pl-total" style="font-size:12px;color:var(--accent);font-weight:600;margin:6px 0 14px"></div>
         <button class="btn btn-primary btn-full" id="pl-go">Log it</button>
@@ -213,7 +223,10 @@ function openPresetLog(preset, onDone) {
       try {
         await api.post(`/api/presets/${preset.id}/log`, { date, items });
         hideSheet();
-        showToast(`${preset.name} logged${date === today ? '' : ` to ${dayLabel(date).toLowerCase()}`}`, 'success');
+        // Lowercased only for the relative words — "logged to yesterday" reads,
+        // "logged to sun, sep 6" looks like a bug.
+        const where = near.includes(date) ? dayLabel(date).toLowerCase() : dayLabel(date);
+        showToast(`${preset.name} logged${date === today ? '' : ` to ${where}`}`, 'success');
         onDone?.();
       } catch (err) {
         btn.disabled = false; btn.textContent = 'Log it';
