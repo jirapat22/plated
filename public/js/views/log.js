@@ -108,6 +108,11 @@ function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOt
     // By date, not by index. quickDays[1] happened to be tomorrow only while the
     // strip started at today; the comment above this block is the same warning.
     let selectedDate = opts.defaultDate || addDaysIso(today, 1);   // copy still defaults to tomorrow
+    // Optional Copy/Move switch. An entry row is already four icons wide and a
+    // fifth would be the first thing to fall off at 150% text, so the second
+    // verb lives inside the sheet the first one opens rather than beside it.
+    // The picker itself is identical either way — same days, same meals.
+    let mode = opts.modes?.[0]?.id ?? null;
 
     content.innerHTML = `
       <div class="sheet-header">
@@ -116,13 +121,16 @@ function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOt
       </div>
       <div style="padding:0 16px">
         ${subtitle}
+        ${opts.modes ? `<div id="cp-modes" style="display:flex;gap:6px;margin-bottom:14px">
+          ${opts.modes.map((m, i) => `<button type="button" class="fs-chip cp-mode${i === 0 ? ' active' : ''}" data-mode="${m.id}" style="flex:1">${m.label}</button>`).join('')}
+        </div>` : ''}
         <label class="form-label">Date</label>
         <div id="cp-days" style="display:flex;gap:6px;overflow-x:auto;padding:6px 0 10px;-webkit-overflow-scrolling:touch">
           ${quickDays.map(d => `<button type="button" class="fs-chip cp-day${d === selectedDate ? ' active' : ''}" data-date="${d}" style="flex-shrink:0">${dayLabel(d)}</button>`).join('')}
         </div>
         <button type="button" id="cp-custom-toggle" style="font-size:12px;color:var(--accent);font-weight:600;padding:2px 0;margin-bottom:4px">Pick another date…</button>
         <input class="input" id="cp-date-custom" type="date" max="${addDaysIso(today, 7)}" style="display:none;margin-bottom:14px"/>
-        <label class="form-label">${opts.targetLabel || 'Copy into'}</label>
+        <label class="form-label" id="cp-target-label">${opts.modes?.[0]?.targetLabel || opts.targetLabel || 'Copy into'}</label>
         <div id="cp-targets" style="display:flex;flex-direction:column;gap:6px;margin:6px 0 16px"></div>
       </div>`;
     document.getElementById('cp-close').addEventListener('click', hideSheet);
@@ -144,7 +152,7 @@ function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOt
         `<button class="cp-target btn btn-secondary" data-sid="${s.id}" style="justify-content:flex-start">${esc(s.name || 'Meal')}</button>`
       ).join('') + `<button class="cp-target btn btn-secondary" data-sid="new" style="justify-content:flex-start;color:var(--accent)">${opts.newLabel || '+ New meal'}</button>`;
       targetsBox.querySelectorAll('.cp-target').forEach(btn =>
-        btn.addEventListener('click', () => onPick(date, btn.dataset.sid)));
+        btn.addEventListener('click', () => onPick(date, btn.dataset.sid, mode)));
     }
 
     function selectDate(date) {
@@ -155,6 +163,18 @@ function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOt
 
     daysBox.querySelectorAll('.cp-day').forEach(btn =>
       btn.addEventListener('click', () => selectDate(btn.dataset.date)));
+
+    content.querySelectorAll('.cp-mode').forEach(btn => btn.addEventListener('click', () => {
+      mode = btn.dataset.mode;
+      content.querySelectorAll('.cp-mode').forEach(b => b.classList.toggle('active', b === btn));
+      // The verb is the whole difference, so say it in the title and above the
+      // list of meals too — a chip alone is easy to miss having pressed.
+      const m = opts.modes.find(x => x.id === mode);
+      const t = content.querySelector('.sheet-title');
+      if (t && m?.title) t.textContent = m.title;
+      const lbl = content.querySelector('#cp-target-label');
+      if (lbl && m?.targetLabel) lbl.textContent = m.targetLabel;
+    }));
 
     customToggle.addEventListener('click', () => {
       const opening = customInput.style.display === 'none';
@@ -176,15 +196,31 @@ export async function openCopyEntry(entry, viewDate, onDone) {
   const others = (await dayMeals(viewDate)).filter(s => s.id !== entry.meal_session_id);
   const copyTo = sid => api.post(`/api/meals/sessions/${sid}/entries`, { food_id: entry.food_id, quantity_g: entry.quantity_g });
   const newSession = async date => (await api.post('/api/meals/sessions', { date })).id;
+  // Moving is a re-parent, not a copy-then-delete: the same row changes which
+  // meal it belongs to, so nothing is duplicated and nothing has to be deleted
+  // afterwards. The server leaves batch stock and use counts alone for exactly
+  // that reason — nothing new was eaten.
+  const moveTo = sid => api.patch(`/api/meals/entries/${entry.id}`, { meal_session_id: sid });
   const sub = `<div style="font-size:15px;font-weight:600">${esc(entry.food_name)}</div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${Math.round(entry.quantity_g)}g · ${fmtE(entry.calories)} ${unitLabel()}</div>`;
-  destinationSheet('Copy food', sub, viewDate, entry.meal_session_id, others, async (date, sid) => {
+  destinationSheet('Copy food', sub, viewDate, entry.meal_session_id, others, async (date, sid, mode) => {
+    const moving = mode === 'move';
     try {
-      await copyTo(sid === 'new' ? await newSession(date) : sid);
+      const target = sid === 'new' ? await newSession(date) : sid;
+      await (moving ? moveTo(target) : copyTo(target));
       hideSheet();
-      showToast(sid === 'new' ? (date === localDate() ? 'Copied to today' : `Copied to ${date}`) : 'Copied', 'success');
+      const where = date === localDate() ? 'today' : date;
+      showToast(
+        moving ? (sid === 'new' ? `Moved to ${where}` : 'Moved')
+               : (sid === 'new' ? (date === localDate() ? 'Copied to today' : `Copied to ${date}`) : 'Copied'),
+        'success');
       onDone?.();
     } catch (err) { showToast(err.message, 'error'); }
+  }, {
+    modes: [
+      { id: 'copy', label: '⧉ Copy', title: 'Copy food', targetLabel: 'Copy into' },
+      { id: 'move', label: '→ Move', title: 'Move food', targetLabel: 'Move into' },
+    ],
   });
 }
 
@@ -230,11 +266,25 @@ export async function openMoveMeal(session, viewDate, onDone) {
     if (sid === 'new' && date === viewDate) { hideSheet(); return; }
     try {
       if (sid === 'new') {
+        const from = session.date || viewDate;
         await api.patch(`/api/meals/sessions/${session.id}`, { date });
-        showToast(`Moved to ${date === today ? 'today' : date}`, 'success');
+        // Deleting has had an Undo for ages; moving is just as easy to do by
+        // accident and was the one that left you hunting for the meal on
+        // another day to put it back.
+        showToast(`Moved to ${date === today ? 'today' : date}`, 'success', {
+          actionLabel: 'Undo',
+          onAction: () => undoMove(session.id, from, onDone),
+        });
       } else {
         const r = await api.post(`/api/meals/sessions/${session.id}/merge`, { target_session_id: sid });
-        showToast(`Merged into ${r.name || 'that meal'}`, 'success');
+        // Merge is the destructive one: the meal it emptied stops existing and
+        // its entries become indistinguishable from the ones already there. The
+        // server hands back which entries moved and what the meal was called,
+        // which is exactly enough to build it again.
+        showToast(`Merged into ${r.name || 'that meal'}`, 'success', {
+          actionLabel: 'Undo',
+          onAction: () => undoMerge(r.undo, onDone),
+        });
       }
       hideSheet();
       onDone?.();
@@ -245,6 +295,33 @@ export async function openMoveMeal(session, viewDate, onDone) {
     days,
     defaultDate: days.find(d => d !== viewDate),
   });
+}
+
+// Putting a move back is the same call in reverse.
+async function undoMove(sessionId, backTo, onDone) {
+  try {
+    await api.patch(`/api/meals/sessions/${sessionId}`, { date: backTo });
+    showToast('Move undone', 'info');
+    onDone?.();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+// Putting a merge back means re-making the meal and sending its entries home.
+// Both are ordinary routes; the only thing that could not be reconstructed
+// afterwards is WHICH entries were the source meal's, and merge now says.
+async function undoMerge(undo, onDone) {
+  // Not `entry_ids.length` — merging an EMPTY meal moves nothing and still
+  // destroys the meal and its name, which is the thing undo is putting back.
+  // Found by merging one in a browser: the toast offered Undo and then refused.
+  if (!undo) return showToast("That merge can't be undone", 'error');
+  try {
+    const back = await api.post('/api/meals/sessions', { date: undo.date, name: undo.name });
+    for (const id of undo.entry_ids) {
+      await api.patch(`/api/meals/entries/${id}`, { meal_session_id: back.id });
+    }
+    showToast(`"${undo.name || 'Meal'}" put back`, 'info');
+    onDone?.();
+  } catch (err) { showToast(err.message, 'error'); }
 }
 
 // ── Didn't finish it: split an entry into what you ate and what's left ──
@@ -1105,8 +1182,12 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
   });
   sessionEl.querySelector('.session-move-btn')?.addEventListener('click', async () => {
     try {
+      const from = session.date || viewDate;
       await api.patch(`/api/meals/sessions/${session.id}`, { date: localDate() });
-      showToast(`"${session.name}" moved to today`, 'success');
+      showToast(`"${session.name}" moved to today`, 'success', {
+        actionLabel: 'Undo',
+        onAction: () => undoMove(session.id, from, onDone),
+      });
       onDone?.();
     } catch (err) { showToast(err.message, 'error'); }
   });

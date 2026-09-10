@@ -1,7 +1,7 @@
 import { api }                        from '../api.js';
 import { showToast, showSheet, hideSheet } from '../app.js';
 import { renderFoodSearch }           from '../components/foodSearch.js';
-import { fmtE, unitLabel }            from '../utils/energy.js';
+import { fmtE, unitLabel, toKcal }    from '../utils/energy.js';
 import { localDate }                  from '../utils/date.js';
 import { savePresetFrom }             from './presets.js';
 
@@ -432,6 +432,21 @@ export function openBuilder(onDone, batch = null) {
 // No amount field: a leftover is one portion, used in one go.
 export function openLeftoverLog(l, onDone) {
   const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return localDate(d); };
+  // A container in a fridge gets opened more than once. The field is filled in
+  // with the whole thing, so "I'm eating all of it" is still one tap — typing a
+  // smaller number logs that much and puts the rest back.
+  //
+  // Weighed leftovers are grams; a Quick Log one has calories and no weight, so
+  // for those the number IS energy and has to cross the kcal/kJ boundary the
+  // same way the entry split does. Compare and send in kcal, only ever SHOW in
+  // the user's unit — taking a typed kJ figure straight through would log a
+  // quarter of what they meant.
+  const byGrams = l.quantity_g != null && l.quantity_g > 0;
+  const whole   = byGrams ? Math.round(l.quantity_g) : Math.round(l.calories || 0);
+  const unit    = byGrams ? 'g' : unitLabel();
+  const disp    = v => (byGrams ? String(Math.round(v)) : fmtE(v));
+  const canon   = v => (byGrams ? v : toKcal(v));
+
   showSheet(async content => {
     const today = localDate();
     const days  = [today, addDays(today, 1), addDays(today, -1), addDays(today, -2)];
@@ -448,8 +463,17 @@ export function openLeftoverLog(l, onDone) {
         <button class="sheet-close" id="lg-close">✕</button>
       </div>
       <div style="padding:0 16px">
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">${
-          l.quantity_g != null ? `${g0(l.quantity_g)} g · ` : ''}${fmtE(l.calories)} ${unitLabel()} · logged in one go</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">${
+          l.quantity_g != null ? `${g0(l.quantity_g)} g · ` : ''}${fmtE(l.calories)} ${unitLabel()} in the fridge</div>
+        <div class="form-group">
+          <label class="form-label">How much are you having?</label>
+          <div style="position:relative">
+            <input class="input" id="lg-amt" type="text" inputmode="decimal" value="${disp(whole)}"
+              style="height:46px;font-size:17px;font-weight:700;padding-right:44px"/>
+            <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted)">${unit}</span>
+          </div>
+          <div id="lg-rest" style="font-size:12px;color:var(--text-faint);min-height:17px;margin-top:6px"></div>
+        </div>
         <label class="form-label">Day</label>
         <div id="lg-days" style="display:flex;gap:6px;overflow-x:auto;padding:6px 0 10px;-webkit-overflow-scrolling:touch">
           ${days.map(d => `<button type="button" class="fs-chip lg-day${d === today ? ' active' : ''}" data-date="${d}" style="flex-shrink:0">${label(d)}</button>`).join('')}
@@ -477,12 +501,34 @@ export function openLeftoverLog(l, onDone) {
       loadMeals();
     }));
     document.getElementById('lg-close').addEventListener('click', hideSheet);
+
+    const amtEl  = document.getElementById('lg-amt');
+    const restEl = document.getElementById('lg-rest');
+    const askedC = () => canon(parseFloat(amtEl.value));
+    const showRest = () => {
+      const c = askedC();
+      restEl.textContent = !(c > 0) ? ''
+        : c >= whole ? 'All of it — nothing goes back in the fridge.'
+        : `${disp(whole - c)} ${unit} stays in the fridge.`;
+    };
+    amtEl.addEventListener('input', showRest);
+    showRest();
+
     document.getElementById('lg-save').addEventListener('click', async () => {
       const sid = sel.value;
+      const c = askedC();
+      if (!(c > 0)) return showToast(`Enter how much you're having, in ${unit}`, 'error');
       try {
-        await api.post(`/api/leftovers/${l.id}/log`, { date, ...(sid !== 'new' ? { meal_session_id: sid } : {}) });
+        const r = await api.post(`/api/leftovers/${l.id}/log`, {
+          date,
+          ...(byGrams ? { eat_g: c } : { eat_kcal: c }),
+          ...(sid !== 'new' ? { meal_session_id: sid } : {}),
+        });
         hideSheet();
-        showToast(`${l.name} logged${date === today ? '' : ` to ${date}`}`, 'success');
+        const when = date === today ? '' : ` to ${date}`;
+        showToast(r.partial
+          ? `Logged${when} — ${disp(whole - c)} ${unit} left`
+          : `${l.name} logged${when}`, 'success');
         onDone?.();
       } catch (err) { showToast(err.message, 'error'); }
     });

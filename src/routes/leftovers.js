@@ -97,6 +97,37 @@ router.post('/:id/log', (req, res) => {
     let sid = parseInt(req.body?.meal_session_id) || null;
     if (sid && !db.prepare('SELECT 1 FROM meal_sessions WHERE id = $s AND profile_id = $p').get({ s: sid, p: pid })) sid = null;
 
+    // How much of it you're actually eating. Absent means all of it, which is
+    // what this route did for its whole life and still the one-tap case.
+    //
+    // A leftover is a container in a fridge, and a container gets opened more
+    // than once: eat half the chilli tonight, put the rest back. There was no
+    // way to say that — the only honest route was to log all 400 g and then use
+    // the entry's 🥡 to split a fresh leftover back out, which works and which
+    // nothing tells you about.
+    //
+    // Weighed leftovers split by grams, quantity-less ones (a Quick Log has
+    // calories and no weight) split by energy. Same shape as the entry split's
+    // left_g / left_kcal, and the LEFTOVER decides which applies — not the
+    // caller, who would otherwise be able to send grams for a thing that has none.
+    const byGrams = l.quantity_g != null && l.quantity_g > 0;
+    const whole   = byGrams ? l.quantity_g : (l.calories || 0);
+    const askedRaw = byGrams ? req.body?.eat_g : req.body?.eat_kcal;
+    let asked = askedRaw === undefined || askedRaw === null || askedRaw === ''
+      ? whole : parseFloat(askedRaw);
+    if (!Number.isFinite(asked) || asked <= 0) {
+      return res.status(400).json({ error: byGrams ? 'How many grams are you eating?' : 'How many calories are you eating?' });
+    }
+    // Asking for more than is there eats the lot rather than erroring: the
+    // number came off a scale, and 201 g of a 200 g leftover means "all of it".
+    if (asked >= whole) asked = whole;
+    const share   = whole > 0 ? asked / whole : 1;
+    const partial = asked < whole;
+    // null in, null out — a macro nobody recorded must not become 0 through a
+    // multiplication.
+    const part = v => (v == null ? null : round1(v * share));
+    const rest = v => (v == null ? null : round1(v * (1 - share)));
+
     db.exec('BEGIN');
     try {
       if (!sid) {
@@ -135,21 +166,37 @@ router.post('/:id/log', (req, res) => {
         food = db.prepare('SELECT * FROM foods WHERE id = $id').get({ id: foodId });
       }
 
-      let q = l.quantity_g;
+      let q = byGrams ? asked : null;
       if (q == null) {
         const per100 = food?.calories_per_100g;
-        q = per100 > 0 ? round1((l.calories || 0) / per100 * 100) : 100;
+        q = per100 > 0 ? round1((part(l.calories) || 0) / per100 * 100) : 100;
       }
       db.prepare(`INSERT INTO meal_entries (meal_session_id, food_id, quantity_g, calories, protein, carbs, fat, fiber)
         VALUES ($s, $f, $q, $cal, $p, $c, $ft, $fb)`).run({
         s: sid, f: foodId, q: round1(q),
-        cal: l.calories, p: l.protein, c: l.carbs, ft: l.fat, fb: l.fiber,
+        cal: part(l.calories), p: part(l.protein), c: part(l.carbs), ft: part(l.fat), fb: part(l.fiber),
       });
-      db.prepare('DELETE FROM leftovers WHERE id = $id AND profile_id = $p').run({ id: l.id, p: pid });
+      if (partial) {
+        // What goes back in the fridge. The row survives, so its name, its age
+        // and its own food row all carry on meaning the same thing.
+        db.prepare(`UPDATE leftovers
+          SET quantity_g = $q, calories = $cal, protein = $p, carbs = $c, fat = $ft, fiber = $fb
+          WHERE id = $id AND profile_id = $pid`).run({
+          id: l.id, pid,
+          q: byGrams ? round1(l.quantity_g - asked) : l.quantity_g,
+          cal: rest(l.calories), p: rest(l.protein), c: rest(l.carbs), ft: rest(l.fat), fb: rest(l.fiber),
+        });
+      } else {
+        db.prepare('DELETE FROM leftovers WHERE id = $id AND profile_id = $p').run({ id: l.id, p: pid });
+      }
       db.exec('COMMIT');
     } catch (e) { db.exec('ROLLBACK'); throw e; }
 
-    res.status(201).json({ logged: true, date, session_id: sid, calories: Math.round(l.calories || 0) });
+    res.status(201).json({
+      logged: true, date, session_id: sid,
+      calories: Math.round(part(l.calories) || 0),
+      partial, remaining_g: partial && byGrams ? round1(l.quantity_g - asked) : null,
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

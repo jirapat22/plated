@@ -615,6 +615,15 @@ router.post('/sessions/:id/merge', (req, res) => {
       .get({ s: targetId, p: pid });
     if (!target) return res.status(404).json({ error: 'Target meal not found' });
 
+    // Read the ids BEFORE re-parenting them, because afterwards there is
+    // nothing left that says which entries used to be this meal's — they are
+    // indistinguishable from the ones already in the target. Merge is the only
+    // destructive operation here that leaves no trace of itself: the source
+    // meal, and its name, simply stop existing. Handing these back is what lets
+    // the client offer Undo, the same way deleting an entry does.
+    const movedIds = db.prepare('SELECT id FROM meal_entries WHERE meal_session_id = $s')
+      .all({ s: src.id }).map(r => r.id);
+
     let merged = 0;
     db.exec('BEGIN');
     try {
@@ -627,7 +636,12 @@ router.post('/sessions/:id/merge', (req, res) => {
       throw e;
     }
 
-    res.json({ session_id: targetId, merged, date: target.date, name: target.name });
+    res.json({
+      session_id: targetId, merged, date: target.date, name: target.name,
+      // What it would take to put this back: re-make the meal, then send these
+      // entries to it. Both are things the client can already do.
+      undo: { entry_ids: movedIds, name: src.name, date: src.date },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -823,14 +837,35 @@ router.post('/sessions/:id/entries', (req, res) => {
 });
 
 // PATCH /api/meals/entries/:id — update quantity
+// PATCH /api/meals/entries/:id { quantity_g?, meal_session_id? }
+//
+// Two edits, either or both. Resizing is the old behaviour. meal_session_id
+// MOVES the entry to another meal — on this day or any other — which is the
+// half of ⧉ Copy that never existed: a meal could be moved off a wrong day,
+// a single food could only be copied and then deleted.
+//
+// A move deliberately does NOT touch batch stock or the use count, for the same
+// reason /merge doesn't: nothing new was eaten, the same grams are just filed
+// somewhere else. Resizing still does, because that genuinely changes how much
+// came out of the pot.
+//
+// Emptying the source meal is left alone. Deleting the last entry already
+// leaves the meal standing, and a move that quietly binned it would be the odd
+// one out — and would take the meal's name with it.
 router.patch('/entries/:id', (req, res) => {
   try {
     const db = getDb();
     const { id } = req.params;
-    const { quantity_g } = req.body;
-
-    const editBad = qtyError(quantity_g);
-    if (editBad) return res.status(400).json({ error: editBad });
+    const { quantity_g, meal_session_id } = req.body || {};
+    const wantsResize = quantity_g !== undefined;
+    const wantsMove   = meal_session_id !== undefined;
+    if (!wantsResize && !wantsMove) {
+      return res.status(400).json({ error: 'Nothing to change — send quantity_g, meal_session_id, or both' });
+    }
+    if (wantsResize) {
+      const editBad = qtyError(quantity_g);
+      if (editBad) return res.status(400).json({ error: editBad });
+    }
 
     const entry = db.prepare(`
       SELECT me.* FROM meal_entries me
@@ -839,31 +874,52 @@ router.patch('/entries/:id', (req, res) => {
     `).get({ id, pid: req.profileId });
     if (!entry) return res.status(404).json({ error: 'Entry not found' });
 
-    // An entry can reference a food that's since gone (or was never set, e.g. a
-    // batch portion restored without its backing food). calcMacros dereferences
-    // it, so guard here rather than throwing a 500 the caller can't act on.
-    const food = db.prepare('SELECT * FROM foods WHERE id = $id').get({ id: entry.food_id });
-    if (!food) return res.status(409).json({ error: "That food no longer exists — delete this entry and re-add it" });
-    const macros = calcMacros(food, quantity_g);
+    // The destination has to be a meal of YOURS. Without this the id alone
+    // would file your food into someone else's day.
+    let targetId = null;
+    if (wantsMove) {
+      targetId = parseInt(meal_session_id);
+      const target = db.prepare('SELECT 1 FROM meal_sessions WHERE id = $s AND profile_id = $p')
+        .get({ s: targetId, p: req.profileId });
+      if (!target) return res.status(404).json({ error: 'Meal not found' });
+    }
+
+    // Only a resize needs the food: it recomputes macros from it. A move keeps
+    // the numbers it already has, so an entry whose food has since been deleted
+    // can still be filed to the right day rather than being stuck where it is.
+    let macros = null;
+    if (wantsResize) {
+      const food = db.prepare('SELECT * FROM foods WHERE id = $id').get({ id: entry.food_id });
+      if (!food) return res.status(409).json({ error: "That food no longer exists — delete this entry and re-add it" });
+      macros = calcMacros(food, quantity_g);
+    }
 
     db.exec('BEGIN');
     try {
-      db.prepare(`
-        UPDATE meal_entries
-        SET quantity_g = $qty, calories = $calories, protein = $protein,
-            carbs = $carbs, fat = $fat, fiber = $fiber
-        WHERE id = $id
-      `).run({ id, qty: quantity_g, ...macros });
+      if (wantsResize) {
+        db.prepare(`
+          UPDATE meal_entries
+          SET quantity_g = $qty, calories = $calories, protein = $protein,
+              carbs = $carbs, fat = $fat, fiber = $fiber
+          WHERE id = $id
+        `).run({ id, qty: quantity_g, ...macros });
 
-      // Resizing a batch portion moves stock: shrinking gives grams back.
-      adjustBatchStock(db, req.profileId, entry.food_id, entry.quantity_g - quantity_g);
+        // Resizing a batch portion moves stock: shrinking gives grams back.
+        adjustBatchStock(db, req.profileId, entry.food_id, entry.quantity_g - quantity_g);
+      }
+      if (wantsMove) {
+        db.prepare('UPDATE meal_entries SET meal_session_id = $t WHERE id = $id')
+          .run({ t: targetId, id });
+      }
       db.exec('COMMIT');
     } catch (e) { db.exec('ROLLBACK'); throw e; }
 
+    // LEFT JOIN: a move can legitimately involve an entry whose food is gone,
+    // and returning undefined there would read as "the edit failed".
     const updated = db.prepare(`
       SELECT me.*, f.name AS food_name, f.brand AS food_brand, f.serving_size_g
       FROM meal_entries me
-      JOIN foods f ON f.id = me.food_id
+      LEFT JOIN foods f ON f.id = me.food_id
       WHERE me.id = $id
     `).get({ id });
 
