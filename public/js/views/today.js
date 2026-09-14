@@ -1,9 +1,9 @@
 import { api }                            from '../api.js';
 import { showToast, accentInk, getProfile } from '../app.js';
-import { openFoodEntry, openQuickLog, renderMealCard, lazySession } from './log.js';
+import { openFoodEntry, openQuickLog, renderMealCard, lazySession, undoAteLight } from './log.js';
 import { renderMacroBar }                  from '../components/macroBar.js';
 import { fmtE, unitLabel } from '../utils/energy.js';
-import { localDate }                       from '../utils/date.js';
+import { localDate, addDaysIso }           from '../utils/date.js';
 import { classifyDay, isFlagged, LOG_STRONG } from '../utils/logCheck.js';
 import { assert } from '../utils/bugReport.js';
 import { trendWeightNow } from '../utils/stats.js';
@@ -140,19 +140,25 @@ export function renderToday(container) {
       // string. Today is the screen you open in a lift, a basement, or a
       // restaurant with one bar — "you ate 1,450 so far" from twenty minutes
       // ago is worth far more there than "can't load this right now".
-      const [day, sett, todayW, histW] = await Promise.all([
+      const [day, sett, todayW, histW, summ] = await Promise.all([
         api.getCached(`/api/meals/day/${viewDate}`),
         api.getCached('/api/settings'),
         api.getCached(`/api/weight/day/${viewDate}`, null),
         api.getCached('/api/weight?limit=10', []),
+        // Just enough history to judge YESTERDAY. Today can never flag itself —
+        // the day isn't finished — so the under-logging nudge that lives in
+        // this file could never appear, and the only place it was reachable was
+        // Trends. See the banner block in render().
+        api.getCached('/api/meals/summary?days=7', []),
       ]);
       if (myGen !== loadGen) return;            // a newer load() superseded us
       const mealData = day.data, settings = sett.data;
       const todayWeight = todayW.data, weightHistory = histW.data;
+      const recentDays = summ.data || [];
       // Oldest timestamp across whatever came from the cache — the screen is
       // only as fresh as its stalest part.
       const staleAt = (day.stale || sett.stale)
-        ? ([day, sett, todayW, histW].filter(r => r.stale && r.at).map(r => r.at).sort((a, b) => a - b)[0] || null)
+        ? ([day, sett, todayW, histW, summ].filter(r => r.stale && r.at).map(r => r.at).sort((a, b) => a - b)[0] || null)
         : null;
       // Paint your own data now. Awaiting IronLog here made it a SECOND
       // sequential round trip from the phone — the four calls above finish, then
@@ -161,7 +167,7 @@ export function renderToday(container) {
       // isn't about a slow service: it's the extra serialised leg over mobile
       // data, bounded only by the route's 6s timeout when the other end stalls.
       const remembered = ironlogMemo.key === memoKey() ? ironlogMemo.data : null;
-      render(mealData, settings, remembered, todayWeight, weightHistory);
+      render(mealData, settings, remembered, todayWeight, weightHistory, recentDays);
       showStaleBanner(staleAt);   // after render — it owns container.innerHTML
 
       // Nothing below this line can work without a connection: IronLog is a
@@ -191,7 +197,7 @@ export function renderToday(container) {
         // the panel says so rather than letting an old burn pass for today's.
         if (remembered && !remembered._stale) {
           ironlogMemo = { key: memoKey(), data: { ...remembered, _stale: true } };
-          render(mealData, settings, ironlogMemo.data, todayWeight, weightHistory);
+          render(mealData, settings, ironlogMemo.data, todayWeight, weightHistory, recentDays);
         }
         return;
       }
@@ -200,14 +206,14 @@ export function renderToday(container) {
       // ponytail: a second full render rather than patching just the IronLog
       // panel — one extra paint on the slow path. Make it surgical if it ever
       // interrupts a scroll.
-      render(mealData, settings, ironlog, todayWeight, weightHistory);
+      render(mealData, settings, ironlog, todayWeight, weightHistory, recentDays);
     } catch (err) {
       if (myGen !== loadGen) return;
       container.innerHTML = `<div class="empty-state"><div class="empty-text">${esc(err.message)}</div></div>`;
     }
   }
 
-  function render(mealData, settings, ironlog, todayWeight, weightHistory = []) {
+  function render(mealData, settings, ironlog, todayWeight, weightHistory = [], recentDays = []) {
     // The tab can be switched while the fetch above is still out, and switchView
     // empties #view-container — which DETACHES this wrapper without emptying it.
     // innerHTML and container.querySelectorAll still work on a detached node, so
@@ -231,13 +237,30 @@ export function renderToday(container) {
     // existed, so treat missing as "everything known" — the old behaviour.
     const partial   = mealData.totals_partial || null;
 
-    // ── "Did you fully log this day?" check (past days only) ──
+    // ── "Did you fully log YESTERDAY?" ──
+    //
+    // This used to ask about the day on screen, and the day on screen is always
+    // today — Today has no day switching. classifyDay never flags today on
+    // purpose (the day isn't finished), so `isFlagged` here was a constant
+    // false and this entire banner, both its buttons and its CSS, could not be
+    // reached. The comment beside it even said "never true for today/future"
+    // and it stayed anyway.
+    //
+    // The effect was that the app's answer to "she forgot to log dinner" lived
+    // only on Trends — a tab you have to go looking for. The nudge belongs on
+    // the screen she actually opens, and the day it can honestly be asked about
+    // is the one that has finished: yesterday.
     const mealCount = (mealData.sessions || []).filter(s => (s.entries?.length || 0) > 0).length;
-    const dayStatus = classifyDay(
-      { date: viewDate, calories: t.calories, meal_count: mealCount, log_status: mealData.log_status },
-      goals.cal, today
-    );
-    const showLogCheck = isFlagged(dayStatus);   // never true for today/future
+    const yesterday = addDaysIso(today, -1);
+    const yRow = recentDays.find(r => r.date === yesterday) || null;
+    // No row at all means nothing was logged yesterday, which classifyDay calls
+    // 'empty' and deliberately does not treat as a problem — a day off is a day
+    // off, and nagging about it is the reminder behaviour this app has refused
+    // from the start.
+    const yStatus = yRow
+      ? classifyDay(yRow, yRow.goal ?? goals.cal, today)
+      : null;
+    const showLogCheck = isFlagged(yStatus);
 
     // Foods logged without calorie data add 0 kcal — they make the total look
     // low even though you logged them. Estimate the missing kcal from macros.
@@ -457,12 +480,13 @@ export function renderToday(container) {
       <div style="padding:0 16px 10px">
         <div class="logcheck-banner">
           <div class="logcheck-text">
-            <div class="logcheck-title">${dayStatus === LOG_STRONG ? '⚠️ This day looks under-logged' : '🤔 Did you log everything?'}</div>
-            <div class="logcheck-sub">Only ${mealCount} meal${mealCount === 1 ? '' : 's'} · ${fmtE(t.calories)} ${ul} — that's low for your goal. Forgot something, or just a light day?</div>
+            <div class="logcheck-title">${yStatus === LOG_STRONG ? '⚠️ Yesterday looks under-logged' : '🤔 Did you log everything yesterday?'}</div>
+            <div class="logcheck-sub">Only ${yRow.meal_count} meal${yRow.meal_count === 1 ? '' : 's'} · ${fmtE(yRow.calories)} ${ul} — that's low for your goal. Forgot something, or just a light day?</div>
+            <div style="font-size:11px;color:var(--text-faint);margin-top:4px;line-height:1.45">Leaving it alone is safe — an under-logged day stays out of your averages.</div>
           </div>
           <div class="logcheck-actions">
             <button class="btn btn-secondary logcheck-add">Add a meal</button>
-            <button class="btn btn-ghost logcheck-light">I ate light</button>
+            <button class="btn btn-ghost logcheck-light">Ate light</button>
           </div>
         </div>
       </div>` : ''}
@@ -628,13 +652,27 @@ export function renderToday(container) {
       });
     }
 
-    // Log-check banner: add a meal, or confirm "I ate light"
+    // Log-check banner: add the missing meal to YESTERDAY, or confirm it was
+    // genuinely a light day. lazySession(yesterday), not viewDate — the whole
+    // point is that the day being fixed is not the one on screen.
     document.querySelector('.logcheck-add')?.addEventListener('click', () =>
-      openFoodEntry(lazySession(viewDate), () => load()));
+      openFoodEntry(lazySession(yesterday), () => load()));
     document.querySelector('.logcheck-light')?.addEventListener('click', async () => {
+      // Asks first, the same way Trends does. It was the one button in the app
+      // that could quietly make the numbers WORSE — confirming a day is what
+      // pulls it back INTO the averages and the real-maintenance estimate —
+      // and here it did it in one tap with no question and no way back.
+      if (!confirm(`Count yesterday as a light day?\n\nIts ${fmtE(yRow.calories)} ${ul} will then count toward your averages and your real maintenance estimate.\n\nIf a meal is just missing, cancel and use "Add a meal" instead — or leave it alone, which already keeps it out of those figures.`)) return;
       try {
-        await api.post('/api/meals/log-status', { date: viewDate, status: 'confirmed' });
-        showToast('Got it — counted as a light day', 'success');
+        await api.post('/api/meals/log-status', { date: yesterday, status: 'confirmed' });
+        // And it is reversible now. The route has always accepted a null status
+        // to clear the override; nothing in the app ever sent one, so a mis-tap
+        // was permanent — and once confirmed the day stops being flagged, so it
+        // also stops appearing anywhere you could go looking for it.
+        showToast('Counted as a light day', 'success', {
+          actionLabel: 'Undo',
+          onAction: () => undoAteLight(yesterday, () => load()),
+        });
         load();
       } catch (err) { showToast(err.message, 'error'); }
     });

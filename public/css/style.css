@@ -605,8 +605,6 @@ img { display: block; max-width: 100%; }
   gap: 10px;
   position: relative;
   overflow: hidden;
-  touch-action: pan-y;
-  transition: transform 0.2s;
 }
 .meal-entry + .meal-entry { border-top: 1px solid var(--border); }
 /* `1 1 0` with a FLOOR, not `flex: 1` (which is `1 1 0` with min-width 0).
@@ -632,7 +630,6 @@ img { display: block; max-width: 100%; }
 .meal-entry-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .meal-entry-kcal { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .meal-entry-sub span { white-space: nowrap; }
-.meal-entry.swiped .meal-entry-delete-reveal { transform: translateX(0); }
 .meal-session-add {
   width: 100%;
   padding: 10px 14px;

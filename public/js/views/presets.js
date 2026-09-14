@@ -16,6 +16,7 @@ import { renderFoodSearch } from '../components/foodSearch.js';
 import { fmtE, unitLabel } from '../utils/energy.js';
 import { localDate, addDaysIso } from '../utils/date.js';
 import { openBuilder } from './batches.js';
+import { newClientId } from '../utils/offlineStore.js';
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const g0 = n => String(Math.round(Number(n) || 0));
@@ -163,6 +164,11 @@ export function openPresetLog(preset, onDone, opts = {}) {
       : new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     let date = want;
     const rows = preset.items.map(i => ({ ...i, grams: i.quantity_g }));
+    // One id per intent — see the block in log.js's quantity sheet. A preset
+    // writes a whole meal in one transaction, so a lost response and a retap is
+    // a duplicated meal, not a duplicated food. Re-minted whenever a weight or
+    // the day changes, because that is a different meal being asked for.
+    let clientId = newClientId();
 
     content.innerHTML = `
       <div class="sheet-header">
@@ -192,6 +198,7 @@ export function openPresetLog(preset, onDone, opts = {}) {
         </div>`).join('');
       listEl().querySelectorAll('.pl-g').forEach(inp => inp.addEventListener('input', () => {
         rows[Number(inp.dataset.i)].grams = parseFloat(inp.value) || 0;
+        clientId = newClientId();
         total();
       }));
       total();
@@ -212,6 +219,7 @@ export function openPresetLog(preset, onDone, opts = {}) {
       content.querySelectorAll('.pl-day').forEach(x => x.classList.remove('active'));
       b.classList.add('active');
       date = b.dataset.date;
+      clientId = newClientId();
     }));
     document.getElementById('pl-close').addEventListener('click', hideSheet);
 
@@ -221,7 +229,7 @@ export function openPresetLog(preset, onDone, opts = {}) {
       const btn = document.getElementById('pl-go');
       btn.disabled = true; btn.textContent = 'Logging…';
       try {
-        await api.post(`/api/presets/${preset.id}/log`, { date, items });
+        await api.post(`/api/presets/${preset.id}/log`, { date, items, client_id: clientId });
         hideSheet();
         // Lowercased only for the relative words — "logged to yesterday" reads,
         // "logged to sun, sep 6" looks like a bug.

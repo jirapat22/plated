@@ -5,6 +5,7 @@ const { getDb, seedProfileDefaults, adoptOrphanData, countProfiles } = require('
 const { trimName } = require('../utils/validate');
 const { requireProfile, pruneExpiredSessions } = require('../middleware/auth');
 const { rateLimit } = require('../middleware/rateLimit');
+const { UNREFERENCED_SQL } = require('../utils/foodAccess');
 
 const router = express.Router();
 
@@ -459,9 +460,7 @@ router.delete('/me', requireProfile, (req, res) => {
     db.prepare('DELETE FROM leftovers WHERE profile_id = $id').run({ id });
     db.prepare(`
       DELETE FROM foods WHERE source = 'leftover' AND created_by_profile = $id
-        AND NOT EXISTS (SELECT 1 FROM meal_entries me WHERE me.food_id = foods.id)
-        AND NOT EXISTS (SELECT 1 FROM batches b      WHERE b.food_id  = foods.id)
-        AND NOT EXISTS (SELECT 1 FROM leftovers l    WHERE l.food_id  = foods.id)
+        AND ${UNREFERENCED_SQL}
     `).run({ id });
     db.prepare('DELETE FROM daily_overrides   WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM profile_settings  WHERE profile_id = $id').run({ id });

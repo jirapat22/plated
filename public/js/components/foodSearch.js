@@ -44,6 +44,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
         <button class="fs-chip active" data-filter="recent">🕐 Recent</button>
         <button class="fs-chip" data-filter="favourites">⭐ Favourites</button>
         ${opts.onSelectBatch ? '<button class="fs-chip" data-filter="batches">🍱 Batches</button>' : ''}
+        ${opts.onSelectLeftover ? '<button class="fs-chip" data-filter="leftovers">🥡 Leftovers</button>' : ''}
         ${opts.onSelectPreset ? '<button class="fs-chip" data-filter="presets">📋 Presets</button>' : ''}
       </div>
     </div>
@@ -70,6 +71,15 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
 
   // ── Search ───────────────────────────────────────────────────
   async function search(fetchRemote = false) {
+    // A typed query searches FOODS, whichever chip was last tapped — Recent,
+    // Favourites, Batches, Leftovers and Presets are all "when there is no
+    // query" lists. Leaving one lit claimed the results were filtered by it
+    // when they weren't, and on 🍱/🥡/📋 the results aren't even the same kind
+    // of thing. With a query, nothing is selected.
+    const litChip = query.trim() ? null : filter;
+    container.querySelectorAll('.fs-chip').forEach(c =>
+      c.classList.toggle('active', c.dataset.filter === litChip));
+
     results.innerHTML = `<div class="skeleton skel-line" style="margin:12px 16px;width:60%"></div>
       <div class="skeleton skel-line" style="margin:8px 16px"></div>
       <div class="skeleton skel-line" style="margin:8px 16px;width:80%"></div>`;
@@ -89,6 +99,26 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
           return;
         }
         batches.forEach(b => results.appendChild(buildBatchRow(b)));
+        return;
+      }
+
+      // Leftovers aren't foods either — and this chip is the whole reason the
+      // feature is usable. Saving a leftover happens while you are looking at
+      // the meal, so 🥡 lives on the entry row and in the meal's ⋮ menu, which
+      // is exactly where your hands already are. EATING one happens at the next
+      // meal — which is this sheet — and there was nothing here: the only route
+      // was Foods → Batches, scroll past the batches, and log it from there,
+      // where it then made its own meal instead of joining the one you were
+      // filling. Batches had the identical problem and solved it this way.
+      if (filter === 'leftovers' && !q) {
+        const leftovers = await api.get('/api/leftovers');
+        results.innerHTML = '';
+        if (!leftovers.length) {
+          results.innerHTML = `<div class="empty-state"><div class="empty-icon" style="font-size:28px">🥡</div>
+            <div class="empty-text">Nothing in the fridge<br/><span style="font-size:12px;color:var(--text-faint)">Didn't finish a meal? Tap 🥡 on it to save the rest here.</span></div></div>`;
+          return;
+        }
+        leftovers.forEach(l => results.appendChild(buildLeftoverRow(l)));
         return;
       }
 
@@ -248,6 +278,33 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
         <path d="M1 1l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>`;
     el.addEventListener('click', () => opts.onSelectBatch(b));
+    return el;
+  }
+
+  // Mirrors buildBatchRow. Age is on it because a leftover has no expiry by
+  // design, so how long it has sat there is the only signal you get — and it is
+  // the thing you actually want to know before eating one.
+  function buildLeftoverRow(l) {
+    const el = document.createElement('div');
+    el.className = 'food-list-item';
+    const ul = unitLabel();
+    const days = Math.floor((Date.now() - Date.parse(String(l.created_at).replace(' ', 'T') + 'Z')) / 864e5);
+    const age = !Number.isFinite(days) ? '' : days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+    const macro = v => (v == null ? '–' : Math.round(v));
+    el.innerHTML = `
+      <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--surface-2);
+        display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">🥡</div>
+      <div class="food-list-info" style="flex:1;min-width:0">
+        <div class="food-list-name">${esc(l.name)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px;font-variant-numeric:tabular-nums">
+          ${l.quantity_g != null ? `${Math.round(l.quantity_g)} g · ` : ''}${fmtE(l.calories)} ${ul}
+          <span style="color:var(--text-faint)"> · ${macro(l.protein)}P · ${macro(l.carbs)}C · ${macro(l.fat)}F${age ? ` · saved ${age}` : ''}</span>
+        </div>
+      </div>
+      <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style="color:var(--text-faint);flex-shrink:0">
+        <path d="M1 1l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+    el.addEventListener('click', () => opts.onSelectLeftover(l));
     return el;
   }
 

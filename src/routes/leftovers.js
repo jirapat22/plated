@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDb } = require('../db');
 const { todayLocal, tzFor, isRealDate } = require('../utils/tz');
+const { UNREFERENCED_SQL } = require('../utils/foodAccess');
 
 const router = express.Router();
 const round1 = n => Math.round(n * 10) / 10;
@@ -57,20 +58,37 @@ router.delete('/:id', (req, res) => {
     const l = db.prepare('SELECT * FROM leftovers WHERE id = $id AND profile_id = $p')
       .get({ id: req.params.id, p: req.profileId });
     if (!l) return res.status(404).json({ error: 'Leftover not found' });
-    db.prepare('DELETE FROM leftovers WHERE id = $id AND profile_id = $p').run({ id: l.id, p: req.profileId });
-    // A whole-meal leftover mints a food of its own, 1:1, hidden from search.
-    // Binning the leftover leaves that food with nothing pointing at it — an
-    // invisible row that accumulates one per binned plate. Only ever removes a
-    // minted one that nothing references; a real food is shared and stays.
-    if (l.food_id) {
-      const f = db.prepare("SELECT source FROM foods WHERE id = $i").get({ i: l.food_id });
-      const used = db.prepare('SELECT COUNT(*) c FROM meal_entries WHERE food_id = $i').get({ i: l.food_id }).c
-        + db.prepare('SELECT COUNT(*) c FROM leftovers WHERE food_id = $i').get({ i: l.food_id }).c
-        + db.prepare('SELECT COUNT(*) c FROM batches WHERE food_id = $i').get({ i: l.food_id }).c;
-      if (f?.source === 'leftover' && used === 0) {
-        db.prepare('DELETE FROM foods WHERE id = $i').run({ i: l.food_id });
+    // Both writes together, or neither.
+    //
+    // They were two loose statements, and the second one could throw: it counted
+    // meal_entries, leftovers and batches to decide whether the minted food was
+    // still wanted, but not preset_items — so with a preset holding that food
+    // the count came back 0, the DELETE hit the foreign key and raised. The row
+    // this route exists to remove was already gone by then, so binning a
+    // leftover showed a red "FOREIGN KEY constraint failed" while having
+    // succeeded, and the list doesn't reload on an error, so the leftover sat
+    // there until you left the screen. Tapping it again said "not found".
+    db.exec('BEGIN');
+    try {
+      db.prepare('DELETE FROM leftovers WHERE id = $id AND profile_id = $p').run({ id: l.id, p: req.profileId });
+      // A whole-meal leftover mints a food of its own, 1:1, hidden from search.
+      // Binning the leftover leaves that food with nothing pointing at it — an
+      // invisible row that accumulates one per binned plate. Only ever removes a
+      // minted one that nothing references; a real food is shared and stays.
+      //
+      // Expressed as one conditional DELETE rather than a hand-rolled reference
+      // count, so a food something still points at is skipped instead of
+      // raising — and so the list of what counts as "points at" lives in one
+      // place (UNREFERENCED_SQL) that every sweep reads.
+      if (l.food_id) {
+        db.prepare(`
+          DELETE FROM foods
+          WHERE id = $i AND source = 'leftover' AND created_by_profile = $p
+            AND ${UNREFERENCED_SQL}
+        `).run({ i: l.food_id, p: req.profileId });
       }
-    }
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

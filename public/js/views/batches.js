@@ -1,9 +1,10 @@
 import { api }                        from '../api.js';
-import { showToast, showSheet, hideSheet } from '../app.js';
+import { showToast, showSheet, hideSheet, showPrompt } from '../app.js';
 import { renderFoodSearch }           from '../components/foodSearch.js';
 import { fmtE, unitLabel, toKcal }    from '../utils/energy.js';
 import { localDate }                  from '../utils/date.js';
 import { savePresetFrom }             from './presets.js';
+import { newClientId }                from '../utils/offlineStore.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const g0  = n => Math.round(n || 0);                                    // whole grams
@@ -77,12 +78,27 @@ export function renderBatches(container, isCurrent = () => true) {
         catch (err) { showToast(err.message, 'error'); }
       }));
     container.querySelectorAll('[data-lo-rename]').forEach(btn =>
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', () => {
         const l = findL(btn.dataset.loRename);
-        const name = prompt('Name this leftover', l?.name || '');
-        if (!name?.trim()) return;
-        try { await api.patch(`/api/leftovers/${btn.dataset.loRename}`, { name: name.trim() }); load(); }
-        catch (err) { showToast(err.message, 'error'); }
+        // showPrompt, not window.prompt. app.js built the themed one precisely
+        // because an installed PWA renders the system dialog as a bare box
+        // dropped into an otherwise fully custom UI — "and on iOS can be
+        // suppressed entirely", in which case this button did nothing at all,
+        // silently. Two leftovers from different days look identical apart from
+        // their names, so renaming is the thing that makes the list usable.
+        showPrompt({
+          title: 'Name this leftover',
+          label: 'What is it?',
+          value: l?.name || '',
+          placeholder: 'e.g. Sunday chilli',
+          cta: 'Save',
+          maxLength: 80,
+        }, async name => {
+          const n = String(name || '').trim();
+          if (!n) return;
+          await api.patch(`/api/leftovers/${btn.dataset.loRename}`, { name: n });
+          load();
+        });
       }));
     container.querySelector('#new-batch').addEventListener('click', () => openBuilder(load));
     container.querySelectorAll('[data-portion]').forEach(btn =>
@@ -429,8 +445,13 @@ export function openBuilder(onDone, batch = null) {
 // ── Eat a leftover ────────────────────────────────────────────
 // Same day-and-meal picker portioning uses, because it sits on the same screen
 // and doing the same job differently is how two screens teach two habits.
-// No amount field: a leftover is one portion, used in one go.
-export function openLeftoverLog(l, onDone) {
+//
+// opts.sessionId locks it to a meal, exactly as openPortion does: opened from
+// inside Add Food, the day and the meal are already decided, so both pickers go
+// away. It may be a lazySession thunk, so the meal is not created until the
+// leftover actually lands — dismissing this sheet leaves nothing behind.
+export function openLeftoverLog(l, onDone, opts = {}) {
+  const lockedSession = opts.sessionId != null;
   const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return localDate(d); };
   // A container in a fridge gets opened more than once. The field is filled in
   // with the whole thing, so "I'm eating all of it" is still one tap — typing a
@@ -474,17 +495,22 @@ export function openLeftoverLog(l, onDone) {
           </div>
           <div id="lg-rest" style="font-size:12px;color:var(--text-faint);min-height:17px;margin-top:6px"></div>
         </div>
+        ${lockedSession ? `
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">
+          Adding to <strong style="color:var(--text)">${esc(opts.sessionName || 'this meal')}</strong>
+        </div>` : `
         <label class="form-label">Day</label>
         <div id="lg-days" style="display:flex;gap:6px;overflow-x:auto;padding:6px 0 10px;-webkit-overflow-scrolling:touch">
           ${days.map(d => `<button type="button" class="fs-chip lg-day${d === today ? ' active' : ''}" data-date="${d}" style="flex-shrink:0">${label(d)}</button>`).join('')}
         </div>
         <label class="form-label">Add to</label>
-        <select class="input" id="lg-meal" style="margin-bottom:16px"></select>
+        <select class="input" id="lg-meal" style="margin-bottom:16px"></select>`}
         <button class="btn btn-primary btn-full" id="lg-save">Log it</button>
       </div>`;
 
     const sel = document.getElementById('lg-meal');
     async function loadMeals() {
+      if (!sel) return;                       // locked to a meal — no picker to fill
       sel.innerHTML = '<option value="new">+ New meal</option>';
       try {
         const d = await api.get(`/api/meals/day/${date}`);
@@ -514,23 +540,39 @@ export function openLeftoverLog(l, onDone) {
     amtEl.addEventListener('input', showRest);
     showRest();
 
-    document.getElementById('lg-save').addEventListener('click', async () => {
-      const sid = sel.value;
+    document.getElementById('lg-save').addEventListener('click', async e => {
       const c = askedC();
       if (!(c > 0)) return showToast(`Enter how much you're having, in ${unit}`, 'error');
+      // Disabled while in flight, like every other save in this app.
+      //
+      // This one was missed, and partial logging is what made it bite: before
+      // it existed a second tap hit an already-deleted row and 404'd, which is
+      // ugly but harmless. Now the second tap eats another helping — measured,
+      // two taps of "100 g" against a 300 g leftover logged 200 g as two
+      // separate meals and left 100 g in the fridge. The route has no replay
+      // protection to fall back on.
+      const btn = e.currentTarget;
+      btn.disabled = true; btn.textContent = 'Logging…';
       try {
+        // May be a lazySession thunk — the meal is only created now, so backing
+        // out of this sheet never leaves an empty one behind.
+        const locked = typeof opts.sessionId === 'function' ? await opts.sessionId() : opts.sessionId;
+        const sid = lockedSession ? locked : sel.value;
         const r = await api.post(`/api/leftovers/${l.id}/log`, {
-          date,
+          date: lockedSession ? (opts.date || date) : date,
           ...(byGrams ? { eat_g: c } : { eat_kcal: c }),
-          ...(sid !== 'new' ? { meal_session_id: sid } : {}),
+          ...(sid && sid !== 'new' ? { meal_session_id: sid } : {}),
         });
         hideSheet();
-        const when = date === today ? '' : ` to ${date}`;
+        const when = r.date === today ? '' : ` to ${r.date}`;
         showToast(r.partial
           ? `Logged${when} — ${disp(whole - c)} ${unit} left`
           : `${l.name} logged${when}`, 'success');
         onDone?.();
-      } catch (err) { showToast(err.message, 'error'); }
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Log it';
+      }
     });
     loadMeals();
   });
@@ -613,7 +655,12 @@ export function openPortion(batch, onDone, opts = {}) {
             : `${g0(batch.remaining_g - g)} g will be left`}
         </div>`;
     };
-    gi.addEventListener('input', upd); upd();
+    // One id per intent — see the same block in log.js's quantity sheet. This
+    // route draws the grams out of the batch as well as writing the entry, so a
+    // lost response plus a retap is the case the server's replay table was
+    // built for, and the client had never sent it an id to work with.
+    let clientId = newClientId();
+    gi.addEventListener('input', () => { clientId = newClientId(); upd(); }); upd();
 
     // Meals already on the chosen day, so a portion can join an existing meal
     // instead of always landing in its own. Reloads when the day changes.
@@ -672,6 +719,7 @@ export function openPortion(batch, onDone, opts = {}) {
           grams,
           date: lockedSession ? undefined : selectedDate,
           meal_session_id: lockedSession ? sid : (mealSel?.value || undefined),
+          client_id: clientId,
         });
         hideSheet();
         showToast(`Logged ${g0(r.logged_g)} g · ${g0(r.remaining_g)} g left`, 'success');

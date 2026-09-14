@@ -1,4 +1,4 @@
-import { showToast, showSheet, hideSheet } from '../app.js';
+import { showToast, showSheet, hideSheet, showPrompt } from '../app.js';
 
 let scannerInstance = null;
 
@@ -95,10 +95,23 @@ export async function openBarcodeScanner(onScan) {
 
     document.getElementById('scan-manual').addEventListener('click', () => {
       stopScanner();
-      const barcode = prompt('Enter barcode number:');
-      // onScan re-opens its own sheet, so don't hideSheet() here (that would
-      // clear the freshly-shown content after its close animation).
-      if (barcode?.trim()) onScan(barcode.trim());
+      // showPrompt, not window.prompt — see the same swap in batches.js and
+      // settings.js. This is the fallback for when the camera can't read the
+      // barcode, so it is reached by someone already having trouble; a dialog
+      // the platform may refuse to show is the wrong thing to hand them. Also
+      // gets inputMode 'numeric', which the system prompt never offered.
+      showPrompt({
+        title: 'Enter the barcode',
+        label: 'The number printed under the bars',
+        placeholder: 'e.g. 9400547002344',
+        cta: 'Look it up',
+        inputMode: 'numeric',
+        maxLength: 20,
+      }, barcode => {
+        // onScan re-opens its own sheet, so don't hideSheet() here (that would
+        // clear the freshly-shown content after its close animation).
+        if (barcode) onScan(barcode);
+      });
     });
 
     // ── Photo capture fallback ───────────────────────────────────

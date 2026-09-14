@@ -37,4 +37,32 @@ function usableFood(db, id, pid) {
     .get({ id: n, pid });
 }
 
-module.exports = { PRIVATE_SOURCES, VISIBLE_SQL, usableFood };
+// Every table that can point at a food.
+//
+// A whole-meal split mints a food to back its leftover, hidden from search and
+// belonging to that one leftover. When the leftover goes, so should the food —
+// but ONLY if nothing else grew a reference to it in the meantime. Three places
+// sweep those up: deleting a profile, restoring a backup, and binning a single
+// leftover.
+//
+// All three wrote the same NOT EXISTS clause out by hand, naming meal_entries,
+// batches and leftovers. Then preset_items arrived as a fourth referrer and not
+// one of the three learned about it — and because foreign_keys is ON, the
+// DELETE doesn't skip the row, it THROWS. Measured: save a preset holding a
+// leftover-backed food and "Delete this profile" fails with "FOREIGN KEY
+// constraint failed" forever, while binning that leftover returns the same
+// error AFTER the leftover row is already gone.
+//
+// So the list lives here once. A fifth table pointing at foods only has to be
+// added in one place, and the clause is a no-op rather than an exception when
+// something still references the row.
+const FOOD_REFERRERS = ['meal_entries', 'leftovers', 'batches', 'preset_items'];
+
+// Drop-in for a `DELETE FROM foods WHERE …` — true only when nothing at all
+// refers to the row. Written against the bare table name `foods`, so it belongs
+// in a statement whose target is `foods`.
+const UNREFERENCED_SQL = FOOD_REFERRERS
+  .map(t => `NOT EXISTS (SELECT 1 FROM ${t} ref_${t} WHERE ref_${t}.food_id = foods.id)`)
+  .join('\n        AND ');
+
+module.exports = { PRIVATE_SOURCES, VISIBLE_SQL, usableFood, FOOD_REFERRERS, UNREFERENCED_SQL };

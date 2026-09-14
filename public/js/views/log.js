@@ -7,7 +7,7 @@ import { renderFoodSearch }               from '../components/foodSearch.js';
 import { fmtE, unitLabel, toKcal, wireEnergyUnitToggle } from '../utils/energy.js';
 import { localDate, addDaysIso }          from '../utils/date.js';
 import { getFoodIcon }                    from '../utils/foodIcon.js';
-import { openPortion }                    from './batches.js';
+import { openPortion, openLeftoverLog }   from './batches.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -320,6 +320,26 @@ async function undoMerge(undo, onDone) {
       await api.patch(`/api/meals/entries/${id}`, { meal_session_id: back.id });
     }
     showToast(`"${undo.name || 'Meal'}" put back`, 'info');
+    onDone?.();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+// ── "Ate light", taken back ──────────────────────────────────
+// Marking a day as a genuinely light one is the only action in the app that
+// makes the numbers worse: an under-logged day is normally held OUT of your
+// averages and your real-maintenance estimate, and confirming it is what pulls
+// it back in. The route has accepted a null status — "forget I said that" —
+// since it was written, and nothing ever sent one, so the tap was permanent.
+// Worse than permanent: a confirmed day stops being flagged, so it also
+// vanishes from the one list where you might have gone looking for it.
+//
+// Lives here rather than in logCheck.js because that module is deliberately
+// pure — no DOM, no api — so it can be unit tested. Both Today and Trends
+// import from this file already.
+export async function undoAteLight(date, onDone) {
+  try {
+    await api.post('/api/meals/log-status', { date, status: null });
+    showToast('Back to under-logged — it stays out of your averages', 'info');
     onDone?.();
   } catch (err) { showToast(err.message, 'error'); }
 }
@@ -671,6 +691,16 @@ export function openFoodEntry(sessionId, onSuccess, opts = {}) {
         onSelectBatch: batch => openPortion(batch, onSuccess, {
           sessionId, sessionName: opts.sessionName,
         }),
+        // The fridge, from where you are actually deciding what to eat. Saving
+        // a leftover is offered on the meal (🥡 on the row, 🥡 in the ⋮ menu)
+        // because that is where you are when it happens; eating one is offered
+        // here for the same reason. It was reachable only via Foods → Batches
+        // → scroll past the batches, which also meant it landed in a meal of
+        // its own rather than the one being filled.
+        onSelectLeftover: leftover => openLeftoverLog(leftover, onSuccess, {
+          sessionId, sessionName: opts.sessionName,
+          date: refDate(sessionId, opts.date),
+        }),
         // A meal preset lands its own meal, named after itself — so it is
         // offered only when the meal being logged into does not exist yet.
         // lazySession is exactly that case, and it carries the date, which is
@@ -698,12 +728,16 @@ export function openEditEntry(entry, onSuccess) {
         <button class="sheet-close" id="edit-close">✕</button>
       </div>
       <div class="qty-food-name">${esc(entry.food_name)}</div>
+      ${isQuick ? `
+      <div style="padding:0 16px 12px;font-size:12px;color:var(--text-muted);line-height:1.5">
+        A Quick Log has no weight — its size is the calories you typed.
+      </div>` : `
       <div style="display:flex;gap:6px;padding:4px 16px 12px;flex-wrap:wrap">
         <button class="qty-mode-btn active" data-mode="g">by weight</button>
         <button class="qty-mode-btn" data-mode="srv">by serving (${srv}g)</button>
-      </div>
+      </div>`}
 
-      <div id="edit-mode-g">
+      <div id="edit-mode-g" ${isQuick ? 'style="display:none"' : ''}>
         <div class="qty-input-wrap">
           <input type="text" inputmode="decimal" id="edit-qty" class="qty-input" value="${entry.quantity_g}" min="1" step="1" />
           <span class="qty-unit">g</span>
@@ -729,7 +763,14 @@ export function openEditEntry(entry, onSuccess) {
 
       ${isQuick ? `
       <div style="padding:14px 16px 0">
-        <div class="label" style="margin-bottom:10px">Calories (for ${srv}g) *</div>
+        <!-- The calories of THIS entry, not the per-100g behind it.
+             They were the same number right up until the 🥡 split landed:
+             splitting a Quick Log scales its bookkeeping weight (100g → 66.7g)
+             while the food keeps its density, so the sheet offered "1,800" over
+             a meal card reading "1,200" and typing a correction applied it to
+             the wrong one of the two. What you see on the card is what you edit;
+             the density is recomputed underneath. -->
+        <div class="label" style="margin-bottom:10px">Calories for this meal *</div>
         <div style="display:flex;gap:6px;margin-bottom:14px">
           <input class="input" id="edit-cal" type="text" inputmode="decimal" style="flex:1;min-width:0" />
           <div style="display:flex;gap:4px;flex-shrink:0" id="edit-cal-unit">
@@ -803,20 +844,39 @@ export function openEditEntry(entry, onSuccess) {
     // for editing (rough numbers typed in on the go are often wrong) — real
     // foods stay quantity-only since editing their macros would ripple into
     // every other entry logged against that shared food.
+    // How many "100 g" this entry is. 1 for an untouched Quick Log (they are
+    // logged at exactly 100 g), less once a 🥡 split has scaled it down. Every
+    // figure in this sheet is shown multiplied by it and divided back out on
+    // save, so the numbers on screen are the ones on the meal card.
+    const qUnit = isQuick ? (entry.quantity_g || 100) / 100 : 1;
+    const per100 = v => (v == null ? null : v / qUnit);      // entry → food
+    const ofEntry = v => (v == null ? null : v * qUnit);     // food → entry
+
     let getCalKcal = null;
     if (isQuick) {
       getCalKcal = wireEnergyUnitToggle(
         document.getElementById('edit-cal-unit'),
         document.getElementById('edit-cal')
       );
-      document.getElementById('edit-cal').value  = entry.calories_per_100g != null ? fmtE(entry.calories_per_100g) : '';
-      document.getElementById('edit-pro').value  = entry.protein_per_100g  ?? '';
-      document.getElementById('edit-carb').value = entry.carbs_per_100g    ?? '';
-      document.getElementById('edit-fat').value  = entry.fat_per_100g      ?? '';
+      // The entry's OWN stored figures, not the density multiplied back up.
+      // Both describe the same meal, but the round trip through per-100g picks
+      // up a rounding unit — a 1,200 kcal card offered "1201" to correct — and
+      // the number on the card is the one being corrected. ofEntry only covers
+      // the case where the entry never recorded that macro but its food did.
+      const g1 = v => (v == null ? '' : Math.round(v * 10) / 10);
+      const shown = (onEntry, onFood) => (onEntry != null ? onEntry : ofEntry(onFood));
+      document.getElementById('edit-cal').value  = entry.calories != null || entry.calories_per_100g != null
+        ? fmtE(shown(entry.calories, entry.calories_per_100g)) : '';
+      document.getElementById('edit-pro').value  = g1(shown(entry.protein, entry.protein_per_100g));
+      document.getElementById('edit-carb').value = g1(shown(entry.carbs,   entry.carbs_per_100g));
+      document.getElementById('edit-fat').value  = g1(shown(entry.fat,     entry.fat_per_100g));
     }
 
     document.getElementById('edit-confirm').addEventListener('click', async () => {
-      const qty = getTotalG();
+      // A Quick Log's weight is bookkeeping, not something anyone put on a
+      // scale, so this sheet no longer offers to change it — it keeps whatever
+      // it has (100 g, or less after a split) and only the calories move.
+      const qty = isQuick ? entry.quantity_g : getTotalG();
       if (!qty || qty <= 0) { showToast('Enter a valid quantity', 'error'); return; }
       const btn = document.getElementById('edit-confirm');
       btn.disabled = true; btn.textContent = 'Saving…';
@@ -824,11 +884,12 @@ export function openEditEntry(entry, onSuccess) {
         if (isQuick) {
           const calKcal = getCalKcal();
           if (!calKcal) { showToast('Enter the calories', 'error'); btn.disabled = false; btn.textContent = 'Update'; return; }
+          const num = id => parseFloat(document.getElementById(id).value) || null;
           await api.patch(`/api/foods/${entry.food_id}`, {
-            calories_per_100g: calKcal,
-            protein_per_100g: parseFloat(document.getElementById('edit-pro').value)  || null,
-            carbs_per_100g:   parseFloat(document.getElementById('edit-carb').value) || null,
-            fat_per_100g:     parseFloat(document.getElementById('edit-fat').value)  || null,
+            calories_per_100g: per100(calKcal),
+            protein_per_100g: per100(num('edit-pro')),
+            carbs_per_100g:   per100(num('edit-carb')),
+            fat_per_100g:     per100(num('edit-fat')),
           });
         }
         await api.patch(`/api/meals/entries/${entry.id}`, { quantity_g: qty });
@@ -962,15 +1023,33 @@ function showQuantitySheet(food, sessionId, onSuccess) {
       `;
     }
 
+    // One id for one intent, minted when the sheet opens and re-minted whenever
+    // the amount changes.
+    //
+    // The server has replayed duplicate writes on this route for months and the
+    // client never sent an id, so the guard did nothing. It matters here more
+    // than anywhere: this route inserts the entry, draws the grams out of a
+    // batch AND bumps the use count, and only the first of those is visible
+    // enough to notice and undo — so a lost response plus the obvious retap
+    // quietly ate twice the batch.
+    //
+    // Minting per TAP would not have helped: the second tap would carry a new
+    // id and write again. It has to survive the retry, which means it lives as
+    // long as the amount does — change the amount and it is a different intent,
+    // so it gets a new id rather than replaying the old answer.
+    let clientId = newClientId();
+    const amountChanged = () => { clientId = newClientId(); updateMacros(); };
     ['qty-g','qty-srv','qty-g-per-pc','qty-pcs'].forEach(id =>
-      document.getElementById(id)?.addEventListener('input', updateMacros)
+      document.getElementById(id)?.addEventListener('input', amountChanged)
     );
     content.querySelectorAll('.quick-g').forEach(btn => {
-      btn.addEventListener('click', () => { document.getElementById('qty-g').value = btn.dataset.g; updateMacros(); });
+      btn.addEventListener('click', () => { document.getElementById('qty-g').value = btn.dataset.g; amountChanged(); });
     });
     content.querySelectorAll('.quick-srv').forEach(btn => {
-      btn.addEventListener('click', () => { document.getElementById('qty-srv').value = btn.dataset.s; updateMacros(); });
+      btn.addEventListener('click', () => { document.getElementById('qty-srv').value = btn.dataset.s; amountChanged(); });
     });
+    // Switching between grams / servings / pieces changes the amount too.
+    content.querySelectorAll('.qty-mode-btn').forEach(b => b.addEventListener('click', amountChanged));
 
     updateMacros();
 
@@ -984,7 +1063,7 @@ function showQuantitySheet(food, sessionId, onSuccess) {
       btn.disabled = true; btn.textContent = 'Adding…';
       try {
         const sid = await sessionIdOf(sessionId);
-        await api.post(`/api/meals/sessions/${sid}/entries`, { food_id: food.id, quantity_g: qty });
+        await api.post(`/api/meals/sessions/${sid}/entries`, { food_id: food.id, quantity_g: qty, client_id: clientId });
         hideSheet();
         showToast('Added to meal', 'success');
         onSuccess?.();
@@ -1120,7 +1199,10 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
   const addBtn = document.createElement('button');
   addBtn.className = 'meal-session-add';
   addBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> Add Food`;
-  addBtn.addEventListener('click', () => openFoodEntry(session.id, onDone, { sessionName: session.name }));
+  // viewDate rides along so anything opened from here that needs a DAY — the
+  // leftover sheet's toast, a preset — knows which one, rather than assuming
+  // today. A plain session id carries no date of its own.
+  addBtn.addEventListener('click', () => openFoodEntry(session.id, onDone, { sessionName: session.name, date: viewDate }));
   footer.appendChild(addBtn);
   if (showQuickLog) {
     const qlBtn = document.createElement('button');
@@ -1168,10 +1250,22 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
     // Quick Log entries are a calories-only stand-in food logged at exactly
     // 100g; saving one into a preset would reuse that one-off row every time,
     // so they are left out and said so.
-    const items = (session.entries || [])
-      .filter(e => e.food_id && e.quantity_g > 0)
-      .map(e => ({ food_id: e.food_id, quantity_g: e.quantity_g }));
+    // …and they weren't. The filter above checked for a food_id, which a Quick
+    // Log has — it just points at a one-off row minted from the words you
+    // typed. So "Fish and chips at the shop" went into the preset carrying its
+    // bookkeeping 100 g, which the preset sheet then offers as an editable
+    // weight: change it to 200 and you have logged 1,800 kcal. The comment
+    // described the right behaviour for four months; this is the line that
+    // does it.
+    const usable = (session.entries || []).filter(e => e.food_id && e.quantity_g > 0 && e.food_source !== 'quick');
+    const items = usable.map(e => ({ food_id: e.food_id, quantity_g: e.quantity_g }));
     if (!items.length) return showToast('Nothing in this meal can be saved as a preset', 'error');
+    // Say what was left out rather than silently saving a smaller meal than the
+    // one on screen.
+    const dropped = (session.entries || []).length - usable.length;
+    if (dropped) {
+      showToast(`${dropped} Quick Log${dropped === 1 ? '' : 's'} left out — they're one-offs, not foods`, 'info', { duration: 5000 });
+    }
     savePresetFrom('meal', session.name || 'Saved meal', items);
   });
   menu.querySelector('.sm-left')?.addEventListener('click', () => { closeMenu(); openMealLeftover(session, onDone); });

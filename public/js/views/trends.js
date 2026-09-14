@@ -2,7 +2,7 @@ import { api }                       from '../api.js';
 import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
 import { localDate, addDaysIso }      from '../utils/date.js';
 import { showToast, navigateTo }      from '../app.js';
-import { openFoodEntry, lazySession } from './log.js';
+import { openFoodEntry, lazySession, undoAteLight } from './log.js';
 import { classifyDay, isFlagged, calcStreak, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY, LOG_TODAY } from '../utils/logCheck.js';
 import { movingAvg, trendWeightNow, weeklyTrendChange, etaWeeks, maintenanceShortfall } from '../utils/stats.js';
 
@@ -1440,7 +1440,14 @@ Its ${btn.dataset.cal} ${ul} will then count toward your averages and your real 
 If a meal is just missing, cancel and use "Forgot — add" instead — or leave the day alone, which already keeps it out of those figures.`)) return;
         try {
           await api.post('/api/meals/log-status', { date: btn.dataset.date, status: 'confirmed' });
-          showToast('Counted as a light day', 'success');
+          // Reversible. Confirming a day is what pulls it back INTO the
+          // averages, and once confirmed it stops being flagged — so it also
+          // leaves this list, which was the only place you could have found it
+          // again. The confirm above stops the accident; this undoes it.
+          showToast('Counted as a light day', 'success', {
+            actionLabel: 'Undo',
+            onAction: () => undoAteLight(btn.dataset.date, () => load()),
+          });
           load();
         } catch (err) { showToast(err.message, 'error'); }
       });

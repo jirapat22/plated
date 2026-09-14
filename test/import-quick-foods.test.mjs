@@ -1,0 +1,137 @@
+// Restoring a backup must not hand your meals to someone else's food.
+//
+// Import matches foods by name+brand and reuses the match instead of inserting
+// a duplicate, which is right for a shared catalogue: two people who each typed
+// "Chicken breast" should end up on one row. It is wrong for the three sources
+// that are not catalogue entries at all. 'batch' and 'leftover' were already
+// excluded — a batch's backing food belongs to that one batch — and 'quick' was
+// not, even though a Quick Log is the most personal row in the table: the free
+// text you typed for a meal you couldn't weigh, minted fresh every time and
+// deliberately never deduped by the route that creates it.
+//
+// What that cost, measured on two profiles who had each quick-logged "Toast
+// with jam" at different calories: restoring the second profile's OWN backup
+// repointed its entry at the FIRST profile's food. The entry still read 410
+// while the food behind it said 210 per 100 g, so
+//
+//   * pressing Update in the edit sheet WITHOUT CHANGING ANYTHING rewrote the
+//     entry to 210 — half the meal gone, silently, from a no-op edit;
+//   * deleting it and tapping Undo failed with 404 "Food not found", because
+//     the food now belongs to someone else and the privacy gate correctly
+//     refuses it. The meal was unrecoverable.
+//
+// Nothing on screen said any of this had happened.
+import { test, before, after } from 'node:test';
+import assert from 'node:assert';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+const PORT = 3000 + Math.floor(Math.random() * 20000);
+const BASE = `http://127.0.0.1:${PORT}`;
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'plated-imp-'));
+const SHARED_WORDS = 'Toast with jam';
+let child, mum, pat;
+
+const call = (method, p, body, tok) => fetch(BASE + p, {
+  method,
+  headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+const as = p => (method, path, body) => call(method, path, body, p.token);
+const json = r => r.json();
+
+async function makeProfile(name, passcode) {
+  const r = await call('POST', '/api/auth/profiles', { name, passcode }, null);
+  const b = await r.json();
+  assert.strictEqual(r.status, 201, JSON.stringify(b));
+  return { id: b.profile.id, token: b.token };
+}
+
+before(async () => {
+  child = spawn(process.execPath, ['--experimental-sqlite', 'server.js'], {
+    env: { ...process.env, DATA_DIR: dataDir, PORT: String(PORT), NODE_ENV: 'test' },
+    cwd: path.resolve(path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]:)/, '$1'), '..'),
+    stdio: 'ignore',
+  });
+  const deadline = Date.now() + 30000;
+  for (;;) {
+    try { await fetch(BASE + '/'); break; } catch { /* not up yet */ }
+    if (Date.now() > deadline) throw new Error('server did not start');
+    await new Promise(r => setTimeout(r, 200));
+  }
+  mum = await makeProfile('IMPMUM', '6601');
+  pat = await makeProfile('IMPPAT', '6602');
+});
+
+after(() => {
+  child?.kill();
+  try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch { /* windows holds the file */ }
+});
+
+test('restoring a backup keeps your Quick Logs pointing at YOUR food', async () => {
+  // Two people describe the same breakfast the same way, at different sizes.
+  // Ordinary: "toast with jam" is not a distinguishing name.
+  const mumLog = await json(await as(mum)('POST', '/api/meals/log', {
+    quick: { name: SHARED_WORDS, calories_per_100g: 210 }, quantity_g: 100, meal_name: 'Breakfast',
+  }));
+  const patLog = await json(await as(pat)('POST', '/api/meals/log', {
+    quick: { name: SHARED_WORDS, calories_per_100g: 410 }, quantity_g: 100, meal_name: 'Breakfast',
+  }));
+  const mumFood = mumLog.entry.food_id;
+  const patFood = patLog.entry.food_id;
+  assert.notStrictEqual(mumFood, patFood, 'the two Quick Logs shared a row before any import ran');
+
+  // PAT backs up and restores their own data. Nothing about this involves MUM.
+  const backup = await json(await as(pat)('GET', '/api/settings/export'));
+  const restored = await as(pat)('POST', '/api/settings/import', backup);
+  assert.strictEqual(restored.status, 200, JSON.stringify(await restored.json()));
+
+  const day = await json(await as(pat)('GET', `/api/meals/day/${patLog.date}`));
+  const entry = day.sessions.flatMap(s => s.entries).find(e => e.food_name === SHARED_WORDS);
+  assert.ok(entry, 'the restored breakfast is missing entirely');
+
+  assert.notStrictEqual(entry.food_id, mumFood,
+    "the restore pointed PAT's breakfast at MUM's private food");
+
+  // The entry and the food behind it have to agree, or a no-op edit rewrites
+  // the meal. This is the assertion that actually catches the damage: the
+  // density is what any later recompute will use.
+  assert.strictEqual(entry.calories_per_100g, 410,
+    `entry says ${entry.calories} kcal but its food says ${entry.calories_per_100g}/100g`);
+});
+
+test('a restored Quick Log can still be edited and undeleted', async () => {
+  // The two things that broke downstream, exercised end to end rather than
+  // asserted about ids.
+  const day = await json(await as(pat)('GET', `/api/meals/day/${new Date().toISOString().slice(0, 10)}`));
+  const entry = day.sessions.flatMap(s => s.entries).find(e => e.food_name === SHARED_WORDS);
+  assert.ok(entry, 'nothing to edit');
+
+  // A no-op resize: same grams in, same calories out. It used to halve the meal.
+  const edited = await json(await as(pat)('PATCH', `/api/meals/entries/${entry.id}`, {
+    quantity_g: entry.quantity_g,
+  }));
+  assert.strictEqual(edited.calories, entry.calories,
+    'pressing Update without changing anything changed the calories');
+
+  // Delete, then the Undo path: re-add the same food to the same meal.
+  await as(pat)('DELETE', `/api/meals/entries/${entry.id}`);
+  const undo = await as(pat)('POST', `/api/meals/sessions/${entry.meal_session_id}/entries`, {
+    food_id: entry.food_id, quantity_g: entry.quantity_g,
+  });
+  assert.strictEqual(undo.status, 201,
+    `Undo could not put the meal back: ${JSON.stringify(await undo.json())}`);
+});
+
+test("the privacy gate is still the reason it matters", async () => {
+  // Belt and braces on the rule the fix relies on: even now, PAT cannot reach
+  // MUM's quick food directly. If this ever stops being true the test above
+  // stops meaning anything.
+  const mumLog = await json(await as(mum)('POST', '/api/meals/log', {
+    quick: { name: 'Hospital canteen soup', calories_per_100g: 300 }, quantity_g: 100,
+  }));
+  const peek = await as(pat)('GET', `/api/foods/${mumLog.entry.food_id}`);
+  assert.strictEqual(peek.status, 404);
+});

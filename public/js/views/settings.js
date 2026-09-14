@@ -410,17 +410,28 @@ export function renderSettings(container) {
       logoutToLock();
     });
 
-    document.getElementById('pf-delete').addEventListener('click', async () => {
+    document.getElementById('pf-delete').addEventListener('click', () => {
       if (!confirm('Delete this profile and ALL its meals, weight, goals and batches?\n\nThis cannot be undone.')) return;
-      const typed = prompt('Type DELETE to confirm:');
-      if (typed !== 'DELETE') { showToast('Cancelled', 'info'); return; }
-      try {
+      // showPrompt, not window.prompt. app.js built the themed one because an
+      // installed PWA renders the system dialog as a bare box — "and on iOS can
+      // be suppressed entirely". A suppressed prompt returns null, null is not
+      // 'DELETE', so on a phone where that happens this button silently did
+      // nothing, every time, and the feature was simply unreachable. It fails
+      // in the safe direction, which is exactly why nobody would report it as
+      // a bug rather than as "the button doesn't work".
+      // Throwing from onSave keeps the sheet open with the message, so a typo
+      // is correctable instead of sending you back through the confirm.
+      showPrompt({
+        title: 'Delete this profile?',
+        label: 'Type DELETE to confirm',
+        placeholder: 'DELETE',
+        cta: 'Delete for good',
+      }, async typed => {
+        if (typed !== 'DELETE') throw new Error('Type DELETE exactly, in capitals');
         await api.delete('/api/auth/me');
         showToast('Profile deleted', 'success');
         logoutToLock();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+      });
     });
 
     // ── Connections: view someone's Today/History via a shared code ──
@@ -987,17 +998,19 @@ export function renderSettings(container) {
     });
 
     // Reset all data
-    document.getElementById('reset-data-btn').addEventListener('click', async () => {
+    document.getElementById('reset-data-btn').addEventListener('click', () => {
       if (!confirm('This will permanently delete all logged meals, weight, and meal-prep batches.\n\nThis cannot be undone. Continue?')) return;
-      const typed = prompt('Type DELETE to confirm:');
-      if (typed !== 'DELETE') { showToast('Cancelled', 'info'); return; }
-      try {
+      showPrompt({                                    // see pf-delete above
+        title: 'Clear all logged data?',
+        label: 'Type DELETE to confirm',
+        placeholder: 'DELETE',
+        cta: 'Clear it all',
+      }, async typed => {
+        if (typed !== 'DELETE') throw new Error('Type DELETE exactly, in capitals');
         await api.delete('/api/settings/data');
         showToast('All logged data cleared', 'success');
         window.dispatchEvent(new CustomEvent('plated:settings-changed'));
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+      });
     });
 
     // Ideas & bugs checklist
@@ -1070,8 +1083,20 @@ export function renderSettings(container) {
         + (hasBatches ? ' and batches' : ' (this file predates batch backups, so your batches are left as they are)')
         + `. Your food database and other profiles aren't touched.\n\nContinue?`;
       if (!confirm(summary)) return;
-      if (prompt('Type RESTORE to confirm:') !== 'RESTORE') return showToast('Cancelled', 'info');
+      showPrompt({                                    // see pf-delete above
+        title: 'Restore this backup?',
+        label: 'Type RESTORE to confirm',
+        placeholder: 'RESTORE',
+        cta: 'Restore',
+      }, async typed => {
+        if (typed !== 'RESTORE') throw new Error('Type RESTORE exactly, in capitals');
+        await runImport(data);
+      });
+    });
 
+    // The restore itself, lifted out so the typed-confirmation sheet above can
+    // await it and report a failure inside its own sheet rather than after it.
+    async function runImport(data) {
       const btn = document.getElementById('import-backup');
       // Swap only the label span, so the hint under it survives the round trip.
       // btn.textContent would flatten the whole button to one string and the
@@ -1096,7 +1121,7 @@ export function renderSettings(container) {
       } finally {
         btn.disabled = false; lbl.textContent = '📥 Restore from a backup';
       }
-    });
+    }
 
   }
 

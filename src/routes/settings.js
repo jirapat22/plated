@@ -7,6 +7,7 @@ const { snapshotGoals, goalsOn } = require('../utils/goals');
 // than a form — the principle this file already states over the measurements
 // band — but it was only ever applied to the tables added after it was written.
 const { qtyError, badWeight, badSetting, settingsError } = require('../utils/validate');
+const { UNREFERENCED_SQL } = require('../utils/foodAccess');
 
 const router = express.Router();
 
@@ -313,7 +314,24 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
         // already full, where the min(cooked_g, ...) ceiling swallowed it.
         // 100g of food left the system: the entry was gone and no batch got it
         // back. That is the exact failure adjustBatchStock exists to prevent.
-        const privateToOneOwner = f.source === 'batch' || f.source === 'leftover';
+        // 'quick' belongs on that list too, and its absence was the most
+        // expensive bug in the app.
+        //
+        // A Quick Log mints a throwaway food out of the words you typed, and
+        // POST /api/foods/log deliberately never dedupes them: "two dinners
+        // described the same way on different nights are two meals, not one
+        // library entry being reused". This matched them by name anyway — across
+        // profiles, because foods are a shared table.
+        //
+        // Measured on two profiles that had each quick-logged "Toast with jam",
+        // at 210 and 410 kcal. Restoring the second profile's OWN backup
+        // repointed its entry at the FIRST profile's private food. The entry
+        // still read 410 while the food behind it said 210 per 100 g, so:
+        // opening the edit sheet and pressing Update without changing anything
+        // rewrote it to 210, and deleting it made Undo fail with 404 "Food not
+        // found" — correctly, since the food now belongs to someone else and the
+        // privacy gate refuses it. The meal was unrecoverable.
+        const privateToOneOwner = f.source === 'batch' || f.source === 'leftover' || f.source === 'quick';
         const existing = privateToOneOwner ? null : findFood.get({ name: f.name, brand });
         if (existing) { foodIdMap.set(f.id, existing.id); continue; }
         const newId = insertFood.run({
@@ -555,9 +573,7 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
       // references.
       db.prepare(`
         DELETE FROM foods WHERE source = 'leftover' AND created_by_profile = $pid
-          AND NOT EXISTS (SELECT 1 FROM meal_entries me WHERE me.food_id = foods.id)
-          AND NOT EXISTS (SELECT 1 FROM leftovers l    WHERE l.food_id  = foods.id)
-          AND NOT EXISTS (SELECT 1 FROM batches b      WHERE b.food_id  = foods.id)
+          AND ${UNREFERENCED_SQL}
       `).run({ pid });
 
       const setSetting = db.prepare('INSERT OR REPLACE INTO profile_settings (profile_id, key, value) VALUES ($pid, $key, $value)');
