@@ -69,7 +69,7 @@ router.post('/', (req, res) => {
     // and the "one per date" reads paper over it, but it also re-pushes to
     // IronLog and re-snapshots goals, so the duplicate is not free.
     const cid = isValidClientId(client_id) ? client_id : null;
-    const prior = replayOf(getDb(), req.profileId, cid);
+    const prior = replayOf(getDb(), req.profileId, cid, 'weight');
     if (prior) return res.status(prior.status).json(prior.body);
     const bad = badWeight(weight_kg);
     if (bad) return res.status(400).json({ error: bad });
@@ -98,7 +98,7 @@ router.post('/', (req, res) => {
     // In g/kg mode a weigh-in moves the macro goals, so it is a goal change.
     snapshotGoals(db, req.profileId, todayLocal(tzFor(db, req.profileId)));
     const body = macros ? { ...entry, macros } : entry;
-    remember(db, req.profileId, cid, 201, body);
+    remember(db, req.profileId, cid, 'weight', 201, body);
     res.status(201).json(body);
   } catch (err) {
     res.status(500).json({ error: err.message });

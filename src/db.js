@@ -609,8 +609,19 @@ function seedNzFoods(db) {
 }
 
 // One-off cleanup of seeded foods that shouldn't be in a personal tracker
-// (infant/toddler products, stray "Insect, raw" entry). Only removes
-// rows that have never been logged, so it's safe to run on every startup.
+// (infant/toddler products, stray "Insect, raw" entry). Only removes rows
+// NOTHING references, so it's safe to run on every startup.
+//
+// The guard used to be `use_count = 0`, and foods.use_count is the legacy
+// pre-multi-profile column this file documents at the top as "Never written to
+// since" — live counts live in profile_food_stats. So the condition was
+// unconditionally true and the comment described a safety that did not exist.
+// Inert on production today only because seedNzFoods returns early unless
+// SEED_VERSION moves; but with foreign_keys ON, the first time one of these
+// names is actually referenced when this runs, the DELETE raises inside
+// initDb() — which server.js does not guard — and the container stops booting,
+// permanently, with no route back. UNREFERENCED_SQL is the real test, and it
+// is the same clause the three food sweeps use.
 const UNWANTED_SEED_NAMES = [
   'Insect, raw',
   "Babyccino, from cow's milk",
@@ -649,8 +660,9 @@ const UNWANTED_SEED_NAMES = [
 ];
 
 function removeUnwantedSeeds(db) {
+  const { UNREFERENCED_SQL } = require('./utils/foodAccess');
   const del = db.prepare(
-    "DELETE FROM foods WHERE name = $name AND source = 'nz_seed' AND use_count = 0"
+    `DELETE FROM foods WHERE name = $name AND source = 'nz_seed' AND ${UNREFERENCED_SQL}`
   );
   let removed = 0;
   for (const name of UNWANTED_SEED_NAMES) {

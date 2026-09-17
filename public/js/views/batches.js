@@ -1,5 +1,5 @@
 import { api }                        from '../api.js';
-import { showToast, showSheet, hideSheet, showPrompt } from '../app.js';
+import { showToast, showSheet, hideSheet, showPrompt, showConfirm } from '../app.js';
 import { renderFoodSearch }           from '../components/foodSearch.js';
 import { fmtE, unitLabel, toKcal }    from '../utils/energy.js';
 import { localDate }                  from '../utils/date.js';
@@ -73,7 +73,9 @@ export function renderBatches(container, isCurrent = () => true) {
     container.querySelectorAll('[data-lo-bin]').forEach(btn =>
       btn.addEventListener('click', async () => {
         const l = findL(btn.dataset.loBin);
-        if (!confirm(`Bin "${l?.name}"? Nothing gets logged — this is for food you threw out.`)) return;
+        if (!await showConfirm({ title: `Bin "${l?.name}"?`,
+          body: 'Nothing gets logged — this is for food you threw out.',
+          cta: 'Bin it', danger: true })) return;
         try { await api.delete(`/api/leftovers/${btn.dataset.loBin}`); load(); }
         catch (err) { showToast(err.message, 'error'); }
       }));
@@ -124,7 +126,9 @@ export function renderBatches(container, isCurrent = () => true) {
       }));
     container.querySelectorAll('[data-del]').forEach(btn =>
       btn.addEventListener('click', async () => {
-        if (!confirm('Delete this batch? Portions you already logged stay in your history.')) return;
+        if (!await showConfirm({ title: 'Delete this batch?',
+          body: 'Portions you already logged stay in your history.',
+          cta: 'Delete', danger: true })) return;
         try { await api.delete(`/api/batches/${btn.dataset.del}`); load(); }
         catch (err) { showToast(err.message, 'error'); }
       }));
@@ -322,7 +326,7 @@ export function openBuilder(onDone, batch = null) {
       ingredients.push({ food_id: food.id, name: food.name, grams: 100, cal: food.calories_per_100g || 0 });
       renderList(ingredients.length - 1);
       showToast(`${food.name} added — set the weight`, 'success');
-    }, {});
+    }, { autofocus: false });   // the name field above keeps the caret
 
     const totalsEl = () => document.getElementById('b-totals');
     function updTotals() {
@@ -574,6 +578,10 @@ export function openLeftoverLog(l, onDone, opts = {}) {
         onDone?.();
       } catch (err) {
         showToast(err.message, 'error');
+        // A 404 means the leftover is gone — binned on another device, or eaten
+        // in another tab. Re-enabling the button leaves a sheet whose only
+        // possible outcome is the same error again; close it and refresh.
+        if (err.status === 404) { hideSheet(); onDone?.(); return; }
         btn.disabled = false; btn.textContent = 'Log it';
       }
     });
@@ -687,14 +695,20 @@ export function openPortion(batch, onDone, opts = {}) {
     if (daysBox) {
       const customToggle = document.getElementById('p-custom-toggle');
       const customInput  = document.getElementById('p-date-custom');
+      // A new id on every change of destination, not just of grams. A stale id
+      // replays the OLD answer: log a portion, lose the response, change the day
+      // to Yesterday, tap again — and the server hands back the first 201 while
+      // the toast says "Logged 200 g" as though it moved. Worse than no id.
       daysBox.querySelectorAll('.p-day').forEach(btn => {
         btn.addEventListener('click', () => {
           selectedDate = btn.dataset.date;
+          clientId = newClientId();
           daysBox.querySelectorAll('.p-day').forEach(b => b.classList.toggle('active', b === btn));
           customInput.style.display = 'none';
           loadMeals();
         });
       });
+      mealSel?.addEventListener('change', () => { clientId = newClientId(); });
       customToggle.addEventListener('click', () => {
         const opening = customInput.style.display === 'none';
         customInput.style.display = opening ? 'block' : 'none';
@@ -703,6 +717,7 @@ export function openPortion(batch, onDone, opts = {}) {
       customInput.addEventListener('change', () => {
         if (!customInput.value) return;
         selectedDate = customInput.value;
+        clientId = newClientId();
         daysBox.querySelectorAll('.p-day').forEach(b => b.classList.remove('active'));
         loadMeals();
       });
@@ -720,7 +735,11 @@ export function openPortion(batch, onDone, opts = {}) {
         const sid = typeof opts.sessionId === 'function' ? await opts.sessionId() : opts.sessionId;
         const r = await api.post(`/api/batches/${batch.id}/portion`, {
           grams,
-          date: lockedSession ? undefined : selectedDate,
+          // The real date even when locked. The server nulls a meal_session_id
+          // it can't resolve and then creates a session on `date` — absent, that
+          // defaults to today, so a portion aimed at a History day whose meal
+          // another tab deleted appeared on today with a success toast.
+          date: lockedSession ? (opts.date || selectedDate) : selectedDate,
           meal_session_id: lockedSession ? sid : (mealSel?.value || undefined),
           client_id: clientId,
         });

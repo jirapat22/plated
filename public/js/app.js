@@ -144,6 +144,58 @@ export function showPrompt({ title, label, value = '', placeholder = '', cta = '
   });
 }
 
+// ─── Confirm sheet ──────────────────────────────────────────
+// The other half of showPrompt, and it exists for the same reason: in an
+// installed PWA window.confirm renders as a bare system box dropped into an
+// otherwise fully custom UI, and on iOS it can be suppressed entirely — in
+// which case it returns FALSE and the guarded action silently becomes
+// impossible, with no feedback at all. That argument was written down when
+// prompt was replaced and then not applied to the fourteen confirms sitting
+// beside them, including "Delete this meal and all its entries", which is the
+// only way to delete a meal, and "Delete this profile".
+//
+// Resolves true/false, so a caller reads exactly like the old `if (!confirm())
+// return`. `danger` paints the primary button as a destructive one. Multi-line
+// bodies keep working: \n in `body` becomes a paragraph break.
+export function showConfirm({ title, body = '', cta = 'Confirm', cancel = 'Cancel', danger = false }) {
+  return new Promise(resolve => {
+    let answered = false;
+    const done = v => { if (!answered) { answered = true; resolve(v); } };
+    showSheet(content => {
+      content.innerHTML = `
+        <div class="sheet-header">
+          <span class="sheet-title"></span>
+          <button class="sheet-close" id="cf-close">✕</button>
+        </div>
+        <div style="padding:0 16px">
+          <div id="cf-body" style="font-size:13px;color:var(--text-muted);line-height:1.6;margin-bottom:18px"></div>
+          <button class="btn ${danger ? 'btn-danger' : 'btn-primary'} btn-full" id="cf-yes"></button>
+          <button class="btn btn-secondary btn-full" id="cf-no" style="margin-top:8px"></button>
+          <div style="height:14px"></div>
+        </div>`;
+      // textContent throughout — these strings carry meal and profile names.
+      content.querySelector('.sheet-title').textContent = title;
+      const bodyEl = content.querySelector('#cf-body');
+      for (const para of String(body).split('\n').filter(Boolean)) {
+        const p = document.createElement('p');
+        p.style.margin = '0 0 8px';
+        p.textContent = para;
+        bodyEl.appendChild(p);
+      }
+      content.querySelector('#cf-yes').textContent = cta;
+      content.querySelector('#cf-no').textContent = cancel;
+      content.querySelector('#cf-yes').addEventListener('click', () => { hideSheet(); done(true); });
+      content.querySelector('#cf-no').addEventListener('click',  () => { hideSheet(); done(false); });
+      content.querySelector('#cf-close').addEventListener('click', () => { hideSheet(); done(false); });
+    });
+    // Dismissing by tapping the backdrop is a "no" as well. showSheet's overlay
+    // handler closes the sheet without telling us, so settle on the next tick
+    // after it could have fired.
+    const overlay = document.getElementById('sheet-overlay');
+    overlay.addEventListener('click', () => setTimeout(() => done(false), 0), { once: true });
+  });
+}
+
 // ─── Navigation ─────────────────────────────────────────────
 const views = { today: renderToday, history: renderHistory, trends: renderTrends, foods: renderFoods, settings: renderSettings };
 

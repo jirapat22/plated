@@ -451,12 +451,19 @@ router.patch('/:id', (req, res) => {
       'name', 'brand', 'calories_per_100g', 'protein_per_100g',
       'carbs_per_100g', 'fat_per_100g', 'fiber_per_100g', 'serving_size_g',
     ];
-    for (const key of allowed) {
-      if (req.body[key] !== undefined) {
-        db.prepare(`UPDATE foods SET ${key} = $v WHERE id = $id`)
-          .run({ v: req.body[key], id });
+    // One UPDATE per field, so a multi-field edit has to be one transaction —
+    // otherwise a throw partway leaves the calories changed and the protein
+    // not, which is a food that describes nothing that exists.
+    db.exec('BEGIN');
+    try {
+      for (const key of allowed) {
+        if (req.body[key] !== undefined) {
+          db.prepare(`UPDATE foods SET ${key} = $v WHERE id = $id`)
+            .run({ v: req.body[key], id });
+        }
       }
-    }
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
 
     res.json(db.prepare('SELECT * FROM foods WHERE id = $id').get({ id }));
   } catch (err) {

@@ -11,7 +11,7 @@
 // Nothing is written until that sheet is confirmed — the answer to "what should
 // happen when you use one" was "opens pre-filled, I confirm".
 import { api } from '../api.js';
-import { showToast, showSheet, hideSheet, showPrompt } from '../app.js';
+import { showToast, showSheet, hideSheet, showPrompt, showConfirm } from '../app.js';
 import { renderFoodSearch } from '../components/foodSearch.js';
 import { fmtE, unitLabel } from '../utils/energy.js';
 import { localDate, addDaysIso } from '../utils/date.js';
@@ -37,13 +37,15 @@ export async function savePresetFrom(kind, suggestedName, items, onDone) {
     maxLength: 40,
     value: suggestedName || '',
   }, async name => {
+    // Let it throw. showPrompt's contract is that a rejection shows the message
+    // and KEEPS THE SHEET OPEN so the input isn't lost — catching it here made
+    // submit() see success, close the sheet, and take the typed name with it.
+    // An empty name throws too, rather than closing in silence.
     const n = String(name || '').trim();
-    if (!n) return;
-    try {
-      await api.post('/api/presets', { kind, name: n, items });
-      showToast(`Saved "${n}"`, 'success');
-      onDone?.();
-    } catch (err) { showToast(err.message, 'error'); }
+    if (!n) throw new Error('Give it a name');
+    await api.post('/api/presets', { kind, name: n, items });
+    showToast(`Saved "${n}"`, 'success');
+    onDone?.();
   });
 }
 
@@ -126,18 +128,20 @@ export function renderPresets(container, isCurrent = () => true) {
     container.querySelectorAll('[data-pr-rename]').forEach(btn => btn.addEventListener('click', () => {
       const p = find(btn.dataset.prRename);
       showPrompt({ title: 'Rename preset', label: 'Name', cta: 'Save', maxLength: 40, value: p?.name || '' },
-        async name => {
+        async name => {                       // see savePresetFrom — let it throw
           const n = String(name || '').trim();
-          if (!n) return;
-          try { await api.patch(`/api/presets/${btn.dataset.prRename}`, { name: n }); load(); }
-          catch (err) { showToast(err.message, 'error'); }
+          if (!n) throw new Error('Give it a name');
+          await api.patch(`/api/presets/${btn.dataset.prRename}`, { name: n });
+          load();
         });
     }));
 
     container.querySelectorAll('[data-pr-del]').forEach(btn => btn.addEventListener('click', async () => {
       const p = find(btn.dataset.prDel);
       // Deleting a preset touches nothing you have already logged or cooked.
-      if (!confirm(`Delete "${p?.name}"? Meals and batches you made from it stay exactly as they are.`)) return;
+      if (!await showConfirm({ title: `Delete "${p?.name}"?`,
+        body: 'Meals and batches you made from it stay exactly as they are.',
+        cta: 'Delete', danger: true })) return;
       try { await api.delete(`/api/presets/${btn.dataset.prDel}`); load(); }
       catch (err) { showToast(err.message, 'error'); }
     }));
@@ -290,7 +294,7 @@ function openPresetBuilder(onDone) {
       items.push({ food_id: food.id, name: food.name, grams: 100, cal: food.calories_per_100g ?? null });
       draw();
       showToast(`${food.name} added — set the weight`, 'success');
-    }, {});
+    }, { autofocus: false });   // the name field above keeps the caret
 
     function draw() {
       const list = document.getElementById('pb-list');

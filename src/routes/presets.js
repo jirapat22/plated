@@ -171,7 +171,7 @@ router.post('/:id/log', (req, res) => {
     const db = getDb();
     const pid = req.profileId;
     const cid = isValidClientId(req.body?.client_id) ? req.body.client_id : null;
-    const prior = replayOf(db, pid, cid);
+    const prior = replayOf(db, pid, cid, 'preset-log');
     if (prior) return res.status(prior.status).json(prior.body);
 
     const preset = readPreset(db, pid, parseInt(req.params.id));
@@ -248,7 +248,7 @@ router.post('/:id/log', (req, res) => {
     } catch (e) { db.exec('ROLLBACK'); throw e; }
 
     const out = { session_id: sessionId, date, name: preset.name, entries: rows.length };
-    remember(db, pid, cid, 201, out);
+    remember(db, pid, cid, 'preset-log', 201, out);
     res.status(201).json(out);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });

@@ -11,6 +11,26 @@
 const RULES = [
   // ── Must come first — specific combos that would match general rules ──
   [/bubble.tea|boba|pearl.milk.tea/i,                                                 '🧋'],
+  // Hoisted: each of these sat BELOW a general rule that matches the same text
+  // ("butter", "apple", "egg", "cake", "milk", "cream", "muffin", "salmon",
+  // "mushroom", "lettuce", "pumpkin", "bean", an oil), so first-match-wins
+  // meant the specific rule never ran and the icon shown was the general one's
+  // — peanut butter drew 🧈, pineapple 🍎, eggplant 🥚, pancake 🎂, kidney bean
+  // 🫀. The file header already warned that a repeated pattern can never fire;
+  // these were the cases where the shadowed rule wanted a DIFFERENT emoji, so
+  // the intent was silently lost rather than merely duplicated.
+  [/peanut.butter|almond.butter|cashew.butter|nut.butter/i,                           '🥜'],
+  [/butter.lettuce/i,                                                                 '🥬'],
+  [/butternut/i,                                                                      '🎃'],
+  [/pineapple/i,                                                                      '🍍'],
+  [/eggplant|aubergine/i,                                                             '🍆'],
+  [/pancake|hotcake|waffle\b/i,                                                       '🥞'],
+  [/coconut.milk|coconut.cream|coconut.oil/i,                                         '🥥'],
+  [/kidney.bean/i,                                                                    '🫘'],
+  [/oyster.mushroom/i,                                                                '🍄'],
+  [/smoked.salmon|smoked.trout|smoked.fish/i,                                         '🐟'],
+  [/english.muffin/i,                                                                 '🍞'],
+  [/olive.oil|avocado.oil|sesame.oil|peanut.oil|canola|vegetable.oil|rice.bran|sunflower.oil|grapeseed|palm.oil/i, '🫒'],
   [/bone.broth/i,                                                                      '🦴'],
   [/meat.pie|steak.pie|mince.pie/i,                                                   '🥧'],
   [/sausage.roll/i,                                                                    '🌭'],
@@ -123,7 +143,6 @@ const RULES = [
   [/capsicum|bell.pepper/i,                                                             '🫑'],
   [/chilli|chile\b|jalapeno|habanero/i,                                                 '🌶️'],
   [/pepper\b/i,                                                                         '🌶️'],
-  [/eggplant|aubergine/i,                                                               '🍆'],
   [/zucchini|courgette/i,                                                               '🥒'],
   [/cucumber/i,                                                                         '🥒'],
   [/pumpkin|butternut|acorn.squash|squash\b|marrow/i,                                  '🎃'],
@@ -161,7 +180,6 @@ const RULES = [
   [/peach\b|nectarine/i,                                                               '🍑'],
   [/apricot|plum\b|prune/i,                                                             '🍑'],
   [/mango/i,                                                                            '🥭'],
-  [/pineapple/i,                                                                        '🍍'],
   [/watermelon/i,                                                                       '🍉'],
   [/rockmelon|honeydew|cantaloupe|melon\b/i,                                           '🍈'],
   [/kiwi.?fruit|kiwifruit/i,                                                            '🥝'],
@@ -184,7 +202,6 @@ const RULES = [
   [/\bfruit\b/i,                                                                       '🍎'],
 
   // ── Nuts & seeds ────────────────────────────────────────────
-  [/peanut.butter|almond.butter|cashew.butter|nut.butter/i,                            '🥜'],
   [/peanut/i,                                                                           '🥜'],
   [/almond/i,                                                                           '🥜'],
   [/cashew/i,                                                                           '🥜'],
@@ -207,9 +224,6 @@ const RULES = [
   [/\bnut\b|\bnuts\b/i,                                                                '🥜'],
 
   // ── Oils & fats ─────────────────────────────────────────────
-  [/olive.oil/i,                                                                        '🫒'],
-  [/coconut.oil|coconut.cream|coconut.milk/i,                                          '🥥'],
-  [/canola|vegetable.oil|rice.bran|sunflower.oil|avocado.oil|grapeseed|peanut.oil|sesame.oil|palm.oil/i, '🫒'],
   [/\boil\b/i,                                                                         '🫒'],
   [/lard|dripping|shortening|tallow/i,                                                  '🧈'],
   [/spray.oil|cooking.spray/i,                                                          '🫒'],
@@ -228,7 +242,6 @@ const RULES = [
   [/wafer|tim.tam/i,                                                                    '🍪'],
   [/pretzel/i,                                                                          '🥨'],
   [/bagel/i,                                                                            '🥯'],
-  [/english.muffin/i,                                                                   '🍞'],
   [/sourdough/i,                                                                        '🍞'],
   [/pita|pitta/i,                                                                       '🫓'],
   [/roti|naan|chapati|tortilla\b|flatbread/i,                                          '🫓'],
@@ -248,7 +261,6 @@ const RULES = [
   [/cornmeal|polenta|semolina|breadcrumb/i,                                             '🌾'],
   [/quinoa|couscous|bulgur|buckwheat|millet|barley|teff|spelt|amaranth/i,              '🌾'],
   [/crumpet|pikelet/i,                                                                  '🥞'],
-  [/pancake|hotcake|waffle\b/i,                                                        '🥞'],
 
   // ── Sweets, desserts & spreads ───────────────────────────────
   [/honey/i,                                                                            '🍯'],
@@ -261,7 +273,6 @@ const RULES = [
   [/icing\b|frosting/i,                                                                 '🎂'],
   [/marmite|vegemite/i,                                                                 '🫙'],
   [/nutella|choc.spread/i,                                                              '🍫'],
-  [/peanut.butter|almond.butter/i,                                                     '🥜'],
   [/jelly.bean|gummy|marshmallow|licorice|liquorice/i,                                 '🍬'],
   [/gelatin|jello/i,                                                                    '🍮'],
   [/custard/i,                                                                          '🍮'],
@@ -299,7 +310,6 @@ const RULES = [
   [/dressing\b|caesar|ranch|vinaigrette/i,                                              '🥗'],
   [/stock\b|broth\b/i,                                                                  '🍲'],
   [/gravy\b/i,                                                                          '🍖'],
-  [/coconut.cream|coconut.milk/i,                                                       '🥥'],
   [/\bsauce\b/i,                                                                        '🫙'],
 
   // ── Herbs ───────────────────────────────────────────────────

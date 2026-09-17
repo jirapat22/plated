@@ -24,13 +24,29 @@
 // count is tiny and nothing here is worth a background job.
 const RETENTION_DAYS = 30;
 
+// The key an id is stored under: the route's own tag plus the id.
+//
+// It used to be the id alone, and every route consults the same table before
+// doing anything — so one id answered for ALL of them. Sending the same id to
+// /sessions/:id/entries and then to /batches/:id/portion replayed the first
+// route's meal_entry as the portion route's answer, and the batch sheet reads
+// `r.logged_g` / `r.remaining_g` off that: it would toast "Logged undefined g"
+// and tell you a portion landed when nothing did. Reproduced across five
+// routes.
+//
+// Ids are 128 random bits, so a collision was never going to happen by
+// accident — but the guard could not tell a retry from a different intent, and
+// that is the one thing it exists to do. With the route in the key, a mismatch
+// reads as "new" rather than as someone else's answer.
+const keyFor = (tag, clientId) => `${tag || '?'}:${clientId}`;
+
 // The stored response for this id, or null if it is new. Returns the status too,
 // so a replay reproduces the original exactly rather than flattening to 200.
-function replayOf(db, profileId, clientId) {
+function replayOf(db, profileId, clientId, tag) {
   if (!clientId) return null;
   const row = db.prepare(
     'SELECT status, response FROM idempotency WHERE profile_id = $p AND client_id = $c'
-  ).get({ p: profileId, c: clientId });
+  ).get({ p: profileId, c: keyFor(tag, clientId) });
   if (!row) return null;
   try {
     return { status: row.status, body: JSON.parse(row.response) };
@@ -43,13 +59,13 @@ function replayOf(db, profileId, clientId) {
 // a race here should cost nothing, and the first answer is the one that counts.
 // Never throws — failing to remember a response is a missed optimisation, not a
 // reason to fail a write that already succeeded.
-function remember(db, profileId, clientId, status, body) {
+function remember(db, profileId, clientId, tag, status, body) {
   if (!clientId) return;
   try {
     db.prepare(
       `INSERT OR IGNORE INTO idempotency (client_id, profile_id, status, response)
        VALUES ($c, $p, $s, $r)`
-    ).run({ c: clientId, p: profileId, s: status, r: JSON.stringify(body) });
+    ).run({ c: keyFor(tag, clientId), p: profileId, s: status, r: JSON.stringify(body) });
   } catch { /* bookkeeping must never fail a committed write */ }
 }
 

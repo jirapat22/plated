@@ -149,7 +149,7 @@ router.post('/:id/log', (req, res) => {
     db.exec('BEGIN');
     try {
       if (!sid) {
-        const idx = db.prepare('SELECT COALESCE(MAX(meal_index), -1) + 1 AS i FROM meal_sessions WHERE date = $d AND profile_id = $p')
+        const idx = db.prepare('SELECT COALESCE(MAX(meal_index), 0) + 1 AS i FROM meal_sessions WHERE date = $d AND profile_id = $p')
           .get({ d: date, p: pid }).i;
         sid = db.prepare('INSERT INTO meal_sessions (date, name, meal_index, profile_id) VALUES ($d, $n, $i, $p)')
           .run({ d: date, n: l.name, i: idx, p: pid }).lastInsertRowid;

@@ -1,5 +1,5 @@
 import { api }           from '../api.js';
-import { showToast, showSheet, hideSheet, showPrompt, getProfile } from '../app.js';
+import { showToast, showSheet, hideSheet, showPrompt, getProfile, showConfirm } from '../app.js';
 import { getFoodIcon }  from '../utils/foodIcon.js';
 import { wireEnergyUnitToggle, wireDualNutrition, fmtE, unitLabel } from '../utils/energy.js';
 import { renderBatches } from './batches.js';
@@ -210,7 +210,9 @@ export function renderFoods(container) {
         document.getElementById('detail-close').addEventListener('click', hideSheet);
         document.getElementById('detail-edit')?.addEventListener('click', renderEdit);
         document.getElementById('detail-delete')?.addEventListener('click', async () => {
-          if (!confirm(`Delete "${food.name}"? It'll disappear from search but your past logs stay intact.`)) return;
+          if (!await showConfirm({ title: `Delete "${food.name}"?`,
+            body: "It'll disappear from search but your past logs stay intact.",
+            cta: 'Delete', danger: true })) return;
           try {
             await api.delete(`/api/foods/${food.id}`);
             hideSheet();

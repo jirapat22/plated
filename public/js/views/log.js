@@ -1,5 +1,5 @@
 import { api }                            from '../api.js';
-import { showToast, showSheet, hideSheet, getProfile } from '../app.js';
+import { showToast, showSheet, hideSheet, getProfile, showConfirm } from '../app.js';
 import { queueWrite }                     from '../utils/writeQueue.js';
 import { savePresetFrom, openPresetLog }  from './presets.js';
 import { newClientId }                    from '../utils/offlineStore.js';
@@ -151,8 +151,19 @@ function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOt
       targetsBox.innerHTML = sessions.map(s =>
         `<button class="cp-target btn btn-secondary" data-sid="${s.id}" style="justify-content:flex-start">${esc(s.name || 'Meal')}</button>`
       ).join('') + `<button class="cp-target btn btn-secondary" data-sid="new" style="justify-content:flex-start;color:var(--accent)">${opts.newLabel || '+ New meal'}</button>`;
+      // Disabled the moment one is tapped. These three sheets (copy entry,
+      // copy meal, move meal) were the only saves in the app with no in-flight
+      // guard, and the sheet stays up for the whole round trip — so a double
+      // tap ran the whole thing twice. On a meal holding a batch portion that
+      // is two extra meals AND twice the grams out of the pot, and only the
+      // meals are visible enough to notice. onPick re-enables them if it fails.
       targetsBox.querySelectorAll('.cp-target').forEach(btn =>
-        btn.addEventListener('click', () => onPick(date, btn.dataset.sid, mode)));
+        btn.addEventListener('click', () => {
+          const all = [...targetsBox.querySelectorAll('.cp-target')];
+          all.forEach(b => { b.disabled = true; });
+          const revive = () => all.forEach(b => { b.disabled = false; });
+          onPick(date, btn.dataset.sid, mode, revive);
+        }));
     }
 
     function selectDate(date) {
@@ -194,8 +205,18 @@ function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOt
 // Copy a single logged food (same quantity) into another meal, on any day.
 export async function openCopyEntry(entry, viewDate, onDone) {
   const others = (await dayMeals(viewDate)).filter(s => s.id !== entry.meal_session_id);
-  const copyTo = sid => api.post(`/api/meals/sessions/${sid}/entries`, { food_id: entry.food_id, quantity_g: entry.quantity_g });
-  const newSession = async date => (await api.post('/api/meals/sessions', { date })).id;
+  // One id for this copy, reused if the first attempt fails and is retried —
+  // the same rule as the quantity sheet. This route has always supported the
+  // replay guard and this caller never sent it anything.
+  const copyId = newClientId();
+  const copyTo = sid => api.post(`/api/meals/sessions/${sid}/entries`,
+    { food_id: entry.food_id, quantity_g: entry.quantity_g, client_id: copyId });
+  // lazySession, not an eager POST. Creating the meal and then writing into it
+  // is two round trips, and ANY failure between them — a deleted entry, a food
+  // gone, the connection dropping — left an empty "Meal 6" on the day that
+  // nothing cleans up. That is the exact litter lazySession was built for, and
+  // every logging sheet was converted to it except this one.
+  const newSession = date => lazySession(date)();
   // Moving is a re-parent, not a copy-then-delete: the same row changes which
   // meal it belongs to, so nothing is duplicated and nothing has to be deleted
   // afterwards. The server leaves batch stock and use counts alone for exactly
@@ -203,7 +224,7 @@ export async function openCopyEntry(entry, viewDate, onDone) {
   const moveTo = sid => api.patch(`/api/meals/entries/${entry.id}`, { meal_session_id: sid });
   const sub = `<div style="font-size:15px;font-weight:600">${esc(entry.food_name)}</div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${Math.round(entry.quantity_g)}g · ${fmtE(entry.calories)} ${unitLabel()}</div>`;
-  destinationSheet('Copy food', sub, viewDate, entry.meal_session_id, others, async (date, sid, mode) => {
+  destinationSheet('Copy food', sub, viewDate, entry.meal_session_id, others, async (date, sid, mode, revive) => {
     const moving = mode === 'move';
     try {
       const target = sid === 'new' ? await newSession(date) : sid;
@@ -215,7 +236,7 @@ export async function openCopyEntry(entry, viewDate, onDone) {
                : (sid === 'new' ? (date === localDate() ? 'Copied to today' : `Copied to ${date}`) : 'Copied'),
         'success');
       onDone?.();
-    } catch (err) { showToast(err.message, 'error'); }
+    } catch (err) { showToast(err.message, 'error'); revive?.(); }
   }, {
     modes: [
       { id: 'copy', label: '⧉ Copy', title: 'Copy food', targetLabel: 'Copy into' },
@@ -227,17 +248,21 @@ export async function openCopyEntry(entry, viewDate, onDone) {
 // Copy a whole meal (all foods) to a new meal on a day, or merge into an existing meal.
 export async function openCopyMeal(session, viewDate, onDone) {
   const others = (await dayMeals(viewDate)).filter(s => s.id !== session.id);
-  const copy = body => api.post(`/api/meals/sessions/${session.id}/copy`, body);
+  // Same one-id rule. /copy draws batch stock for every food it copies, so a
+  // retry without an id is the most expensive duplicate in the app.
+  const copyMealId = newClientId();
+  const copy = body => api.post(`/api/meals/sessions/${session.id}/copy`,
+    { ...body, client_id: copyMealId });
   const n = (session.entries || []).length;
   const sub = `<div style="font-size:15px;font-weight:600">${esc(session.name || 'Meal')}</div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${n} food${n === 1 ? '' : 's'} · copied with the same amounts</div>`;
-  destinationSheet('Copy meal', sub, viewDate, session.id, others, async (date, sid) => {
+  destinationSheet('Copy meal', sub, viewDate, session.id, others, async (date, sid, _mode, revive) => {
     try {
       await copy(sid === 'new' ? { date } : { target_session_id: sid });
       hideSheet();
       showToast(sid === 'new' ? (date === localDate() ? 'Copied to today' : `Copied to ${date}`) : 'Merged into meal', 'success');
       onDone?.();
-    } catch (err) { showToast(err.message, 'error'); }
+    } catch (err) { showToast(err.message, 'error'); revive?.(); }
   });
 }
 
@@ -260,10 +285,15 @@ export async function openMoveMeal(session, viewDate, onDone) {
   const sub = `<div style="font-size:15px;font-weight:600">${esc(session.name || 'Meal')}</div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">${n} food${n === 1 ? '' : 's'} · moves off ${esc(viewDate)}, nothing is left behind</div>`;
   const days = [addDaysIso(today, -1), today, addDaysIso(today, 1), addDaysIso(today, -2), addDaysIso(today, -3)];
-  destinationSheet('Move meal', sub, viewDate, session.id, others, async (date, sid) => {
-    // Moving it to the day it is already on, as its own meal, is a no-op —
-    // don't spend a request or claim in a toast that something happened.
-    if (sid === 'new' && date === viewDate) { hideSheet(); return; }
+  destinationSheet('Move meal', sub, viewDate, session.id, others, async (date, sid, _mode, revive) => {
+    // Moving it to the day it is already on, as its own meal, changes nothing —
+    // don't spend a request. But say so: closing the sheet in silence reads as
+    // a tap that didn't register.
+    if (sid === 'new' && date === viewDate) {
+      hideSheet();
+      showToast('It is already on that day', 'info');
+      return;
+    }
     try {
       if (sid === 'new') {
         const from = session.date || viewDate;
@@ -288,7 +318,7 @@ export async function openMoveMeal(session, viewDate, onDone) {
       }
       hideSheet();
       onDone?.();
-    } catch (err) { showToast(err.message, 'error'); }
+    } catch (err) { showToast(err.message, 'error'); revive?.(); }
   }, {
     targetLabel: 'Move into',
     newLabel: 'Its own meal',
@@ -316,10 +346,24 @@ async function undoMerge(undo, onDone) {
   if (!undo) return showToast("That merge can't be undone", 'error');
   try {
     const back = await api.post('/api/meals/sessions', { date: undo.date, name: undo.name });
-    for (const id of undo.entry_ids) {
-      await api.patch(`/api/meals/entries/${id}`, { meal_session_id: back.id });
+    // allSettled, not a loop that aborts on the first throw.
+    //
+    // It used to stop at the first failure — and an entry that has since been
+    // deleted or moved answers 404 — so tapping Undo added an EMPTY ghost meal
+    // to the day, left the merge standing, and said only "Entry not found".
+    // Reproduced. A mid-way 502 on a multi-entry meal did the same with some
+    // entries home and some not, and no way to tell which.
+    const results = await Promise.allSettled(undo.entry_ids.map(
+      id => api.patch(`/api/meals/entries/${id}`, { meal_session_id: back.id })));
+    const landed = results.filter(r => r.status === 'fulfilled').length;
+    if (landed === 0 && undo.entry_ids.length) {
+      // Nothing came home, so the meal we just made is litter. Take it back out.
+      try { await api.delete(`/api/meals/sessions/${back.id}`); } catch { /* best effort */ }
+      throw new Error('None of those foods could be moved back');
     }
-    showToast(`"${undo.name || 'Meal'}" put back`, 'info');
+    showToast(landed < undo.entry_ids.length
+      ? `"${undo.name || 'Meal'}" partly put back — ${undo.entry_ids.length - landed} food(s) had already moved on`
+      : `"${undo.name || 'Meal'}" put back`, 'info');
     onDone?.();
   } catch (err) { showToast(err.message, 'error'); }
 }
@@ -699,7 +743,7 @@ export function openFoodEntry(sessionId, onSuccess, opts = {}) {
     document.getElementById('close-search').addEventListener('click', hideSheet);
     renderFoodSearch(
       content,
-      food => showQuantitySheet(food, sessionId, onSuccess),
+      food => showQuantitySheet(food, sessionId, onSuccess, opts),
       {
         pendingBarcode: opts.pendingBarcode,
         // Re-open this sheet fresh (used after a barcode scan replaces it)
@@ -924,7 +968,11 @@ export function openEditEntry(entry, onSuccess) {
 }
 
 // ── Add to meal (new) ────────────────────────────────────────
-function showQuantitySheet(food, sessionId, onSuccess) {
+// opts rides along so ← Back can rebuild the search it came from. Without it
+// the rebuilt sheet had opts = {}, so the 🥡 chip lost the meal's date (and
+// fell back to today, which for a History day is the wrong one) and both the
+// portion and leftover sheets said "Adding to this meal" instead of naming it.
+function showQuantitySheet(food, sessionId, onSuccess, opts = {}) {
   showSheet(content => {
     const srv = food.serving_size_g || 100;
     const ul  = unitLabel();
@@ -1072,7 +1120,7 @@ function showQuantitySheet(food, sessionId, onSuccess) {
 
     updateMacros();
 
-    document.getElementById('qty-back').addEventListener('click', () => openFoodEntry(sessionId, onSuccess));
+    document.getElementById('qty-back').addEventListener('click', () => openFoodEntry(sessionId, onSuccess, opts));
     document.getElementById('qty-close').addEventListener('click', hideSheet);
 
     document.getElementById('qty-confirm-btn').addEventListener('click', async () => {
@@ -1276,20 +1324,30 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
     // weight: change it to 200 and you have logged 1,800 kcal. The comment
     // described the right behaviour for four months; this is the line that
     // does it.
-    const usable = (session.entries || []).filter(e => e.food_id && e.quantity_g > 0 && e.food_source !== 'quick');
+    // 'batch' and 'leftover' are one-off rows in exactly the same way a
+     // 'quick' one is: a batch's backing food belongs to that pot, and a
+     // leftover's to that container. A preset holding either re-logs a plate
+     // that no longer exists, forever — the same bug as the Quick Log case, one
+     // source value over.
+    const ONE_OFF = new Set(['quick', 'batch', 'leftover']);
+    const usable = (session.entries || []).filter(e => e.food_id && e.quantity_g > 0 && !ONE_OFF.has(e.food_source));
     const items = usable.map(e => ({ food_id: e.food_id, quantity_g: e.quantity_g }));
     if (!items.length) return showToast('Nothing in this meal can be saved as a preset', 'error');
     // Say what was left out rather than silently saving a smaller meal than the
     // one on screen.
     const dropped = (session.entries || []).length - usable.length;
     if (dropped) {
-      showToast(`${dropped} Quick Log${dropped === 1 ? '' : 's'} left out — they're one-offs, not foods`, 'info', { duration: 5000 });
+      showToast(`${dropped} item${dropped === 1 ? '' : 's'} left out — Quick Logs, batch portions and leftovers are one-offs, not foods`, 'info', { duration: 5000 });
     }
     savePresetFrom('meal', session.name || 'Saved meal', items);
   });
   menu.querySelector('.sm-left')?.addEventListener('click', () => { closeMenu(); openMealLeftover(session, onDone); });
   sessionEl.querySelector('.session-del-btn').addEventListener('click', async () => {
-    if (!confirm(`Delete "${session.name}" and all its entries?`)) return;
+    // showConfirm, not window.confirm — a suppressed system dialog returns
+    // false, and this is the ONLY way to delete a meal, so the feature would
+    // simply stop existing with no feedback at all.
+    if (!await showConfirm({ title: `Delete "${session.name}"?`,
+      body: 'Everything in it goes too.', cta: 'Delete', danger: true })) return;
     try { await api.delete(`/api/meals/sessions/${session.id}`); showToast('Meal deleted', 'success'); onDone?.(); }
     catch (err) { showToast(err.message, 'error'); }
   });

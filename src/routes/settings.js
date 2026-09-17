@@ -428,7 +428,12 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
           // batch's own per-100g figures, exactly as POST /api/batches does.
           let fid = b.food_id != null ? (foodIdMap.get(b.food_id) ?? null) : null;
           if (fid == null && b.calories > 0) {
-            const per = k => Math.round(((b[k] || 0) / b.cooked_g * 100) * 10) / 10;
+            // null in, null out — the same rule the live routes follow. `|| 0`
+            // rebuilt a restored batch's backing food asserting 0 g of macros
+            // nobody ever recorded, which then counted as measured on every day
+            // a portion of it landed on. The restore door had not learned what
+            // POST and PATCH both know.
+            const per = k => (b[k] == null ? null : Math.round((b[k] / b.cooked_g * 100) * 10) / 10);
             fid = insertFood.run({
               name: b.name, brand: null,
               cal: per('calories'), pro: per('protein'), carb: per('carbs'),

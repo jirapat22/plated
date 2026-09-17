@@ -1,7 +1,7 @@
 import { api }                       from '../api.js';
 import { fmtE, unitLabel, toDisplay } from '../utils/energy.js';
 import { localDate, addDaysIso }      from '../utils/date.js';
-import { showToast, navigateTo }      from '../app.js';
+import { showToast, navigateTo, showConfirm } from '../app.js';
 import { openFoodEntry, lazySession, undoAteLight } from './log.js';
 import { classifyDay, isFlagged, calcStreak, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY, LOG_TODAY } from '../utils/logCheck.js';
 import { movingAvg, trendWeightNow, weeklyTrendChange, etaWeeks, maintenanceShortfall } from '../utils/stats.js';
@@ -1433,11 +1433,12 @@ export function renderTrends(container) {
         // nothing of you, where "Forgot — add" wants a meal entered. Said out
         // loud here because the day is otherwise excluded: confirming it is the
         // act that pulls it back INTO the maintenance estimate.
-        if (!confirm(`Count ${btn.dataset.day} as a light day?
-
-Its ${btn.dataset.cal} ${ul} will then count toward your averages and your real maintenance estimate.
-
-If a meal is just missing, cancel and use "Forgot — add" instead — or leave the day alone, which already keeps it out of those figures.`)) return;
+        if (!await showConfirm({
+          title: `Count ${btn.dataset.day} as a light day?`,
+          body: `Its ${btn.dataset.cal} ${ul} will then count toward your averages and your real maintenance estimate.
+If a meal is just missing, cancel and use "Forgot — add" instead — or leave the day alone, which already keeps it out of those figures.`,
+          cta: 'Yes, I ate light',
+        })) return;
         try {
           await api.post('/api/meals/log-status', { date: btn.dataset.date, status: 'confirmed' });
           // Reversible. Confirming a day is what pulls it back INTO the

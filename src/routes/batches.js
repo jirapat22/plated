@@ -1,7 +1,7 @@
 const express = require('express');
 const { getDb } = require('../db');
 const { todayLocal, tzFor, isRealDate } = require('../utils/tz');
-const { VISIBLE_SQL } = require('../utils/foodAccess');
+const { VISIBLE_SQL, UNREFERENCED_SQL } = require('../utils/foodAccess');
 const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
 
 const router = express.Router();
@@ -142,13 +142,19 @@ router.post('/', (req, res) => {
 
     // null in, null out — an unknown macro must not become a 0 in the food row.
     const per = k => (t[k] == null ? null : round1(t[k] / cg * 100));   // per-100g of the cooked batch
-    const foodId = db.prepare(`INSERT INTO foods
+    // The food and the batch are one act. Unwrapped, a failure between them
+    // left a source='batch' food with nothing pointing at it — and no sweep
+    // anywhere touched 'batch' until now.
+    let id, foodId;
+    db.exec('BEGIN');
+    try {
+    foodId = db.prepare(`INSERT INTO foods
       (name, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, serving_size_g, source, created_by_profile)
       VALUES ($n, $cal, $p, $c, $f, $fb, 100, 'batch', $by)`).run({
       n: name.trim(), cal: per('calories'), p: per('protein'), c: per('carbs'), f: per('fat'), fb: per('fiber'), by: req.profileId,
     }).lastInsertRowid;
 
-    const id = db.prepare(`INSERT INTO batches
+    id = db.prepare(`INSERT INTO batches
       (profile_id, name, food_id, calories, protein, carbs, fat, fiber, cooked_g, remaining_g, ingredients)
       VALUES ($p, $n, $fid, $cal, $pr, $cb, $ft, $fb, $cg, $cg, $ing)`).run({
       p: req.profileId, n: name.trim(), fid: foodId,
@@ -158,6 +164,8 @@ router.post('/', (req, res) => {
       cal: round1(t.calories), pr: r1n(t.protein), cb: r1n(t.carbs), ft: r1n(t.fat), fb: r1n(t.fiber),
       cg, ing: JSON.stringify(ing),
     }).lastInsertRowid;
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
 
     res.status(201).json({ id });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -171,7 +179,7 @@ router.post('/:id/portion', (req, res) => {
     // Draws down stock, so a replay eats the pot twice — the same hazard as
     // logging a food, and for the same reason.
     const cid = isValidClientId(req.body.client_id) ? req.body.client_id : null;
-    const prior = replayOf(db, req.profileId, cid);
+    const prior = replayOf(db, req.profileId, cid, 'batch-portion');
     if (prior) return res.status(prior.status).json(prior.body);
 
     const b = db.prepare('SELECT * FROM batches WHERE id = $id AND profile_id = $p')
@@ -222,7 +230,7 @@ router.post('/:id/portion', (req, res) => {
     db.exec('BEGIN');
     try {
       if (!sid) {
-        const idx = db.prepare('SELECT COALESCE(MAX(meal_index), -1) + 1 AS i FROM meal_sessions WHERE date = $d AND profile_id = $p').get({ d: date, p: req.profileId }).i;
+        const idx = db.prepare('SELECT COALESCE(MAX(meal_index), 0) + 1 AS i FROM meal_sessions WHERE date = $d AND profile_id = $p').get({ d: date, p: req.profileId }).i;
         sid = db.prepare('INSERT INTO meal_sessions (date, name, meal_index, profile_id) VALUES ($d, $n, $i, $p)')
           .run({ d: date, n: b.name, i: idx, p: req.profileId }).lastInsertRowid;
       }
@@ -256,7 +264,7 @@ router.post('/:id/portion', (req, res) => {
     // when the batch is nearly empty. The client shows this figure rather than
     // the request, so "log 300g" from a batch with 90g left reads as 90g.
     const body = { logged_g: round1(grams), remaining_g: remaining };
-    remember(db, req.profileId, cid, 201, body);
+    remember(db, req.profileId, cid, 'batch-portion', 201, body);
     res.status(201).json(body);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -350,8 +358,24 @@ router.delete('/:id', (req, res) => {
     const b = db.prepare('SELECT food_id FROM batches WHERE id = $id AND profile_id = $p')
       .get({ id: req.params.id, p: req.profileId });
     if (!b) return res.status(404).json({ error: 'Batch not found' });
-    if (b.food_id) db.prepare('UPDATE foods SET hidden = 1 WHERE id = $f').run({ f: b.food_id });
-    db.prepare('DELETE FROM batches WHERE id = $id').run({ id: req.params.id });
+    // Both writes together, and the backing food goes when nothing needs it.
+    //
+    // The food was only ever HIDDEN, so history keeps rendering — which is
+    // right while a logged portion still points at it. When none does, hiding
+    // leaves an invisible row per binned pot forever. The DELETE after it is a
+    // no-op in the common case (a portion is referencing it), so this is not a
+    // change of behaviour for any pot you have eaten from.
+    db.exec('BEGIN');
+    try {
+      if (b.food_id) db.prepare('UPDATE foods SET hidden = 1 WHERE id = $f').run({ f: b.food_id });
+      db.prepare('DELETE FROM batches WHERE id = $id').run({ id: req.params.id });
+      if (b.food_id) {
+        db.prepare(`DELETE FROM foods
+          WHERE id = $f AND source = 'batch' AND created_by_profile = $p AND ${UNREFERENCED_SQL}`)
+          .run({ f: b.food_id, p: req.profileId });
+      }
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

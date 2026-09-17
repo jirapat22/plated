@@ -242,12 +242,16 @@ router.patch('/sessions/:id', (req, res) => {
       .get({ id: req.params.id, pid });
     if (!owned) return res.status(404).json({ error: 'Session not found' });
 
+    // Validate before writing anything, so a bad date can't land after a
+    // successful rename and leave half the edit applied.
+    if (date && !isRealDate(date)) {
+      return res.status(400).json({ error: 'Not a real date — use YYYY-MM-DD' });
+    }
     if (name?.trim()) {
       db.prepare('UPDATE meal_sessions SET name = $name WHERE id = $id AND profile_id = $pid')
         .run({ name: name.trim(), id: req.params.id, pid });
     }
     if (date) {
-      if (!isRealDate(date)) return res.status(400).json({ error: 'Not a real date — use YYYY-MM-DD' });
       // Recalculate meal_index so it doesn't collide with existing sessions on target date
       const { max_idx } = db.prepare(
         'SELECT COALESCE(MAX(meal_index), 0) AS max_idx FROM meal_sessions WHERE date = $date AND profile_id = $pid AND id != $id'
@@ -270,7 +274,7 @@ router.post('/sessions', (req, res) => {
     const pid = req.profileId;
     // Replayed, this would mint "Meal 2", "Meal 3" for the same intent.
     const cid = isValidClientId(req.body.client_id) ? req.body.client_id : null;
-    const prior = replayOf(db, pid, cid);
+    const prior = replayOf(db, pid, cid, 'session-create');
     if (prior) return res.status(prior.status).json(prior.body);
     // The one write route that took its date on trust. Every other one
     // format-checks, and for good reason: meal_sessions.date is the key every
@@ -296,7 +300,7 @@ router.post('/sessions', (req, res) => {
     const session = db.prepare('SELECT * FROM meal_sessions WHERE id = $id')
       .get({ id: result.lastInsertRowid });
     const created = { ...session, entries: [] };
-    remember(db, pid, cid, 201, created);
+    remember(db, pid, cid, 'session-create', 201, created);
     res.status(201).json(created);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -317,7 +321,7 @@ router.post('/sessions/:id/copy', (req, res) => {
     // this from a single menu tap ("Eat this again today") with nothing
     // disabled, so a retap after a lost response is the obvious move.
     const cid = isValidClientId(req.body.client_id) ? req.body.client_id : null;
-    const prior = replayOf(db, pid, cid);
+    const prior = replayOf(db, pid, cid, 'meal-copy');
     if (prior) return res.status(prior.status).json(prior.body);
     const src = db.prepare('SELECT * FROM meal_sessions WHERE id = $id AND profile_id = $p').get({ id: req.params.id, p: pid });
     if (!src) return res.status(404).json({ error: 'Meal not found' });
@@ -370,7 +374,7 @@ router.post('/sessions/:id/copy', (req, res) => {
     } catch (e) { db.exec('ROLLBACK'); throw e; }
 
     const out = { session_id: targetId, copied: entries.length };
-    remember(db, pid, cid, 201, out);
+    remember(db, pid, cid, 'meal-copy', 201, out);
     res.status(201).json(out);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -423,8 +427,14 @@ router.post('/entries/:id/leftover', (req, res) => {
     if (left >= whole) {
       return res.status(400).json({ error: "That's the whole thing — delete the entry instead of leaving all of it" });
     }
-    // And enough of it has to survive rounding to be worth a row on the list.
-    if (Math.round((entry.calories || 0) * (left / whole)) < 1) {
+    // And enough of it has to survive rounding to be worth a row on the list —
+    // but only when there ARE calories to judge. A food with macros and no
+    // calorie figure has entry.calories === null, so `(entry.calories || 0)`
+    // made this fire on every such split: "That's too little to save — it
+    // rounds to nothing" for 150 g of a 400 g portion, which sends you looking
+    // for a problem with the number you typed. The grams check above already
+    // covers the real "too little" case for a weighed food.
+    if (entry.calories != null && Math.round(entry.calories * (left / whole)) < 1) {
       return res.status(400).json({ error: "That's too little to save — it rounds to nothing" });
     }
 
@@ -556,16 +566,37 @@ router.post('/sessions/:id/leftover', (req, res) => {
     // agree. Partial knowledge still reports the sum: one food known and one
     // unknown is "at least this much", which is what sumTotals does elsewhere.
     const known = { protein: false, carbs: false, fat: false, fiber: false };
+    // Grams are only summed from entries that HAVE grams.
+    //
+    // A Quick Log stores the calories you typed against a bookkeeping 100 g,
+    // and that 100 g is not a weight — every other surface goes out of its way
+    // never to show it ("⚡ quick" on the meal card, "A Quick Log has no
+    // weight" in the edit sheet). This route summed it anyway, so splitting a
+    // Quick Log meal minted a leftover claiming 50 g, which the fridge row then
+    // displayed and the log sheet then asked you to portion BY GRAMS — of a
+    // restaurant burger nobody weighed. The per-entry split has always written
+    // null here; the two doors now agree.
+    const quickFood = db.prepare("SELECT 1 FROM foods WHERE id = $f AND source = 'quick'");
+    let realGrams = true;
     for (const e of entries) {
-      for (const k in tot) tot[k] += (e[k] || 0) * rest;
+      const weighed = !!e.food_id && !quickFood.get({ f: e.food_id });
+      if (!weighed) realGrams = false;
+      for (const k in tot) {
+        if (k === 'quantity_g' && !weighed) continue;
+        tot[k] += (e[k] || 0) * rest;
+      }
       for (const k in known) if (e[k] != null) known[k] = true;
     }
+    if (!realGrams) tot.quantity_g = 0;   // mixed or quick — no honest weight to give
     const kept = k => (known[k] ? round1(tot[k]) : null);
     // Has to round to at least one whole calorie. At ate = 0.999 the remainder
     // was 0.7 kcal, which passed a bare > 0 and produced a leftover displaying
     // as "1 kcal" plus a minted food to back it — a row that costs more to
     // clear than it describes.
-    if (!(Math.round(tot.calories) >= 1)) {
+    // Measurable in EITHER currency. A meal whose foods carry macros but no
+    // calories has tot.calories 0 and a perfectly good weight, and this refused
+    // it — the same wrong-problem message as the per-entry guard above.
+    if (!(Math.round(tot.calories) >= 1) && !(tot.quantity_g >= 1)) {
       return res.status(400).json({ error: 'There is nothing measurable left of that meal' });
     }
 
@@ -701,7 +732,7 @@ router.post('/log', (req, res) => {
     const pid = req.profileId;
 
     const cid = isValidClientId(req.body.client_id) ? req.body.client_id : null;
-    const prior = replayOf(db, pid, cid);
+    const prior = replayOf(db, pid, cid, 'meal-log');
     if (prior) return res.status(prior.status).json(prior.body);
 
     const { food_id, quick, quantity_g, session_id, meal_name } = req.body || {};
@@ -789,7 +820,7 @@ router.post('/log', (req, res) => {
       throw e;
     }
 
-    remember(db, pid, cid, 201, out);
+    remember(db, pid, cid, 'meal-log', 201, out);
     res.status(201).json(out);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -808,7 +839,7 @@ router.post('/sessions/:id/entries', (req, res) => {
     // and bumps a use count, and only the first of those is visible enough to
     // notice and undo.
     const cid = isValidClientId(client_id) ? client_id : null;
-    const prior = replayOf(db, req.profileId, cid);
+    const prior = replayOf(db, req.profileId, cid, 'entry-add');
     if (prior) return res.status(prior.status).json(prior.body);
 
     if (!food_id) return res.status(400).json({ error: 'food_id and quantity_g > 0 required' });
@@ -862,7 +893,7 @@ router.post('/sessions/:id/entries', (req, res) => {
       WHERE me.id = $id
     `).get({ id: result.lastInsertRowid });
 
-    remember(db, req.profileId, cid, 201, entry);
+    remember(db, req.profileId, cid, 'entry-add', 201, entry);
     res.status(201).json(entry);
   } catch (err) {
     res.status(500).json({ error: err.message });

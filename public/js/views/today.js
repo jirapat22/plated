@@ -1,5 +1,5 @@
 import { api }                            from '../api.js';
-import { showToast, accentInk, getProfile } from '../app.js';
+import { showToast, accentInk, getProfile, showConfirm } from '../app.js';
 import { openFoodEntry, openQuickLog, renderMealCard, lazySession, undoAteLight } from './log.js';
 import { renderMacroBar }                  from '../components/macroBar.js';
 import { fmtE, unitLabel } from '../utils/energy.js';
@@ -662,7 +662,11 @@ export function renderToday(container) {
       // that could quietly make the numbers WORSE — confirming a day is what
       // pulls it back INTO the averages and the real-maintenance estimate —
       // and here it did it in one tap with no question and no way back.
-      if (!confirm(`Count yesterday as a light day?\n\nIts ${fmtE(yRow.calories)} ${ul} will then count toward your averages and your real maintenance estimate.\n\nIf a meal is just missing, cancel and use "Add a meal" instead — or leave it alone, which already keeps it out of those figures.`)) return;
+      if (!await showConfirm({
+        title: 'Count yesterday as a light day?',
+        body: `Its ${fmtE(yRow.calories)} ${ul} will then count toward your averages and your real maintenance estimate.\nIf a meal is just missing, cancel and use "Add a meal" instead — or leave it alone, which already keeps it out of those figures.`,
+        cta: 'Yes, I ate light',
+      })) return;
       try {
         await api.post('/api/meals/log-status', { date: yesterday, status: 'confirmed' });
         // And it is reversible now. The route has always accepted a null status

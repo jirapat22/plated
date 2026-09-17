@@ -557,16 +557,14 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
       // Carry WHY the lookup failed. Reopening always used to announce "barcode
       // not found", so a dead connection or an Open Food Facts outage sent you
       // off to hand-type a label the database already had.
-      if (opts.reopen) {
-        opts.reopen({ pendingBarcode: barcode, barcodeError: notFound ? '' : err.message });
-        return;
-      }
-      // Legacy in-place fallback
-      pendingBarcode = barcode;
-      query = ''; input.value = ''; clearBtn.style.display = 'none';
-      results.innerHTML = '';
-      appendQuickAdd('');
-      if (!notFound) showToast(err.message, 'error');
+      // Always reopen. The scan button only renders when `opts.reopen` exists
+      // (`${opts.reopen ? … }` above) and openBarcodeScanner has no other
+      // caller, so the in-place fallback that used to sit here was unreachable
+      // — and it was the one path that wrote into a DETACHED node, since its
+      // `input`/`clearBtn`/`results` all belong to the sheet the scanner
+      // replaced. Removed rather than kept as insurance against a caller that
+      // cannot exist.
+      opts.reopen({ pendingBarcode: barcode, barcodeError: notFound ? '' : err.message });
     }
   }
 
@@ -578,7 +576,12 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
     if (opts.barcodeError) showToast(`${opts.barcodeError} — you can still add it by hand below`, 'error');
     else showToast('Barcode not found — add it below to save it for next time', 'info');
   } else {
-    setTimeout(() => input.focus(), 100);
+    // Focus only when this search IS the sheet. Embedded in the batch builder
+    // or the preset builder it sits BELOW a name field, and grabbing focus
+    // 100ms after the sheet opens pulled the caret off that field — on iOS
+    // scrolling the sheet down and raising the keyboard over the first thing
+    // the user meant to type.
+    if (opts.autofocus !== false) setTimeout(() => input.focus(), 100);
     search();
   }
 }

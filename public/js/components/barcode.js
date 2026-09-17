@@ -108,8 +108,11 @@ export async function openBarcodeScanner(onScan) {
         inputMode: 'numeric',
         maxLength: 20,
       }, barcode => {
-        // onScan re-opens its own sheet, so don't hideSheet() here (that would
-        // clear the freshly-shown content after its close animation).
+        // showPrompt closes its own sheet after this resolves, and onScan opens
+        // a fresh one, so there is nothing to hideSheet() here. (The old comment
+        // claimed skipping it was what protected the new sheet from the closing
+        // one's teardown — showSheet's clearTimeout does that now, and this
+        // callback returns before the lookup finishes anyway.)
         if (barcode) onScan(barcode);
       });
     });

@@ -1,5 +1,5 @@
 import { api }                        from '../api.js';
-import { showToast, showSheet, hideSheet, showPrompt, getProfile, applyProfile, logoutToLock, ACCENTS, getTheme, setTheme, applyA11y } from '../app.js';
+import { showToast, showSheet, hideSheet, showPrompt, showConfirm, getProfile, applyProfile, logoutToLock, ACCENTS, getTheme, setTheme, applyA11y } from '../app.js';
 import { setEnergyUnit, fmtE, unitLabel, toKcal } from '../utils/energy.js';
 import { submitReport }              from '../utils/bugReport.js';
 import { parsePhaseSettings, phaseCalorieGoal } from '../utils/phase.js';
@@ -410,8 +410,12 @@ export function renderSettings(container) {
       logoutToLock();
     });
 
-    document.getElementById('pf-delete').addEventListener('click', () => {
-      if (!confirm('Delete this profile and ALL its meals, weight, goals and batches?\n\nThis cannot be undone.')) return;
+    document.getElementById('pf-delete').addEventListener('click', async () => {
+      if (!await showConfirm({
+        title: 'Delete this profile?',
+        body: 'Everything goes: meals, weight, goals, batches, leftovers and presets.\nThis cannot be undone.',
+        cta: 'Continue', danger: true,
+      })) return;
       // showPrompt, not window.prompt. app.js built the themed one because an
       // installed PWA renders the system dialog as a bare box — "and on iOS can
       // be suppressed entirely". A suppressed prompt returns null, null is not
@@ -446,7 +450,11 @@ export function renderSettings(container) {
     loadMyCode();
 
     document.getElementById('conn-regen').addEventListener('click', async () => {
-      if (!confirm("Get a new code? Anyone with your old code won't be able to connect with it anymore — existing connections are unaffected.")) return;
+      if (!await showConfirm({
+        title: 'Get a new connect code?',
+        body: "Anyone with your old code won't be able to connect with it any more. Existing connections are unaffected.",
+        cta: 'New code',
+      })) return;
       try {
         const { connect_code } = await api.post('/api/connections/code/regenerate');
         document.getElementById('conn-my-code').textContent = connect_code;
@@ -483,7 +491,9 @@ export function renderSettings(container) {
         `).join('') : `<div style="font-size:12px;color:var(--text-faint)">No connections yet</div>`;
         box.querySelectorAll('.conn-disconnect').forEach(btn => {
           btn.addEventListener('click', async () => {
-            if (!confirm(`Disconnect from ${btn.dataset.name}?`)) return;
+            if (!await showConfirm({ title: `Disconnect from ${btn.dataset.name}?`,
+              body: "You will each stop seeing the other's days. Nothing logged is affected.",
+              cta: 'Disconnect', danger: true })) return;
             try {
               await api.delete(`/api/connections/${btn.dataset.id}`);
               loadConnections();
@@ -546,7 +556,9 @@ export function renderSettings(container) {
         // codes are globally unique.
         box.querySelectorAll('.admin-code').forEach(btn => {
           btn.addEventListener('click', async () => {
-            if (!confirm(`Give ${btn.dataset.name} a new passcode?\n\nTheir current code stops working immediately and they'll be signed out on every device.`)) return;
+            if (!await showConfirm({ title: `Give ${btn.dataset.name} a new passcode?`,
+              body: "Their current code stops working immediately and they'll be signed out on every device.",
+              cta: 'Set a new code', danger: true })) return;
             btn.disabled = true; btn.textContent = '…';
             try {
               const r = await api.post('/api/auth/admin/passcode', { profileId: parseInt(btn.dataset.id) });
@@ -884,12 +896,13 @@ export function renderSettings(container) {
       // noise. Confirm rather than block — sometimes the number is just wrong.
       const held = daysHoldingTdee(s);
       if (held != null && held < 28 && String(tdee) !== String(parseFloat(s.tdee) || '')) {
-        const ok = confirm(
-          `You set this TDEE ${held === 0 ? 'today' : `${held} day${held === 1 ? '' : 's'} ago`}.\n\n` +
-          `Your weight history isn't the issue — Trends fits its rate over the last 28 days, ` +
-          `so most of that window is still you eating at the OLD goal. It can't tell you ` +
-          `whether this one works yet.\n\nChange it anyway?`
-        );
+        const ok = await showConfirm({
+          title: `You set this TDEE ${held === 0 ? 'today' : `${held} day${held === 1 ? '' : 's'} ago`}.`,
+          body: "Your weight history isn't the issue — Trends fits its rate over the last 28 days, "
+              + "so most of that window is still you eating at the OLD goal. It can't tell you "
+              + 'whether this one works yet.',
+          cta: 'Change it anyway',
+        });
         if (!ok) return;
       }
       const { phase, deficit, surplus } = parsePhaseSettings(s);
@@ -998,8 +1011,12 @@ export function renderSettings(container) {
     });
 
     // Reset all data
-    document.getElementById('reset-data-btn').addEventListener('click', () => {
-      if (!confirm('This will permanently delete all logged meals, weight, and meal-prep batches.\n\nThis cannot be undone. Continue?')) return;
+    document.getElementById('reset-data-btn').addEventListener('click', async () => {
+      if (!await showConfirm({
+        title: 'Clear all logged data?',
+        body: 'All logged meals, weight and meal-prep batches go. Your foods and settings stay.\nThis cannot be undone.',
+        cta: 'Continue', danger: true,
+      })) return;
       showPrompt({                                    // see pf-delete above
         title: 'Clear all logged data?',
         label: 'Type DELETE to confirm',
@@ -1082,7 +1099,11 @@ export function renderSettings(container) {
         + `This REPLACES your current meal history and weight log`
         + (hasBatches ? ' and batches' : ' (this file predates batch backups, so your batches are left as they are)')
         + `. Your food database and other profiles aren't touched.\n\nContinue?`;
-      if (!confirm(summary)) return;
+      if (!await showConfirm({
+        title: `Restore the backup from ${exportedDate}?`,
+        body: summary,
+        cta: 'Continue', danger: true,
+      })) return;
       showPrompt({                                    // see pf-delete above
         title: 'Restore this backup?',
         label: 'Type RESTORE to confirm',
