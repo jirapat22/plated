@@ -23,6 +23,13 @@ const CACHEABLE = [
   /^\/api\/meals\/summary/,
   /^\/api\/settings$/,
   /^\/api\/weight(\?|$)/,
+  // …and the single-day read, which the pattern above does NOT match. Today
+  // calls getCached on it, so offline it always fell to the `null` fallback and
+  // the bodyweight card rendered "Not weighed today" for a day that WAS
+  // weighed — with the value sitting in the cached /api/weight?limit=10 list
+  // right beside it. It also reported stale:false, so it never contributed to
+  // the "showing what was saved" banner either.
+  /^\/api\/weight\/day\//,
   /^\/api\/batches$/,
   /^\/api\/leftovers$/,
   /^\/api\/foods\/recent$/,

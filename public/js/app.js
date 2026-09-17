@@ -225,6 +225,15 @@ function showUpdateBanner(worker) {
 function renderUpdateBanner() {
   if (!updateWorker || document.getElementById('update-banner')) return;
   if (!document.getElementById('sheet').classList.contains('hidden')) return;
+  // Not over the lock screen either. The banner anchors itself above the bottom
+  // nav — and there is no nav on the lock screen, so it floated ~76px up (108px
+  // at 150%) directly over "+ New profile" and "Forgot your passcode?", the
+  // second of which is the documented way back into an account nobody can get
+  // into. Same collision the sheet check above already avoids; this door was
+  // missed. Nothing is lost by waiting: updateWorker still holds it, and
+  // renderUpdateBanner runs again on the next sheet close, and a lock screen is
+  // not where anyone decides to update anyway.
+  if (document.getElementById('app').classList.contains('hidden')) return;
 
   const banner = document.createElement('div');
   banner.id = 'update-banner';
@@ -375,6 +384,15 @@ function saveToken(t) {
 }
 function clearToken() {
   setToken(null);
+  // The accessibility settings go with the token, not just with a deliberate
+  // logout. clearA11y used to be called only from logoutToLock, so a session
+  // expiring — or another device signing this one out — dropped you at a lock
+  // screen still wearing the previous profile's text scale, contrast and bold,
+  // with the scale still mirrored in localStorage for the next cold launch. On
+  // a shared phone that is the leak the comment on SCALE_CACHE set out to
+  // close, and it said "cleared on logout" while meaning "cleared on one of
+  // the three ways out".
+  clearA11y();
   // The remembered profile goes with the token. Leaving it behind would let the
   // offline-boot path above walk straight back into an account that had just
   // been signed out of, on a phone the family shares.
@@ -421,6 +439,7 @@ async function enterApp(profile) {
   setCurrentProfile(profile);
   renderProfileBar();
   showScreen('app');
+  renderUpdateBanner();          // held back while the lock screen was up
   await reloadProfilePrefs();
   currentView = null;
   navigateTo('today');
@@ -434,8 +453,7 @@ export function logoutToLock() {
   // behind, and a queued write has no one to flush it under any more.
   const leaving = currentProfile?.id ?? null;
   if (leaving != null) clearProfile(leaving);
-  clearToken();
-  clearA11y();
+  clearToken();                 // which now clears the a11y settings too
   setCurrentProfile(null);
   renderProfileBar();
   showLock();
@@ -626,7 +644,15 @@ setupCreate();
     // onUnauthorized bounces straight back to lock the moment a real reply
     // says so. The passcode was never the thing being verified offline; the
     // stored session token is, and only the server can do that.
-    else if (err.offline && localStorage.getItem(TOKEN_KEY)) {
+    // .unreachable as well as .offline. unreachableError (api.js) is what a
+    // proxy 502/503/504 becomes — i.e. a Railway redeploy — and this was the
+    // ONE place in the app that didn't treat the two the same way (api.js,
+    // writeQueue.js and log.js all check both). So opening the app during a
+    // deploy fell through to the lock screen with a perfectly valid token and
+    // a full day cached on the device, and the passcode could not be checked
+    // because checking it needs the server. Locked out for the length of the
+    // deploy, which is exactly the window this offline path was built for.
+    else if ((err.offline || err.unreachable) && localStorage.getItem(TOKEN_KEY)) {
       const last = readLastProfile();
       if (last) { await enterApp(last); return; }
     }

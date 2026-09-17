@@ -61,8 +61,17 @@ function shapeBatch(b, db = null, pid = null) {
   // null all the way to the client so the UI can omit it rather than print a 0
   // it can't stand behind. (Rows written before computeTotals tracked this hold
   // a real 0 and are indistinguishable — only new batches get the honest null.)
+  // What is actually left, floored at zero for display.
+  //
+  // adjustBatchStock is allowed to store a negative — that is how a
+  // subtract-then-add round trip conserves instead of minting grams (see the
+  // comment on it in meals.js) — but a negative has no meaning on screen, and
+  // a negative kcal_left would read as food you are owed. Everything derived
+  // below uses this, so the UI sees "0 g left" while the database keeps the
+  // honest figure that makes the arithmetic reversible.
+  const stock  = Math.max(0, b.remaining_g);
   const per100 = k => (b[k] == null ? null : round1(b[k] / b.cooked_g * 100));
-  const left   = k => (b[k] == null ? null : round1(b[k] * b.remaining_g / b.cooked_g));
+  const left   = k => (b[k] == null ? null : round1(b[k] * stock / b.cooked_g));
 
   // Batches created before ingredients carried food_id can still be edited —
   // resolve those by name, since that's where the name came from.
@@ -81,23 +90,38 @@ function shapeBatch(b, db = null, pid = null) {
     : null;
 
   return {
-    id: b.id, name: b.name, cooked_g: b.cooked_g, remaining_g: round1(b.remaining_g),
+    id: b.id, name: b.name, cooked_g: b.cooked_g, remaining_g: round1(stock),
     last_portion_g: lastPortion,
     calories: b.calories, protein: b.protein, carbs: b.carbs, fat: b.fat, fiber: b.fiber,
     ingredients,
-    kcal_left:     Math.round(b.calories * b.remaining_g / b.cooked_g),
+    // Whether the log says more has come out than went in. The pot is not
+    // "empty", it is mis-recorded, and those are different things to be told.
+    overdrawn_g: b.remaining_g < 0 ? round1(-b.remaining_g) : 0,
+    kcal_left:     Math.round(b.calories * stock / b.cooked_g),
     kcal_per_100g: Math.round(b.calories / b.cooked_g * 100),
     per_100g: { protein: per100('protein'), carbs: per100('carbs'), fat: per100('fat'), fiber: per100('fiber') },
     left:     { protein: left('protein'),   carbs: left('carbs'),   fat: left('fat'),   fiber: left('fiber') },
   };
 }
 
-// GET / — active batches (something still left) for this profile
+// GET / — every batch this profile has, emptied ones included.
+//
+// The filter was `remaining_g > 1`, and this is the ONLY batch list the client
+// has — every other batch route needs an id that only this supplies. So the
+// moment a pot read 0, whether because it really was finished or because a
+// portion went in at the wrong weight, it vanished: no ⚖️ Fix to correct it,
+// no edit, no delete, and no way to log from it, while the food was still in
+// the fridge. Reproduced by over-drawing one.
+//
+// "Is there anything left" is a question about presentation, and it is now
+// answered where presentation happens: the Batches tab shows an emptied pot
+// with its Fix and Delete buttons, and the food-search picker filters them out
+// because you cannot eat from an empty one.
 router.get('/', (req, res) => {
   try {
     const db = getDb();
     const rows = db.prepare(
-      'SELECT * FROM batches WHERE profile_id = $p AND remaining_g > 1 ORDER BY created_at DESC'
+      'SELECT * FROM batches WHERE profile_id = $p ORDER BY created_at DESC'
     ).all({ p: req.profileId });
     res.json(rows.map(b => shapeBatch(b, db, req.profileId)));
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -175,7 +199,12 @@ router.post('/:id/portion', (req, res) => {
       if (!own) sid = null;
     }
     const r = grams / b.cooked_g;
-    const m = k => round1((b[k] || 0) * r);
+    // null in, null out. `(b[k] || 0)` was the same defect the PATCH route had:
+    // a pot whose protein nobody recorded wrote 0 onto every portion's entry,
+    // and because the entry then HAS a value, sumTotals stopped marking the day
+    // partial — so the day reported "0 g protein" as a measurement. Found by a
+    // test written for the PATCH fix, one route over.
+    const m = k => (b[k] == null ? null : round1(b[k] * r));
     const remaining = Math.max(0, round1(b.remaining_g - grams));
 
     // Creating the meal, logging the entry, taking the stock off and recording
@@ -267,7 +296,16 @@ router.patch('/:id', (req, res) => {
       }
       const { t, ing } = computeTotals(db, req.body.items, req.profileId);
       if (t.calories <= 0) return res.status(400).json({ error: 'those ingredients have no calorie data' });
-      totals = { calories: round1(t.calories), protein: round1(t.protein), carbs: round1(t.carbs), fat: round1(t.fat), fiber: round1(t.fiber) };
+      // r1n on the macros, not round1 — the same distinction POST makes, and
+      // for the same reason: round1(null) is 0, because Math.round(null * 10)
+      // is 0. This line used round1, so EDITING a batch re-derived its honest
+      // nulls into confident zeros, wrote them into the backing food a few
+      // lines below, and every portion logged afterwards carried them. The day
+      // then reported "0 g protein" with totals_partial.protein === false —
+      // i.e. as a measurement — about food nobody has protein data for.
+      // Reproduced: a calories-only batch went from per_100g all-null at
+      // creation to all-zero after one PATCH.
+      totals = { calories: round1(t.calories), protein: r1n(t.protein), carbs: r1n(t.carbs), fat: r1n(t.fat), fiber: r1n(t.fiber) };
       ingredients = JSON.stringify(ing);
     }
 

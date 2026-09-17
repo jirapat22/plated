@@ -458,15 +458,35 @@ router.delete('/me', requireProfile, (req, res) => {
     // deleting a minted food while a leftover still points at it fails the
     // constraint and takes the whole delete down with it. Found by running it.
     db.prepare('DELETE FROM leftovers WHERE profile_id = $id').run({ id });
-    db.prepare(`
-      DELETE FROM foods WHERE source = 'leftover' AND created_by_profile = $id
-        AND ${UNREFERENCED_SQL}
-    `).run({ id });
     db.prepare('DELETE FROM daily_overrides   WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM profile_settings  WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM profile_food_stats WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM sessions WHERE profile_id = $id').run({ id });
     db.prepare('DELETE FROM profiles WHERE id = $id').run({ id });
+
+    // The private foods LAST, after the profile row is gone.
+    //
+    // Two things were wrong. The sweep ran BEFORE this delete, so presets were
+    // still standing when UNREFERENCED_SQL was evaluated: the clause correctly
+    // skipped a food a preset still held, and then the cascade removed that
+    // preset a line later and left the food orphaned — the exact row the sweep
+    // exists to remove. Running it here means the cascade has already happened
+    // and the clause sees the truth.
+    //
+    // And it only named 'leftover'. A 'quick' food is the free text you typed
+    // for a meal you couldn't weigh — the most personal row in the table — and
+    // nothing ever deleted or even hid it. Reproduced: after "Delete this
+    // profile and ALL its meals", `VGone secret curry` was still sitting in
+    // foods with created_by_profile pointing at a profile that no longer
+    // exists and nothing referencing it. "All its data" has to mean that.
+    //
+    // 'batch' is in the list too: batch rows are deleted above, so their
+    // backing foods are orphaned by the same argument.
+    db.prepare(`
+      DELETE FROM foods
+      WHERE source IN ('quick', 'batch', 'leftover') AND created_by_profile = $id
+        AND ${UNREFERENCED_SQL}
+    `).run({ id });
     db.exec('COMMIT');
     res.json({ success: true });
   } catch (err) {

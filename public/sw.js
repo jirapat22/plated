@@ -1,4 +1,4 @@
-const CACHE_NAME = 'plated-v249';
+const CACHE_NAME = 'plated-v250';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -37,9 +37,29 @@ self.addEventListener('install', event => {
   // "waiting" so the page can show a "new version" prompt and only activate
   // when the user taps Refresh (or on the next cold launch). Swapping silently
   // meant users never knew an update landed.
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
-  );
+  // Fetched one at a time and content-type checked, NOT cache.addAll.
+  //
+  // addAll sets each request's service-workers mode to "none", so the fetch
+  // handler below — and the isHtml === wantsHtml guard it carries — never runs
+  // for the precache. And server.js answers any unmatched non-/api path with
+  // index.html and a 200, so a STATIC_ASSETS entry naming a file that a deploy
+  // renamed or removed would be stored as HTML under its .js URL, unguarded,
+  // BY the very CACHE_NAME bump that the guard's comment says is the cure. The
+  // module then fails to parse on every offline load.
+  //
+  // Rejecting here fails the install, which is the right outcome: the phone
+  // keeps serving the previous version instead of adopting a poisoned one.
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await Promise.all(STATIC_ASSETS.map(async path => {
+      const resp = await fetch(path, { cache: 'reload' });
+      if (!resp.ok) throw new Error(`precache ${path}: HTTP ${resp.status}`);
+      const isHtml = (resp.headers.get('content-type') || '').includes('text/html');
+      const wantsHtml = path === '/' || path === '/index.html';
+      if (isHtml !== wantsHtml) throw new Error(`precache ${path}: got ${isHtml ? 'HTML' : 'non-HTML'}`);
+      await cache.put(path, resp);
+    }));
+  })());
 });
 
 // The page posts this when the user accepts the update prompt.
@@ -106,6 +126,17 @@ self.addEventListener('fetch', event => {
         }
         return resp;
       })
-      .catch(() => caches.match(request).then(cached => cached || caches.match('/index.html')))
+      .catch(() => caches.match(request)
+        .then(cached => cached || caches.match('/index.html'))
+        // A third rung, because the second can also miss: if Cache Storage was
+        // evicted while the registration survived, both lookups resolve to
+        // undefined and respondWith(undefined) THROWS — an installed PWA then
+        // opens on a bare browser error page. Better a sentence than that.
+        .then(r => r || new Response(
+          '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
+          + '<body style="font:16px system-ui;padding:32px;text-align:center">'
+          + '<p>Plated is offline and its saved copy is gone.</p>'
+          + '<p>Reconnect and open it again.</p>',
+          { status: 200, headers: { 'Content-Type': 'text/html' } })))
   );
 });

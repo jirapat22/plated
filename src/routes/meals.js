@@ -5,6 +5,7 @@ const { goalsOn, stampGoals } = require('../utils/goals');
 const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
 const { usableFood } = require('../utils/foodAccess');
 const { qtyError } = require('../utils/validate');
+const { adjustBatchStock } = require('../utils/batchStock');
 
 const router = express.Router();
 
@@ -62,21 +63,6 @@ function sumTotals(sessions) {
     }
   }
   return { totals, partial };
-}
-
-// A batch portion is stored as an ordinary meal_entry pointing at the batch's
-// backing food, so editing or deleting that entry has to put the grams back
-// into (or take them out of) the batch. Without this, fixing a mis-logged
-// portion left the batch's "how much is left" permanently wrong — the entry
-// was corrected but the stock never was, and nothing in the UI could reconcile
-// them. deltaG is grams to give back (negative to take more out).
-function adjustBatchStock(db, pid, foodId, deltaG) {
-  if (!foodId || !deltaG) return;
-  const b = db.prepare('SELECT id, cooked_g, remaining_g FROM batches WHERE food_id = $f AND profile_id = $p')
-    .get({ f: foodId, p: pid });
-  if (!b) return;                                   // not a batch food (or batch since deleted)
-  const next = Math.max(0, Math.min(b.cooked_g, b.remaining_g + deltaG));
-  db.prepare('UPDATE batches SET remaining_g = $r WHERE id = $id').run({ r: round1(next), id: b.id });
 }
 
 // Read the per-day logging-completeness override ('confirmed' = user said they
@@ -324,6 +310,15 @@ router.post('/sessions/:id/copy', (req, res) => {
   try {
     const db = getDb();
     const pid = req.profileId;
+    // The last entry-creating route with no replay guard, and the one that
+    // creates a whole MEAL and draws stock for every food in it. Reproduced:
+    // two identical requests carrying the same client_id both ran — two meals,
+    // duplicated calories, and 600 g taken out of a 300 g pot. The client fires
+    // this from a single menu tap ("Eat this again today") with nothing
+    // disabled, so a retap after a lost response is the obvious move.
+    const cid = isValidClientId(req.body.client_id) ? req.body.client_id : null;
+    const prior = replayOf(db, pid, cid);
+    if (prior) return res.status(prior.status).json(prior.body);
     const src = db.prepare('SELECT * FROM meal_sessions WHERE id = $id AND profile_id = $p').get({ id: req.params.id, p: pid });
     if (!src) return res.status(404).json({ error: 'Meal not found' });
     const entries = db.prepare('SELECT * FROM meal_entries WHERE meal_session_id = $s').all({ s: src.id });
@@ -356,17 +351,27 @@ router.post('/sessions/:id/copy', (req, res) => {
       DO UPDATE SET use_count = use_count + 1, last_used = datetime('now'),
                     last_qty_g = excluded.last_qty_g
     `);
-    for (const e of entries) {
-      const food = getFood.get({ id: e.food_id });
-      const m = food ? calcMacros(food, e.quantity_g) : e;   // food gone (rare) — fall back to the old snapshot
-      ins.run({ s: targetId, f: e.food_id, q: e.quantity_g, cal: m.calories, p: m.protein, c: m.carbs, ft: m.fat, fb: m.fiber });
-      bumpStats.run({ pid, fid: e.food_id, qty: e.quantity_g });
-      // Copying a meal that contains a batch portion eats more of that batch.
-      // Deleting the copy already handed grams back, so without this a
-      // copy-then-delete round trip minted stock that was never taken.
-      adjustBatchStock(db, pid, e.food_id, -e.quantity_g);
-    }
-    res.status(201).json({ session_id: targetId, copied: entries.length });
+    // One transaction, like every other multi-write route here. The target
+    // session is inserted before this loop, so a throw partway used to leave a
+    // half-copied meal — or an empty one — standing on the day.
+    db.exec('BEGIN');
+    try {
+      for (const e of entries) {
+        const food = getFood.get({ id: e.food_id });
+        const m = food ? calcMacros(food, e.quantity_g) : e;   // food gone (rare) — fall back to the old snapshot
+        ins.run({ s: targetId, f: e.food_id, q: e.quantity_g, cal: m.calories, p: m.protein, c: m.carbs, ft: m.fat, fb: m.fiber });
+        bumpStats.run({ pid, fid: e.food_id, qty: e.quantity_g });
+        // Copying a meal that contains a batch portion eats more of that batch.
+        // Deleting the copy already handed grams back, so without this a
+        // copy-then-delete round trip minted stock that was never taken.
+        adjustBatchStock(db, pid, e.food_id, -e.quantity_g);
+      }
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
+
+    const out = { session_id: targetId, copied: entries.length };
+    remember(db, pid, cid, 201, out);
+    res.status(201).json(out);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -458,9 +463,37 @@ router.post('/entries/:id/leftover', (req, res) => {
       if (toBatch) {
         adjustBatchStock(db, pid, entry.food_id, left);   // straight back in the pot
       } else {
+        // The leftover gets its OWN food when the portion came out of a batch.
+        //
+        // It used to point at the batch's backing food, which made the grams
+        // count twice in opposite directions: they had already left the pot
+        // when the portion was served, so eating the leftover later must not
+        // draw the pot down again — but the entry it creates points at a batch
+        // food, and DELETE /entries/:id refunds any such entry unconditionally.
+        // So serve 500 g, 🥡 save 200 g, eat it, delete that entry, and the pot
+        // gained 200 g it never had. Reproduced.
+        //
+        // Minting a 'leftover' food severs it from the pot, which is the truth:
+        // this container is no longer part of the batch. The whole-meal split
+        // has always done exactly this, so the two doors now agree.
+        const fromBatch = !!entry.food_id
+          && !!db.prepare('SELECT 1 FROM batches WHERE food_id = $f AND profile_id = $p')
+                .get({ f: entry.food_id, p: pid });
+        let foodId = entry.food_id;
+        if (fromBatch) {
+          const grams = over.quantity_g > 0 ? over.quantity_g : 100;
+          const per = v => (v == null ? null : round1(v / grams * 100));
+          foodId = db.prepare(`INSERT INTO foods
+            (name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, serving_size_g, source, created_by_profile, hidden)
+            VALUES ($n, NULL, $cal, $p, $c, $f, $fb, 100, 'leftover', $by, 1)`).run({
+            n: String(entry.food_name || 'Leftover').slice(0, 80),
+            cal: per(over.calories), p: per(over.protein), c: per(over.carbs),
+            f: per(over.fat), fb: per(over.fiber), by: pid,
+          }).lastInsertRowid;
+        }
         leftoverId = db.prepare(`INSERT INTO leftovers (profile_id, name, food_id, quantity_g, calories, protein, carbs, fat, fiber)
           VALUES ($p, $n, $f, $q, $cal, $pr, $c, $ft, $fb)`).run({
-          p: pid, n: String(entry.food_name || 'Leftover').slice(0, 80), f: entry.food_id,
+          p: pid, n: String(entry.food_name || 'Leftover').slice(0, 80), f: foodId,
           q: over.quantity_g, cal: over.calories, pr: over.protein, c: over.carbs, ft: over.fat, fb: over.fiber,
         }).lastInsertRowid;
       }

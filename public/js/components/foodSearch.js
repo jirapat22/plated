@@ -39,8 +39,18 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
 
       <!-- Quick filter chips. Batches only appear when the caller can handle
            one (a meal context) — they're not plain foods and are deliberately
-           excluded from the food tables the other filters read. -->
-      <div style="display:flex;gap:6px;margin-top:8px">
+           excluded from the food tables the other filters read.
+
+           flex-wrap, and it is not cosmetic. The row was nowrap with no
+           overflow, inside a sheet that clips horizontally — so the chips past
+           the edge were painted and unreachable, with no scroll to get to them.
+           Measured at 390px: the row is 358px wide and the chips need 476px, so
+           🥡 Leftovers and 📋 Presets were off-screen AT NORMAL TEXT SIZE, and
+           at 150% 🍱 Batches went too. Wrapping rather than side-scrolling
+           because Foods' own tab strip already records that decision: sideways
+           scroll "hid tabs off the right edge with nothing to hint they were
+           there". -->
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
         <button class="fs-chip active" data-filter="recent">🕐 Recent</button>
         <button class="fs-chip" data-filter="favourites">⭐ Favourites</button>
         ${opts.onSelectBatch ? '<button class="fs-chip" data-filter="batches">🍱 Batches</button>' : ''}
@@ -64,6 +74,17 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
   container.querySelectorAll('.fs-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       filter = chip.dataset.filter;
+      // Clear the query first. Every chip is a "when there is nothing typed"
+      // list, so tapping one while a search was in the box did LITERALLY
+      // nothing: same results, no chip lit, no message. Verified — identical
+      // result text before and after the tap. That is also the likeliest way
+      // to meet the 🥡 chip: type "chil", fail to find the leftover (leftover
+      // foods are excluded from search by design), tap 🥡, nothing happens.
+      if (query) {
+        query = '';
+        input.value = '';
+        clearBtn.style.display = 'none';
+      }
       container.querySelectorAll('.fs-chip').forEach(c => c.classList.toggle('active', c === chip));
       search();
     });
@@ -91,7 +112,11 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
       // Batches aren't foods — different endpoint, different row, and picking
       // one draws the batch down rather than logging a fixed food.
       if (filter === 'batches' && !q) {
-        const batches = await api.get('/api/batches');
+        // Emptied pots are in the list now — GET /api/batches stopped
+        // filtering them out, because hiding them there also hid the ⚖️ Fix
+        // that was the only way to correct one. You still cannot eat from an
+        // empty pot, so the picker is where that filter belongs.
+        const batches = (await api.get('/api/batches')).filter(b => b.remaining_g > 1);
         results.innerHTML = '';
         if (!batches.length) {
           results.innerHTML = `<div class="empty-state"><div class="empty-icon" style="font-size:28px">🍱</div>
@@ -436,9 +461,16 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
     });
 
     // Save
-    wrap.querySelector('#qa-save').addEventListener('click', async () => {
+    wrap.querySelector('#qa-save').addEventListener('click', async e => {
       const name = wrap.querySelector('#qa-name').value.trim();
       if (!name) { showToast('Food name is required', 'error'); return; }
+      // Disabled in flight, like every other save. Two taps on a slow link put
+      // two POST /api/foods in the air before either row exists, so the 409
+      // dedupe can't catch them and you get two foods with the same name.
+      const saveBtn = e.currentTarget;
+      const saveLbl = saveBtn.textContent;
+      saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+      const done = () => { saveBtn.disabled = false; saveBtn.textContent = saveLbl; };
 
       const body = {
         name,
@@ -463,6 +495,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
           onSelect(err.data.food);
         } else {
           showToast(err.message, 'error');
+          done();
         }
       }
     });

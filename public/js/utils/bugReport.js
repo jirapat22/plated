@@ -87,16 +87,32 @@ function getToken() {
 }
 
 // Low-level post (raw fetch so it works pre-login and never triggers auth
-// redirect). Returns true if the backend received it (any HTTP response),
-// false only if the network was unreachable (offline) so callers can requeue.
+// redirect). True when the backend really received it, false when it did not
+// and the caller should queue it.
+//
+// "Any HTTP response" used to count as received, and with the service worker
+// installed — i.e. always, in the installed PWA — that was wrong in the worst
+// direction. sw.js answers every /api/ request it cannot put on the wire with a
+// RESOLVED 503 {offline:true}, so an offline report resolved, returned true,
+// and was never written anywhere. The user was told "Sent. The admin will get
+// in touch" and nothing existed.
+//
+// Worst on the forgotten-passcode path, which is the documented only way back
+// into an account nobody can unlock — and the outbox was being emptied by the
+// same bug on every offline boot, since flushOutbox runs unconditionally.
+//
+// A 502/503/504 is equally "did not arrive": those come from the proxy, not the
+// app. Reproduced with the worker's own synthetic response.
+const NOT_RECEIVED = new Set([502, 503, 504]);
 async function postReport(body) {
   try {
     const token = getToken();
-    await fetch('/api/bug-report', {
+    const resp = await fetch('/api/bug-report', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify(body),
     });
+    if (NOT_RECEIVED.has(resp.status)) return false;
     return true;
   } catch {
     return false;   // network failure — caller may queue for retry

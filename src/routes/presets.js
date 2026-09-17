@@ -17,6 +17,7 @@ const { isRealDate, todayLocal, tzFor } = require('../utils/tz');
 const { qtyError, trimName } = require('../utils/validate');
 const { replayOf, remember, isValidClientId } = require('../utils/idempotency');
 const { usableFood } = require('../utils/foodAccess');
+const { adjustBatchStock } = require('../utils/batchStock');
 
 const router = express.Router();
 
@@ -233,6 +234,15 @@ router.post('/:id/log', (req, res) => {
           fib: per(r.fiber_per_100g, r.quantity_g),
         });
         stat.run({ pid, fid: r.food_id, qty: r.quantity_g });
+        // A preset can hold a batch's backing food — saving a meal that
+        // contained a batch portion puts one straight in — and logging it is
+        // eating from the pot, exactly as /meals/log and /sessions/:id/entries
+        // are. This route was the only entry-creating one that skipped the
+        // draw-down, and because DELETE /entries/:id refunds unconditionally,
+        // the pair MINTED grams: a 900 g pot, log a preset holding a 250 g
+        // portion, pot still 900 g, delete the entry, pot 1000 g — fuller than
+        // before the meal it was supposedly eaten from. Reproduced.
+        adjustBatchStock(db, pid, r.food_id, -r.quantity_g);
       }
       db.exec('COMMIT');
     } catch (e) { db.exec('ROLLBACK'); throw e; }

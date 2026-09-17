@@ -195,6 +195,9 @@ export function renderBatches(container, isCurrent = () => true) {
             <span><strong style="color:var(--text)">${g0(b.remaining_g)} g</strong> of ${g0(b.cooked_g)} g left</span>
             <span>≈ ${fmtE(b.kcal_left)} ${ul} left</span>
           </div>
+          ${b.overdrawn_g ? `<div style="font-size:11px;color:var(--warning);margin-top:5px;line-height:1.45">
+            Your portions add up to ${g0(b.overdrawn_g)} g more than this pot held — one probably went in at the wrong weight. Tap ⚖️ Fix to set what is really left.
+          </div>` : ''}
           <div style="display:flex;gap:10px;font-size:12px;font-variant-numeric:tabular-nums;margin-top:5px">
             <span style="color:var(--protein)">${mg(L.protein)}g P</span>
             <span style="color:var(--carbs)">${mg(L.carbs)}g C</span>

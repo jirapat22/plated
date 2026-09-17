@@ -51,13 +51,33 @@ export function classifyFailure(err, tries, max = MAX_TRIES) {
   // A 4xx that is not auth will never succeed however many times it is sent —
   // the food was deleted, the date was rejected, the body is malformed.
   if (err.status >= 400 && err.status < 500) return 'drop';
+  // A failure carrying no status at all never reached a server: fetch threw.
+  // Normally the service worker turns that into the synthetic 503 handled
+  // above, but an UNCONTROLLED page (first load before the worker takes over,
+  // or a browser with the worker disabled) gets the bare TypeError — and this
+  // used to 'hold', which burns a try. The queue flushes on every foreground,
+  // so five trips in and out of the app on a lying network reached MAX_TRIES
+  // and dropped the meal. The ceiling should be reached by a server saying no,
+  // not by how many times the phone was picked up.
+  if (err.status === undefined) return 'stop';
   return (tries + 1) >= max ? 'drop' : 'hold';
 }
 
-// Queue a write and hand back the optimistic client_id. Callers use it as the
-// local key for whatever they draw on screen in the meantime.
-export async function queueWrite(profileId, path, body) {
-  const client_id = newClientId();
+// Queue a write and hand back the client_id it will carry.
+//
+// It takes an id now, and that is the whole point. It used to always mint a
+// fresh one, so a caller that had ALREADY tried the request online and failed
+// queued the retry under a different key — and the server's replay guard is
+// keyed on client_id. The case that breaks is precisely the one this file was
+// written for: the request reached the server and committed, and the response
+// was lost on the way back (a Railway 502 after the transaction, a handover
+// mid-response). The queue then flushed a second, unrecognised intent and
+// logged the meal twice, minting a duplicate food row and session with it.
+// Reproduced end to end.
+//
+// Callers that have no id yet still get one minted here.
+export async function queueWrite(profileId, path, body, clientId = null) {
+  const client_id = clientId || body?.client_id || newClientId();
   await enqueue(profileId, { path, body: { ...body, client_id }, clientId: client_id });
   announce();
   return client_id;

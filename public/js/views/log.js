@@ -637,8 +637,18 @@ export function openQuickLog(sessionId, onSuccess, viewDate) {
         session_id: refSessionId(sessionId),
         meal_name: typeof sessionId === 'function' ? sessionId.mealName : undefined,
       };
+      // ONE id for this meal, minted before the attempt and reused by the
+      // queued retry below. It used to be minted inline here and then minted
+      // AGAIN inside queueWrite, so the two carried different keys — and the
+      // server's replay guard is keyed on the id. The case that breaks is the
+      // one the whole queue exists for: the request reached the server and
+      // committed, the response was lost coming back (a 502 after the
+      // transaction, a handover mid-response), and the flush then looked like a
+      // brand-new intake. Two meals, two duplicate hidden food rows, two
+      // sessions. Reproduced.
+      const clientId = newClientId();
       try {
-        await api.post('/api/meals/log', { ...payload, client_id: newClientId() });
+        await api.post('/api/meals/log', { ...payload, client_id: clientId });
         hideSheet();
         showToast('Meal logged', 'success');
         onSuccess?.();
@@ -655,11 +665,20 @@ export function openQuickLog(sessionId, onSuccess, viewDate) {
         if (err.offline || err.unreachable) {
           const pid = getProfile()?.id;
           if (pid != null) {
-            await queueWrite(pid, '/api/meals/log', payload);
-            hideSheet();
-            showToast('Saved — it\'ll sync when you\'re back on', 'success');
-            onSuccess?.();
-            return;
+            // Its own try/catch. enqueue is the one offlineStore export with no
+            // internal guard, and this await sits INSIDE a catch block — so on
+            // a device with site data blocked (a private window, storage
+            // switched off) the rejection escaped the handler entirely: no
+            // hideSheet, no toast, no re-enable. The sheet sat on a disabled
+            // "Logging…" with the typed meal gone and nothing said at all.
+            // Falling through to the error path below at least tells them.
+            try {
+              await queueWrite(pid, '/api/meals/log', payload, clientId);
+              hideSheet();
+              showToast('Saved — it\'ll sync when you\'re back on', 'success');
+              onSuccess?.();
+              return;
+            } catch { /* can't store it either — report it below */ }
           }
         }
         showToast(err.message, 'error');
