@@ -27,6 +27,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 const PORT = 3000 + Math.floor(Math.random() * 20000);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -134,4 +135,59 @@ test("the privacy gate is still the reason it matters", async () => {
   }));
   const peek = await as(pat)('GET', `/api/foods/${mumLog.entry.food_id}`);
   assert.strictEqual(peek.status, 404);
+});
+
+// Restoring twice must not grow the foods table.
+//
+// A restore deliberately re-inserts the three private sources rather than
+// matching them by name — two pots called "Chilli" must not merge — so each one
+// leaves the PREVIOUS restore's row behind with nothing referencing it. The
+// sweep that collects those named only 'leftover', so a quick food and a batch
+// food leaked on every restore: measured at exactly 2 permanent orphans per
+// import, unbounded, on a table every profile shares.
+//
+// Counted straight out of the database, because an orphan is invisible over
+// HTTP by construction: the export carries only foods you logged, and the
+// private sources are excluded from every list route. That invisibility is
+// exactly why this went unnoticed.
+test('restoring twice leaves no orphan foods behind', async () => {
+  const mine = as(pat);
+  await mine('POST', '/api/meals/log', {
+    quick: { name: 'Orphan check takeaway', calories_per_100g: 700 }, quantity_g: 100,
+  });
+  const base = await json(await mine('POST', '/api/foods',
+    { name: 'Orphan check rice', calories_per_100g: 100 }));
+  await mine('POST', '/api/batches',
+    { name: 'Orphan check pot', cooked_g: 500, items: [{ food_id: base.id, quantity_g: 500 }] });
+
+  const db = new DatabaseSync(`file:${path.join(dataDir, 'plated.db')}?mode=ro`, { readOnly: true });
+  const orphans = () => db.prepare(`
+    SELECT COUNT(*) AS c FROM foods f
+    WHERE f.created_by_profile = $p
+      AND f.source IN ('quick', 'batch', 'leftover')
+      AND NOT EXISTS (SELECT 1 FROM meal_entries WHERE food_id = f.id)
+      AND NOT EXISTS (SELECT 1 FROM leftovers    WHERE food_id = f.id)
+      AND NOT EXISTS (SELECT 1 FROM batches      WHERE food_id = f.id)
+      AND NOT EXISTS (SELECT 1 FROM preset_items WHERE food_id = f.id)
+  `).get({ p: pat.id }).c;
+
+  try {
+    // Growth, not an absolute — the tests above this one already restore, so
+    // under the old code the count starts non-zero. What must never happen is
+    // that it climbs with each restore.
+    const baseline = orphans();
+    const backup = await json(await mine('GET', '/api/settings/export'));
+
+    await mine('POST', '/api/settings/import', backup);
+    const afterOne = orphans();
+    assert.strictEqual(afterOne, baseline,
+      `one restore orphaned ${afterOne - baseline} private food(s)`);
+
+    await mine('POST', '/api/settings/import', backup);
+    const afterTwo = orphans();
+    assert.strictEqual(afterTwo, baseline,
+      `restores accumulate orphans: ${baseline} -> ${afterOne} -> ${afterTwo}`);
+  } finally {
+    db.close();
+  }
 });

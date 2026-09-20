@@ -576,8 +576,18 @@ router.post('/import', express.json({ limit: '10mb' }), (req, res) => {
       // leftover by its food name, and a unique brand would render there too.
       // Scoped to this profile's own minted rows, and only ones nothing at all
       // references.
+      //
+      // All THREE private sources, not just 'leftover'. Every restore re-inserts
+      // the quick and batch foods rather than matching them by name — that is
+      // deliberate (privateToOneOwner, above: two pots called "Chilli" must not
+      // merge) — and the rows the previous restore made are then orphaned. The
+      // sweep only named 'leftover', so they were never collected: measured at
+      // exactly 2 permanent orphans per restore, unbounded, on a shared foods
+      // table. The same list is already used by the profile-delete sweep; this
+      // one was the half that didn't learn.
       db.prepare(`
-        DELETE FROM foods WHERE source = 'leftover' AND created_by_profile = $pid
+        DELETE FROM foods
+        WHERE source IN ('quick', 'batch', 'leftover') AND created_by_profile = $pid
           AND ${UNREFERENCED_SQL}
       `).run({ pid });
 
