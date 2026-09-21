@@ -236,3 +236,60 @@ test('a leftover with no weight splits by energy instead', async () => {
   const still = (await json(await as(me)('GET', '/api/leftovers'))).find(x => x.id === l.id);
   assert.strictEqual(Math.round(still.calories), 300, 'the rest did not keep the right energy');
 });
+
+// "Eat all of it" must actually eat all of it.
+//
+// Reported from the phone: "Batch when use all of them. Still havw 0g left
+// leftover". A leftover's weight is stored to one decimal (a 🥡 split writes
+// round1), so it is routinely 333.3 g — while the log sheet prefills
+// Math.round(quantity_g) for legibility. Accepting that prefilled default
+// therefore asked for 333 of 333.3: a partial, leaving 0.3 g that the card
+// renders through Math.round as "0 g". One tap of the button meaning "all of
+// it" left a row claiming to hold nothing, clearable only by binning it.
+//
+// Fixed at both ends — the sheet now omits the amount when you accept the
+// default, and the route treats any remainder too small to display as the
+// whole thing. The route half is what protects a phone that has not taken the
+// update yet, which is the case that produced the report.
+test('accepting the prefilled amount clears the leftover completely', async () => {
+  const api = as(me);
+  for (const savedBack of [333.3, 128.4, 501.2]) {
+    const food = await json(await api('POST', '/api/foods',
+      { name: `Sliver ${savedBack}`, calories_per_100g: 100 }));
+    const sess = await json(await api('POST', '/api/meals/sessions', { name: `Sliver ${savedBack}` }));
+    const entry = await json(await api('POST', `/api/meals/sessions/${sess.id}/entries`,
+      { food_id: food.id, quantity_g: 1000 }));
+    const split = await json(await api('POST', `/api/meals/entries/${entry.id}/leftover`,
+      { left_g: savedBack }));
+
+    const before = (await json(await api('GET', '/api/leftovers')))
+      .find(l => l.id === split.leftover_id);
+    assert.strictEqual(before.quantity_g, savedBack, 'setup: the leftover kept its decimal');
+
+    // Exactly what an un-updated client sends: the rounded display value.
+    const r = await json(await api('POST', `/api/leftovers/${split.leftover_id}/log`,
+      { eat_g: Math.round(before.quantity_g) }));
+    assert.strictEqual(r.partial, false,
+      `${Math.round(before.quantity_g)} of ${savedBack} was treated as a partial`);
+
+    const after = (await json(await api('GET', '/api/leftovers')))
+      .find(l => l.id === split.leftover_id);
+    assert.ok(!after, `a ${savedBack - Math.round(savedBack)} g sliver survived and shows as "0 g"`);
+  }
+});
+
+test('a remainder you can actually see is still a partial', async () => {
+  // The boundary matters: this must not turn every near-complete portion into
+  // "you ate the lot". 1 g is visible, so 1 g stays.
+  const api = as(me);
+  const food = await json(await api('POST', '/api/foods',
+    { name: 'Visible sliver', calories_per_100g: 100 }));
+  const sess = await json(await api('POST', '/api/meals/sessions', { name: 'Visible sliver' }));
+  const entry = await json(await api('POST', `/api/meals/sessions/${sess.id}/entries`,
+    { food_id: food.id, quantity_g: 1000 }));
+  const split = await json(await api('POST', `/api/meals/entries/${entry.id}/leftover`, { left_g: 400 }));
+
+  const r = await json(await api('POST', `/api/leftovers/${split.leftover_id}/log`, { eat_g: 399 }));
+  assert.strictEqual(r.partial, true, 'eating 399 of 400 should leave 1 g');
+  assert.strictEqual(r.remaining_g, 1);
+});

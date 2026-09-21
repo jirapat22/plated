@@ -565,9 +565,17 @@ export function openLeftoverLog(l, onDone, opts = {}) {
         // out of this sheet never leaves an empty one behind.
         const locked = typeof opts.sessionId === 'function' ? await opts.sessionId() : opts.sessionId;
         const sid = lockedSession ? locked : sel.value;
+        // Accepting the prefilled amount means ALL of it, so say nothing at all
+        // — the route reads an absent amount as the whole thing, exactly.
+        // Sending the number back instead was the bug: the field is prefilled
+        // with Math.round(quantity_g) for legibility, so on a 333.3 g leftover
+        // the default tap asked for 333 and left 0.3 g behind, displayed as
+        // "0 g". The server refuses slivers now too; this stops the round trip
+        // from creating one in the first place.
+        const all = c >= whole;
         const r = await api.post(`/api/leftovers/${l.id}/log`, {
           date: lockedSession ? (opts.date || date) : date,
-          ...(byGrams ? { eat_g: c } : { eat_kcal: c }),
+          ...(all ? {} : byGrams ? { eat_g: c } : { eat_kcal: c }),
           ...(sid && sid !== 'new' ? { meal_session_id: sid } : {}),
         });
         hideSheet();

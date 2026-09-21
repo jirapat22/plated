@@ -139,6 +139,23 @@ router.post('/:id/log', (req, res) => {
     // Asking for more than is there eats the lot rather than erroring: the
     // number came off a scale, and 201 g of a 200 g leftover means "all of it".
     if (asked >= whole) asked = whole;
+    // …and so does anything that would leave a sliver too small to see.
+    //
+    // Reported from the phone as "Batch when use all of them. Still havw 0g
+    // left leftover". A leftover's weight is stored to one decimal (a 🥡 split
+    // writes round1), so it is routinely something like 333.3 g — while the
+    // log sheet PREFILLS Math.round(quantity_g), i.e. "333", because a decimal
+    // in that box helps nobody. Accepting that prefilled default therefore
+    // asked for 333 of 333.3, which is a partial: 0.3 g went back in the
+    // fridge and the card rendered it, via Math.round, as "0 g". One tap of
+    // the button that means "eat all of it" left a row claiming to hold
+    // nothing, and the only way to clear it was to bin it. Reproduced.
+    //
+    // 0.5 in either currency, because both the gram and the energy figures are
+    // displayed through Math.round — so this is exactly the set of remainders
+    // that would show as zero. Anything a person could actually see is still
+    // a partial.
+    if (whole - asked < 0.5) asked = whole;
     const share   = whole > 0 ? asked / whole : 1;
     const partial = asked < whole;
     // null in, null out — a macro nobody recorded must not become 0 through a
