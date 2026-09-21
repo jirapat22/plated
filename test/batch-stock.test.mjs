@@ -208,3 +208,57 @@ test('a batch edit keeps unknown macros unknown', async () => {
   assert.strictEqual(day.totals_partial.protein, true,
     'the day claims to have measured a protein total it never had');
 });
+
+// An overdrawn pot has to stay editable.
+//
+// Storing a negative remaining_g is what makes subtract-then-add conserve
+// grams, and the Batches tab tells you about it: "your portions add up to N g
+// more than this pot held ... tap the Fix button". But PATCH validated the
+// RESOLVED remaining_g, which falls back to the stored value when the field is
+// absent — and the edit sheet only sends it when the cooked weight changes. So
+// renaming that pot, or correcting the ingredient weight that caused the
+// overdraw in the first place, came back 400 "remaining_g must be 0 or more":
+// an error about a field the user never touched, on the one pot they had just
+// been told to go and fix. Reproduced end to end before this test existed.
+test('an overdrawn batch can still be renamed and re-costed', async () => {
+  const food = await json(await api('POST', '/api/foods',
+    { name: 'Overdraw rice', calories_per_100g: 100 }));
+  const batch = await json(await api('POST', '/api/batches',
+    { name: 'Overdraw pot', cooked_g: 500, items: [{ food_id: food.id, quantity_g: 500 }] }));
+
+  // The ordinary way a pot goes overdrawn: a portion logged at the wrong
+  // weight, then corrected upwards past what the pot actually held.
+  await api('POST', `/api/batches/${batch.id}/portion`, { grams: 400, date: today });
+  const day = await json(await api('GET', `/api/meals/day/${today}`));
+  const entry = day.sessions.flatMap(s => s.entries).find(e => e.food_name === 'Overdraw pot');
+  assert.ok(entry, 'setup: the portion did not land');
+  await api('PATCH', `/api/meals/entries/${entry.id}`, { quantity_g: 900 });
+
+  const over = await potRow('Overdraw pot');
+  assert.strictEqual(over.overdrawn_g, 400, 'setup: the pot did not end up overdrawn');
+  assert.strictEqual(over.remaining_g, 0, 'a negative must never reach the screen');
+
+  // Exactly what the edit sheet sends when the cooked weight is unchanged:
+  // no remaining_g at all.
+  const r = await api('PATCH', `/api/batches/${batch.id}`,
+    { name: 'Overdraw pot fixed', cooked_g: 500, items: [{ food_id: food.id, quantity_g: 500 }] });
+  assert.strictEqual(r.status, 200,
+    `editing an overdrawn pot failed: ${JSON.stringify(await r.json())}`);
+
+  // And the overdraw survives the edit, because it is still true.
+  const after = await potRow('Overdraw pot fixed');
+  assert.ok(after, 'the rename did not take');
+  assert.strictEqual(after.overdrawn_g, 400, 'the rename quietly wrote the overdraw away');
+});
+
+test('a caller-supplied negative remaining_g is still refused', async () => {
+  // The validation must keep doing its actual job — only the fallback changed.
+  const food = await json(await api('POST', '/api/foods',
+    { name: 'Refuse rice', calories_per_100g: 100 }));
+  const batch = await json(await api('POST', '/api/batches',
+    { name: 'Refuse pot', cooked_g: 300, items: [{ food_id: food.id, quantity_g: 300 }] }));
+  for (const bad of [-1, 'banana', null]) {
+    const r = await api('PATCH', `/api/batches/${batch.id}`, { remaining_g: bad });
+    assert.strictEqual(r.status, 400, `remaining_g: ${bad} was accepted`);
+  }
+});

@@ -549,7 +549,14 @@ export function openLeftoverLog(l, onDone, opts = {}) {
 
     document.getElementById('lg-save').addEventListener('click', async e => {
       const c = askedC();
-      if (!(c > 0)) return showToast(`Enter how much you're having, in ${unit}`, 'error');
+      // `whole` is the DISPLAY figure, so a leftover under half a unit rounds
+      // to 0 — and then this check refused to log it, prefilled box and all.
+      // Those rows exist on phones today: they are what the round-trip bug
+      // fixed in v253 left behind, the "still havw 0g left leftover" from the
+      // report. Binning was the only way to clear one, which files food you
+      // ate as food you threw out. Nothing is left to portion, so any answer
+      // means all of it.
+      if (!(c > 0) && whole > 0) return showToast(`Enter how much you're having, in ${unit}`, 'error');
       // Disabled while in flight, like every other save in this app.
       //
       // This one was missed, and partial logging is what made it bite: before
@@ -572,7 +579,7 @@ export function openLeftoverLog(l, onDone, opts = {}) {
         // the default tap asked for 333 and left 0.3 g behind, displayed as
         // "0 g". The server refuses slivers now too; this stops the round trip
         // from creating one in the first place.
-        const all = c >= whole;
+        const all = whole <= 0 || c >= whole;
         const r = await api.post(`/api/leftovers/${l.id}/log`, {
           date: lockedSession ? (opts.date || date) : date,
           ...(all ? {} : byGrams ? { eat_g: c } : { eat_kcal: c }),

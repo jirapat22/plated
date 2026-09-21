@@ -317,10 +317,25 @@ router.patch('/:id', (req, res) => {
       ingredients = JSON.stringify(ing);
     }
 
-    const rawRemaining = req.body.remaining_g !== undefined ? parseFloat(req.body.remaining_g) : b.remaining_g;
-    if (!Number.isFinite(rawRemaining) || rawRemaining < 0) {
+    // Validate what the CALLER sent, not what is already stored.
+    //
+    // This checked the resolved value, which falls back to b.remaining_g when
+    // the field is absent — and since a9373d9 that value is allowed to be
+    // negative, because storing the honest overdraw is what makes
+    // subtract-then-add conserve grams instead of minting them. So a batch in
+    // exactly the state the overdrawn warning exists to describe rejected every
+    // edit that did not happen to mention remaining_g. The edit sheet only
+    // sends it when the cooked weight changes, so renaming an overdrawn pot, or
+    // correcting the ingredient that caused the overdraw, came back 400
+    // "remaining_g must be 0 or more" — about a field the user never touched,
+    // on the one pot they had just been told to go and fix. Reproduced.
+    //
+    // A stored negative therefore rides through an unrelated edit untouched,
+    // which is also the truth: the pot is still over-drawn after a rename.
+    if (req.body.remaining_g !== undefined && !(parseFloat(req.body.remaining_g) >= 0)) {
       return res.status(400).json({ error: 'remaining_g must be 0 or more' });
     }
+    const rawRemaining = req.body.remaining_g !== undefined ? parseFloat(req.body.remaining_g) : b.remaining_g;
     const remaining = round1(Math.min(rawRemaining, cooked));
 
     db.exec('BEGIN');
