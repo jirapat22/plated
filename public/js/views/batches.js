@@ -53,13 +53,40 @@ export function renderBatches(container, isCurrent = () => true) {
     // way; the lesson never made it to the other three.
     if (!container.isConnected || !isCurrent()) return;
     const ul = unitLabel();
+    // A pot you have finished is not gone. The list route stopped filtering on
+    // `remaining_g > 1` so that an emptied or over-drawn one could still reach
+    // ⚖️ Fix and Delete — before that, a portion logged at the wrong weight
+    // made the pot vanish while its food was still in the fridge, with nothing
+    // anywhere that could correct it.
+    //
+    // The cost of removing the filter landed here: every pot ever cooked now
+    // stacks up, a full card each — ingredients, macros, per-100 g, its own
+    // Log a portion button — so the tab became a graveyard you scroll past to
+    // reach the one you are actually eating from. Reported from the phone as
+    // "why is there a batch of 0", against seven finished pots in a row.
+    //
+    // So they stay listed and stay fixable, just folded away. An over-drawn pot
+    // is NOT finished: it is mis-recorded, it is asking to be corrected, and it
+    // belongs where the warning can be seen.
+    const isFinished = b => b.remaining_g <= 1 && !b.overdrawn_g;
+    const live = batches.filter(b => !isFinished(b));
+    const done = batches.filter(isFinished);
     container.innerHTML = `
       <div style="padding:0 16px 12px">
         <button class="btn btn-primary btn-full" id="new-batch">+ New meal-prep batch</button>
         <div style="font-size:11px;color:var(--text-faint);margin-top:6px;line-height:1.5">Log everything you cooked, weigh the finished batch, then portion it out by weight — calories scale to what's left.</div>
       </div>
-      ${batches.length ? batches.map(b => batchCard(b, ul)).join('')
-        : `<div class="empty-state"><div class="empty-icon">🍱</div><div class="empty-text">No batches yet. Cook a big batch, save it once, then log portions by weight.</div></div>`}
+      ${live.length ? live.map(b => batchCard(b, ul)).join('')
+        : `<div class="empty-state"><div class="empty-icon">🍱</div><div class="empty-text">${done.length
+            ? 'Nothing on the go right now — your finished pots are below.'
+            : 'No batches yet. Cook a big batch, save it once, then log portions by weight.'}</div></div>`}
+      ${done.length ? `
+      <details style="margin:16px 0 4px">
+        <summary style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);font-family:var(--font-display);padding:12px 20px;cursor:pointer">
+          Finished · ${done.length}
+        </summary>
+        ${done.map(b => batchCard(b, ul)).join('')}
+      </details>` : ''}
       ${leftoversSection(leftovers, ul)}
     `;
     const find = id => batches.find(x => x.id == id);
