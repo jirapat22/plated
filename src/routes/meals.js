@@ -321,7 +321,20 @@ router.post('/sessions/:id/copy', (req, res) => {
     // this from a single menu tap ("Eat this again today") with nothing
     // disabled, so a retap after a lost response is the obvious move.
     const cid = isValidClientId(req.body.client_id) ? req.body.client_id : null;
-    const prior = replayOf(db, pid, cid, 'meal-copy');
+    // The DESTINATION is part of the tag, not just the route.
+    //
+    // A client_id identifies one intent, and for a copy the intent includes
+    // where it lands. The copy sheet mints one id when it opens and re-enables
+    // its destination buttons when a send fails — so "pick Meal A, lose the
+    // response, pick Meal B instead" sent the same id with a different target,
+    // and the guard replayed Meal A's receipt. Reproduced: Meal A ended up with
+    // the food, Meal B with nothing, and the client said "Merged into meal"
+    // about Meal B. A silent mis-file reported as a success.
+    //
+    // With the target in the key a retry of the SAME copy still replays (which
+    // is the point), and a copy somewhere else reads as what it is: new.
+    const dest = parseInt(req.body?.target_session_id) || req.body?.date || 'new';
+    const prior = replayOf(db, pid, cid, `meal-copy:${dest}`);
     if (prior) return res.status(prior.status).json(prior.body);
     const src = db.prepare('SELECT * FROM meal_sessions WHERE id = $id AND profile_id = $p').get({ id: req.params.id, p: pid });
     if (!src) return res.status(404).json({ error: 'Meal not found' });
@@ -374,7 +387,7 @@ router.post('/sessions/:id/copy', (req, res) => {
     } catch (e) { db.exec('ROLLBACK'); throw e; }
 
     const out = { session_id: targetId, copied: entries.length };
-    remember(db, pid, cid, 'meal-copy', 201, out);
+    remember(db, pid, cid, `meal-copy:${dest}`, 201, out);
     res.status(201).json(out);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -839,7 +852,10 @@ router.post('/sessions/:id/entries', (req, res) => {
     // and bumps a use count, and only the first of those is visible enough to
     // notice and undo.
     const cid = isValidClientId(client_id) ? client_id : null;
-    const prior = replayOf(db, req.profileId, cid, 'entry-add');
+    // Session in the tag, for the reason spelled out on /copy above: the copy
+    // sheet reuses one id across destinations after a failed send, and without
+    // this a retry aimed at a different meal replayed the first meal's entry.
+    const prior = replayOf(db, req.profileId, cid, `entry-add:${id}`);
     if (prior) return res.status(prior.status).json(prior.body);
 
     if (!food_id) return res.status(400).json({ error: 'food_id and quantity_g > 0 required' });
@@ -893,7 +909,7 @@ router.post('/sessions/:id/entries', (req, res) => {
       WHERE me.id = $id
     `).get({ id: result.lastInsertRowid });
 
-    remember(db, req.profileId, cid, 'entry-add', 201, entry);
+    remember(db, req.profileId, cid, `entry-add:${id}`, 201, entry);
     res.status(201).json(entry);
   } catch (err) {
     res.status(500).json({ error: err.message });

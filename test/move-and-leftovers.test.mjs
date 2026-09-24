@@ -293,3 +293,82 @@ test('a remainder you can actually see is still a partial', async () => {
   assert.strictEqual(r.partial, true, 'eating 399 of 400 should leave 1 g');
   assert.strictEqual(r.remaining_g, 1);
 });
+
+// A replay has to be the SAME intent, and for a copy the destination is part
+// of it.
+//
+// The copy sheet mints one client_id when it opens, and re-enables its
+// destination buttons when a send fails so you can try again. Those two
+// together make "pick Meal A, lose the response, pick Meal B instead" an
+// ordinary sequence — and the guard was keyed on the route alone, so the
+// second request replayed the first one's receipt. Reproduced before this
+// test: Meal A held the food, Meal B held nothing, and the client showed
+// "Merged into meal" about Meal B. A silent mis-file reported as a success,
+// on a route that also draws batch stock for every food it copies.
+test('copying to a different meal is not a replay of the first one', async () => {
+  const api = as(me);
+  const today = new Date().toISOString().slice(0, 10);
+  const food = await json(await api('POST', '/api/foods',
+    { name: 'Retarget rice', calories_per_100g: 100 }));
+  const src = await json(await api('POST', '/api/meals/sessions', { name: 'Retarget source', date: today }));
+  await api('POST', `/api/meals/sessions/${src.id}/entries`, { food_id: food.id, quantity_g: 200 });
+  const A = await json(await api('POST', '/api/meals/sessions', { name: 'Retarget A', date: today }));
+  const B = await json(await api('POST', '/api/meals/sessions', { name: 'Retarget B', date: today }));
+
+  const cid = 'retarget00000000000000001';
+  const first = await json(await api('POST', `/api/meals/sessions/${src.id}/copy`,
+    { target_session_id: A.id, client_id: cid }));
+  assert.strictEqual(first.session_id, A.id, 'setup: the first copy did not land on A');
+
+  // Same id, different destination: a new intent, not a retry.
+  const second = await json(await api('POST', `/api/meals/sessions/${src.id}/copy`,
+    { target_session_id: B.id, client_id: cid }));
+  assert.strictEqual(second.session_id, B.id,
+    'the copy to B was answered with the receipt from A');
+
+  const day = await json(await api('GET', `/api/meals/day/${today}`));
+  const count = name => day.sessions.find(x => x.name === name)?.entries.length ?? -1;
+  assert.strictEqual(count('Retarget A'), 1, 'A lost its copy');
+  assert.strictEqual(count('Retarget B'), 1, 'B never got the copy it was told it got');
+});
+
+test('retrying the SAME copy still replays, which is the point', async () => {
+  const api = as(me);
+  const today = new Date().toISOString().slice(0, 10);
+  const food = await json(await api('POST', '/api/foods',
+    { name: 'Replay rice', calories_per_100g: 100 }));
+  const src = await json(await api('POST', '/api/meals/sessions', { name: 'Replay source', date: today }));
+  await api('POST', `/api/meals/sessions/${src.id}/entries`, { food_id: food.id, quantity_g: 200 });
+  const T = await json(await api('POST', '/api/meals/sessions', { name: 'Replay target', date: today }));
+
+  const cid = 'sameretry000000000000001';
+  const body = { target_session_id: T.id, client_id: cid };
+  await api('POST', `/api/meals/sessions/${src.id}/copy`, body);
+  await api('POST', `/api/meals/sessions/${src.id}/copy`, body);
+
+  const day = await json(await api('GET', `/api/meals/day/${today}`));
+  assert.strictEqual(day.sessions.find(x => x.name === 'Replay target').entries.length, 1,
+    'the retry logged the meal twice');
+});
+
+// Same rule, same reason, one route over: the single-food copy addresses its
+// destination by URL.
+test('copying one food to a different meal is not a replay either', async () => {
+  const api = as(me);
+  const today = new Date().toISOString().slice(0, 10);
+  const food = await json(await api('POST', '/api/foods',
+    { name: 'Entry retarget rice', calories_per_100g: 100 }));
+  const A = await json(await api('POST', '/api/meals/sessions', { name: 'Entry A', date: today }));
+  const B = await json(await api('POST', '/api/meals/sessions', { name: 'Entry B', date: today }));
+
+  const cid = 'entryretarget00000000001';
+  await api('POST', `/api/meals/sessions/${A.id}/entries`,
+    { food_id: food.id, quantity_g: 150, client_id: cid });
+  await api('POST', `/api/meals/sessions/${B.id}/entries`,
+    { food_id: food.id, quantity_g: 150, client_id: cid });
+
+  const day = await json(await api('GET', `/api/meals/day/${today}`));
+  const count = name => day.sessions.find(x => x.name === name)?.entries.length ?? -1;
+  assert.strictEqual(count('Entry A'), 1);
+  assert.strictEqual(count('Entry B'), 1, 'the second meal was told it got a food it never got');
+});

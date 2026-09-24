@@ -210,9 +210,19 @@ export function renderFoods(container) {
         document.getElementById('detail-close').addEventListener('click', hideSheet);
         document.getElementById('detail-edit')?.addEventListener('click', renderEdit);
         document.getElementById('detail-delete')?.addEventListener('click', async () => {
+          // Backing out puts you back on the food, not out of it.
+          //
+          // There is one sheet element, and showSheet REPLACES its contents —
+          // so raising a confirm from inside an open sheet destroys the sheet
+          // underneath it. window.confirm was modal and left the detail
+          // standing, so this was a silent regression of the migration away
+          // from it: tap Delete by mistake, tap Cancel, and the food you were
+          // reading is gone from the screen. Verified in a browser before this
+          // line existed. This is the only confirm in the app raised from
+          // inside a sheet; the rest are list-level.
           if (!await showConfirm({ title: `Delete "${food.name}"?`,
             body: "It'll disappear from search but your past logs stay intact.",
-            cta: 'Delete', danger: true })) return;
+            cta: 'Delete', danger: true })) { showSheet(() => renderDetail()); return; }
           try {
             await api.delete(`/api/foods/${food.id}`);
             hideSheet();
