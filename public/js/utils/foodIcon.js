@@ -30,7 +30,6 @@ const RULES = [
   [/oyster.mushroom/i,                                                                '🍄'],
   [/smoked.salmon|smoked.trout|smoked.fish/i,                                         '🐟'],
   [/english.muffin/i,                                                                 '🍞'],
-  [/olive.oil|avocado.oil|sesame.oil|peanut.oil|canola|vegetable.oil|rice.bran|sunflower.oil|grapeseed|palm.oil/i, '🫒'],
   [/bone.broth/i,                                                                      '🦴'],
   [/meat.pie|steak.pie|mince.pie/i,                                                   '🥧'],
   [/sausage.roll/i,                                                                    '🌭'],
@@ -87,7 +86,12 @@ const RULES = [
   [/tuna|albacore/i,                                                                    '🐟'],
   [/snapper|tarakihi|terakihi|warehou|gurnard|blue.cod|bluecod|john.dory|blue.moki|hapuku|kahawai|kingfish|yellowfin|marlin|swordfish/i, '🐟'],
   [/basa|barramundi|tilapia|pangasius/i,                                               '🐟'],
-  [/hoki|ling\b|orange.roughy|dory|sole\b|plaice|flounder|halibut|turbot/i,           '🐟'],
+  // \bling\b, not ling\b. The trailing boundary alone matched the END of any
+  // word finishing in -ling, so 28 of the 4,873 seeded foods drew a fish:
+  // sparkling wine, sparkling juice, biscuits with a caramel filling and
+  // garlic bread among them. Leading boundary added; `dory` was the same
+  // trap and `sole` already had it right.
+  [/hoki|\bling\b|orange.roughy|\bdory\b|sole\b|plaice|flounder|halibut|turbot/i, '🐟'],
   [/trout|perch|bass\b|bream|mullet/i,                                                 '🐟'],
   [/sardine|pilchard|anchovy|whitebait|sprat/i,                                        '🐟'],
   [/eel|lamprey/i,                                                                      '🐍'],
@@ -224,6 +228,18 @@ const RULES = [
   [/\bnut\b|\bnuts\b/i,                                                                '🥜'],
 
   // ── Oils & fats ─────────────────────────────────────────────
+  // Back down here, deliberately, and NOT hoisted with the specific-food rules
+  // above it.
+  //
+  // These words turn up as an incidental ingredient in thousands of AUSNUT/NZ
+  // names — "pan-fried with canola oil", "deep-fried in peanut oil", "garlic
+  // filling with vegetable oil" — so matching them early lets the cooking
+  // medium name the dish. Measured over the 4,873 seeded food names: hoisting
+  // this line changed 118 icons and the bulk of them were losses. A dozen fish
+  // fillets became olives, as did every canola margarine and a fried tempeh.
+  // The icon describes the food, so the food rules go first and this one
+  // catches what is actually an oil.
+  [/olive.oil|avocado.oil|sesame.oil|peanut.oil|canola|vegetable.oil|rice.bran|sunflower.oil|grapeseed|palm.oil/i, '🫒'],
   [/\boil\b/i,                                                                         '🫒'],
   [/lard|dripping|shortening|tallow/i,                                                  '🧈'],
   [/spray.oil|cooking.spray/i,                                                          '🫒'],

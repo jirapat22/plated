@@ -103,7 +103,19 @@ function getToken() {
 //
 // A 502/503/504 is equally "did not arrive": those come from the proxy, not the
 // app. Reproduced with the worker's own synthetic response.
-const NOT_RECEIVED = new Set([502, 503, 504]);
+//
+// Which is resp.ok, not a hand-listed set of statuses — the first version of
+// this fix named 502/503/504 and so still answered TRUE for the two codes this
+// route actually returns when it keeps nothing:
+//
+//   429, from its own limiter. 40 requests per 10 minutes, and the page auto-
+//        reports up to 25 caught errors per load, so two loads of an app that
+//        is misbehaving exhausts it — and the manual report you then sit down
+//        to write is the one that gets dropped. Exactly backwards.
+//   500, when captureReport throws and nothing is stored.
+//
+// Both were answered "Sent. The admin will get in touch". 201 and the 202 the
+// dedupe returns are both ok, so nothing that DID arrive starts queueing.
 async function postReport(body) {
   try {
     const token = getToken();
@@ -112,8 +124,7 @@ async function postReport(body) {
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify(body),
     });
-    if (NOT_RECEIVED.has(resp.status)) return false;
-    return true;
+    return resp.ok;
   } catch {
     return false;   // network failure — caller may queue for retry
   }
