@@ -71,3 +71,57 @@ test('a word ending in -ling is not a ling', () => {
     assert.strictEqual(getFoodIcon(name), '🐟', `${name} stopped being a fish`);
   }
 });
+
+// Reported from the phone: "my adamame is cheese icon". /edam/ matched inside
+// "edamame" and the cheese rule sits well above the beans.
+//
+// Sweeping the whole rule list for the same shape — a pattern matching in the
+// MIDDLE of a word — turned up sixteen more, worth 225 of the 4,873 seeded
+// names. The largest by far was /eel/ inside "peeled": every peeled orange,
+// potato, kumara and onion in the database drew a snake. Most of the rest were
+// shadowing a correct rule that already existed further down — silverbeet,
+// popcorn and liquorice all had their own entries and none could ever run.
+//
+// These are the cases, one per trap, so the boundaries cannot quietly come off
+// again.
+test('a rule does not match inside a longer word', () => {
+  for (const [name, want, trap] of [
+    ['Frozen Edamame (Shelled)',        '🫛', 'edam in edamame'],
+    ['Orange, peeled, seeded, raw',     '🍊', 'eel in peeled'],
+    ['Potato, pale skin, peeled, raw',  '🥔', 'eel in peeled'],
+    ['Meatball or rissole, beef mince', '🥩', 'sole in rissole'],
+    ['Liquorice, black',                '🍬', 'rice in liquorice'],
+    ['Popcorn, air popped',             '🍿', 'corn in popcorn'],
+    ['Silverbeet, leaves, raw',         '🥬', 'beet in silverbeet'],
+    ['Squash, buttercup, raw',          '🎃', 'butter in buttercup'],
+    ['Squash, button or scallopini',    '🎃', 'scallop in scallopini'],
+    ['Grapefruit, flesh, raw',          '🍊', 'grape in grapefruit'],
+    ['Flour, wheat, white, self-raising','🌾', 'raisin in self-raising'],
+    ['Goat, separable fat, raw',        '🐐', 'oat in goat'],
+    ['Gooseberry, flesh, raw',          '🍓', 'goose in gooseberry'],
+    ['Meatloaf, commercial, all meats', '🥩', 'loaf in meatloaf'],
+    ['Buttermilk',                      '🥛', 'butter in buttermilk'],
+    ['Oatmeal, dry',                    '🥣', 'meal in oatmeal'],
+  ]) assert.strictEqual(getFoodIcon(name), want, `${trap}: "${name}" drew the wrong icon`);
+});
+
+// …and each of those words, standing on its own, still matches. Anchoring a
+// pattern is only correct if it keeps doing its job.
+test('the anchored words still match on their own', () => {
+  for (const [name, want] of [
+    ['Eel, smoked',        '🐍'],
+    ['Sole, grilled',      '🐟'],
+    ['Edam, cheese',       '🧀'],
+    ['Rice, white, cooked','🍚'],
+    ['Corn, raw',          '🌽'],
+    ['Beetroot, raw',      '🫀'],
+    ['Butter, salted',     '🧈'],
+    ['Oats, rolled',       '🥣'],
+    ['Grapes, red',        '🍇'],
+    ['Raisins',            '🍇'],
+    ['Scallops, raw',      '🦪'],
+    ['Goose, roasted',     '🍗'],
+    ['Goat cheese',        '🧀'],
+    ['Bread, wholemeal',   '🍞'],
+  ]) assert.strictEqual(getFoodIcon(name), want, `${name} stopped matching its own rule`);
+});

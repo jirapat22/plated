@@ -30,7 +30,9 @@ const RULES = [
   [/oyster.mushroom/i,                                                                '🍄'],
   [/smoked.salmon|smoked.trout|smoked.fish/i,                                         '🐟'],
   [/english.muffin/i,                                                                 '🍞'],
+  [/popcorn/i,                                                                       '🍿'],
   [/bone.broth/i,                                                                      '🦴'],
+  [/meatloaf|meat.loaf/i,                                                             '🥩'],
   [/meat.pie|steak.pie|mince.pie/i,                                                   '🥧'],
   [/sausage.roll/i,                                                                    '🌭'],
   [/beyond.meat|impossible.burger|impossible.meat|plant.based.meat|plant.based.mince|meat.free|meat.alternative|veggie.burger|veggie.mince|quorn\b/i, '🌱'],
@@ -59,27 +61,27 @@ const RULES = [
   [/\begg/i,                                                                           '🥚'],
 
   // ── Dairy & alternatives ─────────────────────────────────────
-  [/butter|margarine/i,                                                                '🧈'],
+  [/\bbutter\b|margarine/i,                                                                '🧈'],
   [/ghee/i,                                                                            '🧈'],
   [/kefir|labneh|skyr/i,                                                               '🥛'],
   [/yogh?urt|yogurt/i,                                                                 '🫙'],
   [/kombucha|kefir.water/i,                                                            '🧃'],
-  [/cheddar|mozzarella|parmesan|feta|ricotta|brie|gouda|camembert|colby|edam|gruyere|haloumi|halloumi|cottage.cheese|cream.cheese/i, '🧀'],
+  [/cheddar|mozzarella|parmesan|feta|ricotta|brie|gouda|camembert|colby|\bedam\b|gruyere|haloumi|halloumi|cottage.cheese|cream.cheese/i, '🧀'],
   [/\bcheese\b/i,                                                                      '🧀'],
   [/ice.?cream|gelato|sorbet|frozen.yogh/i,                                            '🍦'],
   [/whipped.cream|thickened.cream|sour.cream|double.cream/i,                           '🫙'],
   [/cream\b|crème/i,                                                                   '🍦'],
   [/oat.milk|soy.milk|almond.milk|rice.milk|coconut.milk.drink|plant.milk|plant.based.milk/i, '🥛'],
-  [/skim.milk|trim.milk|full.fat.milk|whole.milk|low.fat.milk|evaporated.milk|condensed.milk|milk.powder/i, '🥛'],
+  [/buttermilk|skim.milk|trim.milk|full.fat.milk|whole.milk|low.fat.milk|evaporated.milk|condensed.milk|milk.powder/i, '🥛'],
   [/\bmilk\b/i,                                                                        '🥛'],
   [/custard|pudding\b/i,                                                                '🍮'],
 
   // ── Poultry ─────────────────────────────────────────────────
-  [/chicken|turkey|duck|goose|quail|poultry|hen\b|game.bird/i,                         '🍗'],
+  [/chicken|turkey|duck|\bgoose\b|quail|poultry|hen\b|game.bird/i,                         '🍗'],
 
   // ── Seafood & shellfish ──────────────────────────────────────
   [/prawn|shrimp|crab|lobster|crayfish|langoustine|krill/i,                            '🦐'],
-  [/mussel|oyster|scallop|clam|pipi|cockle|paua|kina|abalone|geoduck/i,               '🦪'],
+  [/mussel|oyster|\bscallops?\b|clam|pipi|cockle|paua|kina|abalone|geoduck/i,               '🦪'],
   [/squid|calamari|octopus|cuttlefish/i,                                               '🦑'],
   [/whitebait/i,                                                                        '🐟'],
   [/salmon/i,                                                                           '🍣'],
@@ -91,10 +93,10 @@ const RULES = [
   // sparkling wine, sparkling juice, biscuits with a caramel filling and
   // garlic bread among them. Leading boundary added; `dory` was the same
   // trap and `sole` already had it right.
-  [/hoki|\bling\b|orange.roughy|\bdory\b|sole\b|plaice|flounder|halibut|turbot/i, '🐟'],
+  [/hoki|\bling\b|orange.roughy|\bdory\b|\bsole\b|plaice|flounder|halibut|turbot/i, '🐟'],
   [/trout|perch|bass\b|bream|mullet/i,                                                 '🐟'],
-  [/sardine|pilchard|anchovy|whitebait|sprat/i,                                        '🐟'],
-  [/eel|lamprey/i,                                                                      '🐍'],
+  [/sardine|pilchard|herring|anchovy|whitebait|sprat/i,                                        '🐟'],
+  [/\beel\b|lamprey/i,                                                                      '🐍'],
   [/smoked.fish|smoked.salmon|smoked.trout/i,                                          '🐟'],
   [/fish.cake|fish.finger|fish.ball|seafood/i,                                         '🐟'],
   [/\bfish\b/i,                                                                        '🐟'],
@@ -109,6 +111,7 @@ const RULES = [
   [/pork\b|pig\b|suckling/i,                                                           '🥓'],
 
   // ── Lamb & mutton ────────────────────────────────────────────
+  [/\bgoat\b/i,                                                                        '🐐'],
   [/lamb|mutton|hogget/i,                                                               '🐑'],
 
   // ── Beef & veal ─────────────────────────────────────────────
@@ -135,10 +138,10 @@ const RULES = [
   [/tomato/i,                                                                           '🍅'],
   [/kumara|sweet.potato/i,                                                              '🍠'],
   [/potato\b/i,                                                                         '🥔'],
-  [/corn\b|maize|sweetcorn|corn.on.the.cob/i,                                          '🌽'],
+  [/\bcorn\b|maize|sweetcorn|corn.on.the.cob/i,                                          '🌽'],
   [/carrot/i,                                                                           '🥕'],
-  [/parsnip|turnip|swede|celeriac|radish/i,                                             '🥕'],
-  [/beetroot|beet\b/i,                                                                  '🫀'],
+  [/parsnip|turnip|swede|celeriac|cassava|\byams?\b|\btaro\b|\bradish\b|horseradish/i,                                             '🥕'],
+  [/beetroot|\bbeet\b/i,                                                                  '🫀'],
   [/truffle\b/i,                                                                        '🍄'],
   [/mushroom|shiitake|portobello|oyster.mushroom|enoki|porcini|fungi/i,                '🍄'],
   [/broccoli/i,                                                                         '🥦'],
@@ -173,8 +176,8 @@ const RULES = [
 
   // ── Fruit ───────────────────────────────────────────────────
   [/apple/i,                                                                            '🍎'],
-  [/banana/i,                                                                           '🍌'],
-  [/orange\b|mandarin|tangerine|clementine|navel/i,                                    '🍊'],
+  [/banana|plantain/i,                                                                           '🍌'],
+  [/grapefruit|orange\b|mandarin|tangelo|tangerine|clementine|navel/i,                                    '🍊'],
   [/grape/i,                                                                            '🍇'],
   [/strawberr/i,                                                                        '🍓'],
   [/blueberr/i,                                                                         '🫐'],
@@ -191,7 +194,7 @@ const RULES = [
   [/lime\b/i,                                                                           '🍋'],
   [/pear\b/i,                                                                           '🍐'],
   [/coconut\b/i,                                                                        '🥥'],
-  [/raisin|sultana|currant/i,                                                           '🍇'],
+  [/\braisins?\b|sultana|currant/i,                                                           '🍇'],
   [/fig\b/i,                                                                            '🟫'],
   [/date\b/i,                                                                           '🟫'],
   [/passion.?fruit/i,                                                                   '🍈'],
@@ -261,16 +264,16 @@ const RULES = [
   [/sourdough/i,                                                                        '🍞'],
   [/pita|pitta/i,                                                                       '🫓'],
   [/roti|naan|chapati|tortilla\b|flatbread/i,                                          '🫓'],
-  [/bread\b|toast\b|roll\b|bun\b|focaccia|brioche|ciabatta|baguette|loaf/i,           '🍞'],
+  [/bread\b|toast\b|roll\b|bun\b|focaccia|brioche|ciabatta|baguette|\bloaf\b/i,           '🍞'],
 
   // ── Grains & cereals ────────────────────────────────────────
   [/weet.?bix|weetbix/i,                                                                '🥣'],
-  [/oat\b|porridge|rolled.oat/i,                                                       '🥣'],
+  [/\boats?\b|oatmeal|porridge|rolled.oat/i,                                                       '🥣'],
   [/muesli|granola/i,                                                                   '🥣'],
   [/cornflake|bran.flake|corn.puff|rice.bubble|cocoa.puff/i,                           '🥣'],
   [/cereal\b/i,                                                                         '🥣'],
   [/risotto|paella|fried.rice/i,                                                        '🍚'],
-  [/rice\b/i,                                                                           '🍚'],
+  [/\brice\b/i,                                                                           '🍚'],
   [/pasta\b|spaghetti|penne|fettuccine|linguine|lasagne|macaroni|gnocchi|rigatoni|tagliatelle|orzo/i, '🍝'],
   [/noodle|ramen|udon|soba|glass.noodle|vermicelli|pad.thai|laksa/i,                   '🍜'],
   [/flour\b/i,                                                                          '🌾'],
@@ -380,7 +383,7 @@ const RULES = [
   [/lasagne\b|lasagna/i,                                                                 '🍝'],
   [/fried.chicken|kfc\b/i,                                                               '🍗'],
   [/takeaway|takeout|fast.food/i,                                                        '🥡'],
-  [/mixed.dish|meal\b/i,                                                                 '🍽'],
+  [/mixed.dish|\bmeal\b/i,                                                                 '🍽'],
 
   // ── Snacks & packaged foods ──────────────────────────────────
   [/popcorn/i,                                                                           '🍿'],
