@@ -92,6 +92,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
 
   // ── Search ───────────────────────────────────────────────────
   async function search(fetchRemote = false) {
+    let remoteError = '';
     // A typed query searches FOODS, whichever chip was last tapped — Recent,
     // Favourites, Batches, Leftovers and Presets are all "when there is no
     // query" lists. Leaving one lit claimed the results were filtered by it
@@ -165,12 +166,23 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
       if (q) {
         rows = await api.get(`/api/foods/search?q=${encodeURIComponent(q)}&limit=20`);
 
-        // Auto-fetch remote only when local has nothing; otherwise show button
+
+        // Auto-fetch remote only when local has nothing; otherwise show button.
+        //
+        // Its own try/catch. The route now answers 503 when Open Food Facts is
+        // busy or unreachable instead of pretending there were no matches, and
+        // without this that 503 would throw out of here into the catch below —
+        // replacing the local results, which are perfectly good, with an error
+        // page. The remote half failing should cost you the remote half.
         if (fetchRemote || rows.length === 0) {
-          const remote = await api.get(`/api/foods/search/remote?q=${encodeURIComponent(q)}`);
-          const existing = new Set(rows.map(r => r.name.toLowerCase()));
-          remoteRows = remote.filter(r => !existing.has(r.name.toLowerCase()));
-          rows = [...rows, ...remoteRows];
+          try {
+            const remote = await api.get(`/api/foods/search/remote?q=${encodeURIComponent(q)}`);
+            const existing = new Set(rows.map(r => r.name.toLowerCase()));
+            remoteRows = remote.filter(r => !existing.has(r.name.toLowerCase()));
+            rows = [...rows, ...remoteRows];
+          } catch (err) {
+            remoteError = err.message || 'Could not reach Open Food Facts';
+          }
         }
       } else if (filter === 'favourites') {
         rows = await api.get('/api/foods/favourites');
@@ -178,13 +190,13 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
         rows = await api.get('/api/foods/recent');
       }
 
-      renderResults(rows, q, fetchRemote);
+      renderResults(rows, q, fetchRemote, remoteError);
     } catch (err) {
       results.innerHTML = `<div class="empty-state"><div class="empty-text">${esc(err.message)}</div></div>`;
     }
   }
 
-  function renderResults(rows, q, alreadyFetchedRemote = false) {
+  function renderResults(rows, q, alreadyFetchedRemote = false, remoteError = '') {
     results.innerHTML = '';
     remoteRows = [];
 
@@ -208,6 +220,40 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
     const localRows  = rows.filter(r =>  r.id);
     const remoteOnly = rows.filter(r => !r.id);
 
+    // The branded-food button goes ABOVE the local list, not under it.
+    //
+    // It used to render after every local row. Search "anchor milk" and the
+    // seed answers with twenty generic milks, so the one control that reaches
+    // branded products sat below twenty rows on a 430px phone — past the fold,
+    // past the point anyone keeps scrolling. The reasonable conclusion from
+    // that screen is "it isn't in here", and the reasonable response is to type
+    // the food in by hand, which is what the pantry is full of.
+    //
+    // Moved rather than auto-fired: Open Food Facts rate-limits this endpoint
+    // and answers 503 under load, so firing it on every keystroke would make it
+    // fail more often, not less. One visible tap is the cheaper fix.
+    if (q && !alreadyFetchedRemote && remoteOnly.length === 0 && !remoteError) {
+      const btn = document.createElement('button');
+      btn.style.cssText = 'display:block;width:calc(100% - 32px);margin:6px 16px 10px;height:40px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-weight:600;color:var(--text-muted)';
+      btn.textContent = '🌍 Search branded foods (Open Food Facts)';
+      btn.addEventListener('click', () => search(true));
+      results.appendChild(btn);
+    }
+
+    // And say so when the lookup failed, instead of letting the local list
+    // silently stand in for "that product does not exist".
+    if (remoteError) {
+      const note = document.createElement('div');
+      note.style.cssText = 'margin:6px 16px 10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--text-muted);line-height:1.5';
+      note.textContent = remoteError;
+      const retry = document.createElement('button');
+      retry.style.cssText = 'display:block;margin-top:8px;font-size:12px;font-weight:700;color:var(--accent)';
+      retry.textContent = 'Try again';
+      retry.addEventListener('click', () => search(true));
+      note.appendChild(retry);
+      results.appendChild(note);
+    }
+
     localRows.forEach(food => results.appendChild(buildFoodRow(food)));
 
     if (remoteOnly.length) {
@@ -218,17 +264,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
       remoteOnly.forEach(food => results.appendChild(buildFoodRow(food)));
     }
 
-    if (q) {
-      // Show "Search online" button only if we haven't fetched remote yet
-      if (!alreadyFetchedRemote && remoteOnly.length === 0) {
-        const btn = document.createElement('button');
-        btn.style.cssText = 'display:block;width:calc(100% - 32px);margin:10px 16px;height:40px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-weight:600;color:var(--text-muted);transition:all .15s';
-        btn.textContent = '🌍 Search Open Food Facts';
-        btn.addEventListener('click', () => search(true));
-        results.appendChild(btn);
-      }
-      appendQuickAdd(q);
-    }
+    if (q) appendQuickAdd(q);
   }
 
   function buildFoodRow(food) {

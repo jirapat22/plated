@@ -11,22 +11,60 @@ const FCOLS = `f.id, f.name, f.brand, f.barcode, f.calories_per_100g,
   f.protein_per_100g, f.carbs_per_100g, f.fat_per_100g, f.fiber_per_100g,
   f.serving_size_g, f.source, f.created_at, f.created_by_profile`;
 
+// Per-100g figures only, ever.
+//
+// This used to fall back from `energy-kcal_100g` to `energy-kcal`, and from
+// `proteins_100g` to `proteins`, and so on for every macro. Those unsuffixed
+// fields are not per-100g: they carry whatever basis the contributor entered
+// the product in, and `nutrition_data_per` is the field that says which. For a
+// large share of Open Food Facts products that basis is the SERVING.
+//
+// So a 30 g muesli bar labelled 140 kcal per serving was stored as 140
+// kcal_per_100g, and every gram logged against it counted about a third of
+// what it should. Nothing anywhere said so — the row looked perfectly ordinary
+// next to seeded foods whose figures really are per 100 g. This is the most
+// likely source of "the macros look wrong", because it is the one path that
+// writes a plausible-looking number that is silently on the wrong scale.
+//
+// When only the unsuffixed value exists it is used ONLY if the product states
+// its basis is 100g. Otherwise the field is null, and the guard below turns an
+// unusable product into hand-entry rather than a confident wrong number.
+const off100 = (n, key, dataPer) => {
+  const suffixed = n[`${key}_100g`];
+  if (suffixed != null && Number.isFinite(Number(suffixed))) return Number(suffixed);
+  if (dataPer === '100g' && n[key] != null && Number.isFinite(Number(n[key]))) return Number(n[key]);
+  return null;
+};
+
 function mapOFFProduct(p) {
   const n = p.nutriments || {};
+  const per = p.nutrition_data_per || null;
   return {
     name: p.product_name || p.product_name_en || 'Unknown',
     brand: p.brands || null,
     barcode: p.code || p._id || null,
-    calories_per_100g:
-      n['energy-kcal_100g'] ?? n['energy-kcal'] ?? null,
-    protein_per_100g: n.proteins_100g ?? n.proteins ?? null,
-    carbs_per_100g:
-      n.carbohydrates_100g ?? n.carbohydrates ?? null,
-    fat_per_100g: n.fat_100g ?? n.fat ?? null,
-    fiber_per_100g: n.fiber_100g ?? n.fiber ?? null,
+    calories_per_100g: off100(n, 'energy-kcal', per),
+    protein_per_100g:  off100(n, 'proteins', per),
+    carbs_per_100g:    off100(n, 'carbohydrates', per),
+    fat_per_100g:      off100(n, 'fat', per),
+    fiber_per_100g:    off100(n, 'fiber', per),
     serving_size_g: parseServingG(p.serving_size) ?? 100,
     source: 'openfoodfacts',
   };
+}
+
+// Is this product safe to put in the foods table?
+//
+// Open Food Facts is crowd-sourced and unreviewed: products carry 5,000 kcal
+// per 100 g, negative protein, 250 g of fat in 100 g of food. Every typed path
+// into this table runs badNutrition; the barcode scan was the one that did not,
+// and it writes with ON CONFLICT(barcode) DO UPDATE — so a re-scan overwrote a
+// food that had been fine. Returns an error string, or null when usable.
+function offUnusable(food) {
+  if (!(food.calories_per_100g > 0)) {
+    return 'Open Food Facts has this product but no usable per-100g nutrition for it';
+  }
+  return badNutrition(food, 'openfoodfacts');
 }
 
 // Nutrition fields are per 100 g, so anything above 900 kcal is impossible
@@ -136,6 +174,19 @@ router.get('/search', (req, res) => {
       params[`t${i}`] = `%${lit(w)}%`;
       return `(f.name LIKE $t${i} ESCAPE '\\' OR f.brand LIKE $t${i} ESCAPE '\\')`;
     }).join(' AND ');
+    // Did the query name a BRAND? Used as a ranking tier below.
+    //
+    // Every one of the 4,804 seeded foods has brand NULL — checked — and the
+    // tier after this one sorts an unbranded row ABOVE a branded one. That is
+    // right for a generic query ("milk" should find milk, not a milk drink),
+    // and exactly wrong when the word typed IS the brand: searching "anchor"
+    // put an AUSNUT row called "Liquid breakfast ... Anchor™" above the Anchor
+    // milk actually in the fridge, and "weet-bix" did the same. Those are the
+    // two searches most likely to be a brand and nothing else.
+    //
+    // Only fires when a term matches the brand column, so a generic query is
+    // untouched — measured on 15 searches, 2 fixed and 13 unchanged.
+    const brandHit = words.map((_, i) => `f.brand LIKE $t${i} ESCAPE '\\'`).join(' OR ');
     // Still NO bonus for matching the typed phrase contiguously anywhere in the
     // name. That sounds right and measures wrong on this data: the seed names
     // things "Ingredient, qualifier", so the literal phrase turns up almost
@@ -177,6 +228,7 @@ router.get('/search', (req, res) => {
         CASE WHEN LOWER(f.name) = LOWER($exact) THEN 0
              WHEN LOWER(f.name) LIKE LOWER($base) ESCAPE '\\' THEN 1
              ELSE 2 END ASC,
+        CASE WHEN ${brandHit} THEN 0 ELSE 1 END ASC,
         CASE WHEN f.source IN ('nz_seed','custom') THEN 0 ELSE 1 END ASC,
         CASE WHEN f.brand IS NULL OR f.brand = '' THEN 0 ELSE 1 END ASC,
         LENGTH(f.name) ASC,
@@ -196,27 +248,46 @@ router.get('/search/remote', async (req, res) => {
     if (q.trim().length < 2) return res.json([]);
 
     // lc=en limits to English-labelled products
-    const url = `${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(q.trim())}&json=1&page_size=24&lc=en&fields=product_name,brands,nutriments,serving_size,code,countries_tags`;
+    const url = `${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(q.trim())}&json=1&page_size=24&lc=en&fields=product_name,brands,nutriments,serving_size,code,countries_tags,nutrition_data_per`;
     const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    // "Busy" is not "not there", and this route used to report them the same.
+    //
+    // Open Food Facts rate-limits this endpoint hard and answers with a 503
+    // HTML page, not JSON. The catch below turned that — and a timeout, and a
+    // DNS failure — into `[]`, which the UI renders as "no results". So the
+    // honest outcome "we could not reach the branded-food database" was shown
+    // as the false one "that product does not exist", and the only sensible
+    // response to it is the wrong one: give up and type the food by hand.
+    // Measured while auditing this: three consecutive 503s on an ordinary
+    // query, then a 200. Retrying would have worked; nothing said to.
+    if (!resp.ok) {
+      return res.status(503).json({ error: 'Open Food Facts is busy right now — try that again in a moment' });
+    }
     const data = await resp.json();
 
     // Only Latin characters (no Cyrillic, Chinese, Arabic, etc.)
     const latinOnly = /^[\u0000-ɏ\s\d.,()&'"\-\/]+$/;
 
     const mapped = (data.products || [])
-      .filter(p => {
-        if (!p.product_name) return false;
-        if (!latinOnly.test(p.product_name)) return false;          // skip non-Latin names
-        const n = p.nutriments || {};
-        const hasCal = n['energy-kcal_100g'] != null || n['energy-kcal'] != null;
-        return hasCal;                                               // must have energy data
-      })
+      .filter(p => p.product_name && latinOnly.test(p.product_name))  // skip non-Latin names
       .map(p => mapOFFProduct(p))
+      // Same gate the scan uses. Offering a row whose numbers are unusable only
+      // moves the failure later: picking it POSTs to /api/foods, which runs
+      // badNutrition and refuses with a validation error mid-log. Filtering
+      // here means the list only ever contains things that can be logged.
+      .filter(f => !offUnusable(f))
       .slice(0, 10);
 
     res.json(mapped);
-  } catch {
-    res.json([]);
+  } catch (err) {
+    // Same reasoning as the !resp.ok branch: say it failed rather than
+    // answering "nothing found".
+    const timedOut = err.name === 'TimeoutError' || err.code === 'UND_ERR_CONNECT_TIMEOUT';
+    res.status(503).json({
+      error: timedOut
+        ? 'Open Food Facts took too long to answer — try again in a moment'
+        : 'Could not reach Open Food Facts just now',
+    });
   }
 });
 
@@ -333,6 +404,15 @@ router.get('/barcode/:barcode', async (req, res) => {
     }
 
     const mapped = mapOFFProduct({ ...productData, code: usedCode });
+    // Check BEFORE storing. This was the only route that wrote into foods
+    // without running badNutrition, and it writes with ON CONFLICT(barcode) DO
+    // UPDATE — so an unusable product did not just arrive, it overwrote a row
+    // that may have been corrected by hand. 422 rather than 404 because the
+    // product does exist; the client tells the two apart and reopens quick-add
+    // with the barcode kept and this message shown, which is the same path a
+    // genuinely unknown barcode already takes.
+    const unusable = offUnusable(mapped);
+    if (unusable) return res.status(422).json({ error: `${unusable} — add it by hand from the label` });
     mapped.created_by_profile = req.profileId;   // whoever first scanned it
     const food = upsertFood(db, mapped);
     res.json({ food, source: 'openfoodfacts' });
@@ -518,3 +598,10 @@ router.delete('/:id', (req, res) => {
 });
 
 module.exports = router;
+// Exported for tests only. These two decide what a scan is allowed to write
+// into the shared foods table, and the cost of getting either wrong is a
+// plausible-looking number on the wrong scale — which is invisible by
+// inspection and wrong in every meal logged against it afterwards. The test
+// has to exercise THESE, not a hand-copied reimplementation that can drift.
+module.exports.mapOFFProduct = mapOFFProduct;
+module.exports.offUnusable   = offUnusable;
