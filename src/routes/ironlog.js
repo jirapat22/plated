@@ -87,7 +87,34 @@ function getApiKey(pid) {
   return profileSetting(pid, 'ironlog_api_key')?.trim() || null;
 }
 
-async function ironFetch(pid, path) {
+// 6 seconds and no retry was fine while IronLog was always on.
+//
+// Railway App Sleeping is being enabled across these projects, so IronLog now
+// stops after ~10 minutes idle and its first request pays a container start —
+// which can exceed 6s and, per Railway's docs, may come back as a 502 from the
+// proxy instead of a timeout. Either way this threw, and a thrown getProfile
+// makes /today answer `connected: false`: opening Plated after a quiet
+// afternoon would say IronLog is disconnected when it is merely asleep, and
+// nothing retried, so it stayed wrong until the user opened Today again.
+//
+// 15s, and one retry on a transport failure or a proxy 5xx — never on a 401 or
+// a 4xx, which are answers, not wakes. Today fires four of these in parallel,
+// so the first wakes the container and the retries land on a warm one.
+const IRON_TIMEOUT_MS = 15000;
+const IRON_RETRY_MS   = 1200;
+const WAKE_STATUS = new Set([502, 503, 504]);
+
+// Whether this outcome is worth one more try. `status` is null when fetch
+// itself threw (timeout, connection refused) — both of which are what a
+// container start looks like from here. A 401 or any other 4xx is an answer
+// IronLog actually gave, so retrying it just asks the same question twice.
+// Pure and exported so the once-only semantics are pinned: the URL guard
+// (correctly) refuses loopback, so the retry cannot be exercised end to end
+// without weakening it, and an off-by-one here is a retry loop.
+const shouldRetryIron = (status, retried) =>
+  !retried && (status == null || WAKE_STATUS.has(status));
+
+async function ironFetch(pid, path, retried = false) {
   const url    = getBaseUrl(pid);
   const apiKey = getApiKey(pid);
 
@@ -95,8 +122,20 @@ async function ironFetch(pid, path) {
     ? { 'X-API-Key': apiKey, 'Authorization': `Bearer ${apiKey}` }
     : {};
 
-  const resp = await fetch(`${url}${path}`, { headers, signal: AbortSignal.timeout(6000) });
+  const again = async () => {
+    await new Promise(r => setTimeout(r, IRON_RETRY_MS));
+    return ironFetch(pid, path, true);
+  };
+
+  let resp;
+  try {
+    resp = await fetch(`${url}${path}`, { headers, signal: AbortSignal.timeout(IRON_TIMEOUT_MS) });
+  } catch (err) {
+    if (shouldRetryIron(null, retried)) return again();  // timed out or refused — likely waking
+    throw err;
+  }
   if (resp.status === 401) throw new Error('IronLog rejected the API key (401 Unauthorized) — check the key in Settings');
+  if (shouldRetryIron(resp.status, retried)) return again();
   if (!resp.ok) throw new Error(`IronLog returned ${resp.status} for ${path}`);
 
   const json = await resp.json();
@@ -491,6 +530,8 @@ router.get('/test', async (req, res) => {
 });
 
 module.exports = router;
+// Exported for tests — see the comment on it.
+module.exports.shouldRetryIron = shouldRetryIron;
 // Exported for the ingestion tests: these two are where a remote server's JSON
 // becomes a row in weight_log and a URL the server will actually fetch, which
 // makes them the two functions worth pinning down.
