@@ -88,7 +88,31 @@ function markReachable() {
   try { window.dispatchEvent(new Event('plated:reachable')); } catch { /* no window in tests */ }
 }
 
-async function request(method, path, body) {
+// One retry on an unreachable status, for GETs only.
+//
+// Railway's App Sleeping stops a service after 5 minutes with no outbound
+// packets and wakes it on the next inbound request — and per Railway's docs
+// "the first request to a sleeping service may return a 502". That request is
+// the one that does the waking, so the 502 is not a fault, it is the cost of
+// the wake, and a moment later the container is up.
+//
+// Without a retry that cost lands on the user as a lie. A 502 on a cacheable
+// GET falls through to cachedOr, which serves the saved copy flagged stale —
+// the right behaviour for a redeploy, and the wrong story here: the app opens
+// on "showing what was saved" while the server is, by then, perfectly awake.
+// Nothing re-fetches, because plated:reachable only fires on the next
+// SUCCESSFUL request and only the write queue listens for it. With two people
+// on this app every launch is more than five minutes after the last one, so
+// this would not be an edge case — it would be what opening Plated looks like.
+//
+// GETs only. A write carries a client_id and the server replays it, but not
+// every write does, and a launch is reads anyway. One attempt, ~1.2s apart:
+// long enough for a container start, short enough to read as a slow load
+// rather than a hang. If it fails twice the old path runs unchanged and the
+// cache still covers it.
+const WAKE_RETRY_MS = 1200;
+
+async function request(method, path, body, retried = false) {
   const headers = { 'Content-Type': 'application/json' };
   if (_token) headers['Authorization'] = `Bearer ${_token}`;
 
@@ -137,6 +161,10 @@ async function request(method, path, body) {
     // screen it was built to protect. cachedOr re-throws for writes and for
     // paths outside the allowlist, so only cacheable GETs change behaviour.
     if (UNREACHABLE.has(resp.status)) {
+      if (method === 'GET' && !retried) {
+        await new Promise(r => setTimeout(r, WAKE_RETRY_MS));
+        return request(method, path, body, true);
+      }
       wasUnreachable = true;
       throw await cachedOr(method, path, unreachableError(resp.status));
     }
