@@ -327,7 +327,21 @@ router.get('/today', async (req, res) => {
     // identically either way. The fallback is not defensive habit: profile 2210
     // has its own IronLog instance, and any deployment predating 5432f8d has no
     // /summary at all — a 404 there must not take Today down.
-    let profileRes, calsRes, recentRes, bwRes, resolved = null;
+    // Which IronLog contract this profile's instance speaks (IronLog 9bc47da).
+    //
+    // Recorded, NOT branched on. The obvious use would be gating the legacy
+    // name fallbacks on >= 3 — but a `??` chain already resolves correctly
+    // against both shapes, so a gate would mean writing the canonical read AND
+    // the legacy read AND the comparison: strictly more code than the chain it
+    // replaces, and a new way to be wrong, in exchange for deleting something
+    // that costs one `??`. Not worth it while both shapes are live.
+    //
+    // What it IS worth: this is the only way to tell whether profile 2210's
+    // separate deployment has been updated. Stored per profile, so "can the
+    // tails go yet" becomes a question the database answers instead of a fleet
+    // audit — and if burn_disagreement ever fires, the version says at once
+    // whether it came from the old instance.
+    let profileRes, calsRes, recentRes, bwRes, resolved = null, contractVersion = null;
     const wrap = v => ({ status: 'fulfilled', value: v });
     let sum = null;
     try { sum = await getSummary(pid, today, tzOff); } catch { /* older IronLog */ }
@@ -338,6 +352,7 @@ router.get('/today', async (req, res) => {
       recentRes  = wrap(sd.recent);
       bwRes      = wrap(sd.bodyweight);
       resolved   = sd.resolved ?? null;
+      contractVersion = Number(sd.contract_version) || null;
     } else {
       [profileRes, calsRes, recentRes, bwRes] = await Promise.allSettled([
         getProfile(pid),
@@ -393,8 +408,19 @@ router.get('/today', async (req, res) => {
     const burned = dayConfirmed ? endpointBurned
       : (matchedCount > 0 ? matchedBurned : endpointBurned);
     // Worth knowing if it ever disagrees by more than rounding.
+    // Carries enough to act on without a second round trip: IronLog says by its
+    // own test this can never fire, so if it does, it is a bug on their side
+    // and they asked for the date, the tz and both numbers.
     const burnDisagreement = dayConfirmed && matchedCount > 0 && Math.abs(matchedBurned - endpointBurned) > 5
-      ? { endpoint: endpointBurned, matched: Math.round(matchedBurned) } : null;
+      ? {
+          endpoint: endpointBurned,
+          matched: Math.round(matchedBurned),
+          date: today,
+          resolved_date: resolved?.date ?? null,
+          tz_offset_minutes: tzOff,
+          contract_version: contractVersion,
+        }
+      : null;
     const est = splitEstimated(calsData);
 
     // Latest IronLog bodyweight — shown on Today when nothing is logged locally.
@@ -433,6 +459,10 @@ router.get('/today', async (req, res) => {
     try {
       getDb().prepare("INSERT OR REPLACE INTO profile_settings (profile_id,key,value) VALUES ($pid,'ironlog_last_synced',$v)")
         .run({ pid, v: now });
+      // 0 for an instance that does not send one, which is how an old
+      // deployment identifies itself — absence is the signal.
+      getDb().prepare("INSERT OR REPLACE INTO profile_settings (profile_id,key,value) VALUES ($pid,'ironlog_contract_version',$v)")
+        .run({ pid, v: String(contractVersion ?? 0) });
     } catch { /* non-fatal */ }
 
     const calorieGoal = parseFloat(profileSetting(pid, 'calorie_goal')) || null;
@@ -457,6 +487,7 @@ router.get('/today', async (req, res) => {
       calories_estimated_kcal:  est.estimated_kcal,
       calories_estimated_count: est.estimated_count,
       burn_disagreement: burnDisagreement,
+      contract_version: contractVersion,
       tdee_includes_workouts: includesWorkouts,
       calorie_target:  calorieGoal != null ? Math.round(calorieGoal + eatable) : null,
       bodyweight,
