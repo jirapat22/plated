@@ -13,6 +13,17 @@ const { snapshotGoals } = require('../utils/goals');
 function extractProfile(profileData) {
   if (!profileData) return {};
   return {
+    // Canonical name first, legacy spellings after. IronLog ea4b95d made the
+    // first of each pair the only thing IT sends — but the URL is per profile
+    // and profile 2210 points at its OWN IronLog deployment, which that commit
+    // did not touch and which may still send the older names. Dropping the
+    // tails would work perfectly against the updated instance and silently
+    // return null against the other, and a null bodyweight is not a cosmetic
+    // failure: trendWeight stops moving, which in g/kg mode stops the macro
+    // goals tracking, with nothing on screen to say why.
+    //
+    // So the tails stay until both deployments are known to be current, and
+    // the order says which is expected. Cost: one `??` each.
     tdee:         profileData.tdee_kcal        ?? profileData.tdee             ?? profileData.maintenance_calories ?? profileData.total_daily_energy ?? null,
     bodyweight:   profileData.bodyweight_kg     ?? profileData.weight_kg        ?? profileData.bodyweight           ?? null,
     calorie_goal: profileData.calorie_goal      ?? profileData.calories_goal    ?? null,
@@ -186,7 +197,7 @@ function importBodyweight(db, pid, bwList) {
   let added = 0, corrected = 0;
   for (const w of bwList) {
     const date = localDayOf(w.date, tz);
-    const kg   = w.weight_kg ?? w.weight ?? w.bodyweight_kg;
+    const kg   = w.bodyweight_kg ?? w.weight_kg ?? w.weight;   // canonical first — see extractProfile
     if (!date || kg == null) continue;
     // Everything POST /api/weight enforces, applied to the other end of the
     // wire. localDayOf passes a plain YYYY-MM-DD through untouched, so a
@@ -276,7 +287,7 @@ function splitEstimated(calsData) {
 }
 
 const workoutCalories = w =>
-  Number(w?.calories_burned ?? w?.calories ?? w?.total_calories ?? w?.kcal ?? 0) || 0;
+  Number(w?.calories_burned ?? w?.calories ?? w?.total_calories ?? w?.kcal ?? 0) || 0;   // canonical first
 
 // Resolve a workout's calendar date in the USER's local timezone.
 // Accepts a plain 'YYYY-MM-DD' (used as-is — already the user's logging day) or
@@ -285,6 +296,11 @@ function workoutLocalDate(w, tzOffsetMin = 0) {
   const raw = w?.date ?? w?.performed_at ?? w?.completed_at ?? w?.created_at ?? w?.logged_at ?? w?.timestamp;
   if (!raw) return null;
   const s = String(raw);
+  // The plain-date branch is now the expected one: IronLog ea4b95d made `date`
+  // always the user's local calendar day and gave instants their own names
+  // (logged_at, finished_at). The timestamp branch below stays for the second
+  // deployment, which has not had that change — same reason the name chains
+  // keep their tails.
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   const t = Date.parse(s);
   if (Number.isNaN(t)) return s.split('T')[0] || null;
@@ -403,7 +419,7 @@ router.get('/today', async (req, res) => {
       } catch { /* best-effort — never fail Today over the scale */ }
       if (Array.isArray(bwList) && bwList.length) {
         const norm = bwList
-          .map(w => ({ date: workoutLocalDate(w, tzOff), kg: Number(w.weight_kg ?? w.weight ?? w.bodyweight_kg) || null }))
+          .map(w => ({ date: workoutLocalDate(w, tzOff), kg: Number(w.bodyweight_kg ?? w.weight_kg ?? w.weight) || null }))
           .filter(w => w.date && w.kg != null)
           .sort((a, b) => a.date.localeCompare(b.date));
         const todays = norm.find(w => w.date === today);
