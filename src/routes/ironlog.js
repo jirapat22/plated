@@ -114,22 +114,28 @@ const WAKE_STATUS = new Set([502, 503, 504]);
 const shouldRetryIron = (status, retried) =>
   !retried && (status == null || WAKE_STATUS.has(status));
 
-async function ironFetch(pid, path, retried = false) {
+async function ironFetch(pid, path, retried = false, body = null) {
   const url    = getBaseUrl(pid);
   const apiKey = getApiKey(pid);
 
   const headers = apiKey
     ? { 'X-API-Key': apiKey, 'Authorization': `Bearer ${apiKey}` }
     : {};
+  if (body) headers['Content-Type'] = 'application/json';
 
   const again = async () => {
     await new Promise(r => setTimeout(r, IRON_RETRY_MS));
-    return ironFetch(pid, path, true);
+    return ironFetch(pid, path, true, body);
   };
 
   let resp;
   try {
-    resp = await fetch(`${url}${path}`, { headers, signal: AbortSignal.timeout(IRON_TIMEOUT_MS) });
+    resp = await fetch(`${url}${path}`, {
+      method: body ? 'POST' : 'GET',
+      headers,
+      ...(body ? { body: JSON.stringify(body) } : {}),
+      signal: AbortSignal.timeout(IRON_TIMEOUT_MS),
+    });
   } catch (err) {
     if (shouldRetryIron(null, retried)) return again();  // timed out or refused — likely waking
     throw err;
@@ -155,11 +161,29 @@ async function ironFetch(pid, path, retried = false) {
 function importBodyweight(db, pid, bwList) {
   if (!Array.isArray(bwList) || !bwList.length) return 0;
   const tz     = tzFor(db, pid);
-  const exists = db.prepare('SELECT 1 FROM weight_log WHERE profile_id = $pid AND date = $date');
+  const exists = db.prepare('SELECT weight_kg, source FROM weight_log WHERE profile_id = $pid AND date = $date');
   const insert = db.prepare(
     "INSERT INTO weight_log (date, weight_kg, profile_id, source) VALUES ($date, $kg, $pid, 'ironlog')"
   );
-  let added = 0;
+  // A corrected weigh-in has to reach us, and it never did.
+  //
+  // This route imports on EVERY /today call, and the rule was "a day you
+  // already have is never overwritten". That protects a manual correction,
+  // which is right — but it also froze the first value we happened to see for
+  // a day, so fixing a mis-typed weight in IronLog changed nothing here. As of
+  // IronLog 5432f8d its own POST dedupes per local day and newest wins, so
+  // corrections now EXIST on their side; without this half they still would not
+  // arrive.
+  //
+  // Only rows we wrote ourselves. source is 'ironlog' for these and 'manual'
+  // for anything typed in Plated — including every pre-migration row, since
+  // the ALTER defaulted to 'manual'. So a weight the user entered or edited
+  // here still outranks the scale, exactly as before; the only thing that
+  // changes is that our own stale copy stops winning against its own source.
+  const update = db.prepare(
+    "UPDATE weight_log SET weight_kg = $kg WHERE profile_id = $pid AND date = $date AND source = 'ironlog'"
+  );
+  let added = 0, corrected = 0;
   for (const w of bwList) {
     const date = localDayOf(w.date, tz);
     const kg   = w.weight_kg ?? w.weight ?? w.bodyweight_kg;
@@ -172,9 +196,20 @@ function importBodyweight(db, pid, bwList) {
     // `bw > 0` guard in recalcMacroGoals, so the g/kg macro goals silently stop
     // tracking bodyweight for good and nothing on screen says why.
     if (!isRealDate(date) || badWeight(kg)) continue;
-    if (!exists.get({ pid, date })) { insert.run({ date, kg: parseFloat(kg), pid }); added++; }
+    const row = exists.get({ pid, date });
+    const val = parseFloat(kg);
+    if (!row) { insert.run({ date, kg: val, pid }); added++; continue; }
+    // 0.01 kg, not equality: these are floats off a scale and a REAL column,
+    // and re-writing the same number on every /today would churn the row for
+    // nothing.
+    if (row.source === 'ironlog' && Math.abs(row.weight_kg - val) > 0.01) {
+      update.run({ date, kg: val, pid });
+      corrected++;
+    }
   }
-  return added;
+  // Both counts matter to the caller: either means trend weight moved, and in
+  // g/kg mode the macro goals follow it.
+  return added + corrected;
 }
 
 const getProfile         = (pid)             => ironFetch(pid, '/api/plated/profile');
@@ -183,6 +218,62 @@ const getBodyweight       = (pid, limit = 30) => ironFetch(pid, `/api/plated/bod
 // uses it to bucket workouts into the user's local calendar day.
 const getWorkoutCalories  = (pid, date, tz = 0)      => ironFetch(pid, `/api/plated/workouts/calories${date ? `?date=${date}&tz=${tz}` : ''}`);
 const getRecentWorkouts   = (pid, limit = 7, tz = 0) => ironFetch(pid, `/api/plated/workouts/recent?limit=${limit}&tz=${tz}`);
+// One call for the whole Today screen: profile + calories + recent + bodyweight,
+// composed on IronLog's side from the same builders its individual endpoints
+// use, so the two cannot drift (IronLog 5432f8d). Four cold-start-prone
+// requests become one, which matters now that it sleeps after ~10 idle minutes.
+//
+// Not assumed to exist. Profile 2210 points at its OWN IronLog, and any
+// instance older than that commit has no /summary — so a failure here falls
+// back to the four separate calls rather than taking the screen down.
+// Send IronLog the four facts it needs and cannot get anywhere else.
+//
+// IronLog's own profile gates tdee/goal/macros behind
+// `!!(weightKg && heightCm && age)`, and in the real database its height and
+// age are empty strings — so it has been returning nulls, and its Progress tab
+// has been showing "Set height, age to see your daily calorie targets". Plated
+// already holds all of it for the TDEE estimator, so the alternative was the
+// user typing their own height into two apps.
+//
+// birth_year, not age, deliberately: an age stored once is wrong for up to
+// twelve months. IronLog derives it at read time.
+//
+// activity_level goes too, but the tdee_includes_workouts flag stays IronLog's
+// to compute — we send the input, they own the conclusion, so there is one
+// source of truth for the rule that decides whether a burn is eaten back.
+async function pushProfile(pid) {
+  const body = {};
+  for (const key of ['height_cm', 'birth_year', 'sex', 'activity_level']) {
+    const v = profileSetting(pid, key);
+    if (v != null && String(v).trim() !== '') body[key] = String(v).trim();
+  }
+  if (!Object.keys(body).length) return { pushed: false, reason: 'nothing to send' };
+  const out = await ironFetch(pid, '/api/plated/profile', false, body);
+  return { pushed: true, profile: out?.data ?? out };
+}
+
+const getSummary = (pid, date, tz = 0) =>
+  ironFetch(pid, `/api/plated/summary?date=${date}&tz=${tz}&limit=30`);
+
+// How much of a day's burn IronLog measured, and how much it guessed.
+//
+// Sessions with no stored calorie figure are estimated at 4 kcal/min, which is
+// crude: a 35-minute run reports 140 kcal against a real ~440. That is
+// harmless at moderate+ activity, where the TDEE already prices in training
+// and Plated adds nothing — and at sedentary/light it goes straight onto the
+// plate, so a guess becomes a few hundred kcal of under-eating. Surfaced, not
+// silently discounted: which way to lean is the user's call, not this route's.
+function splitEstimated(calsData) {
+  const sessions = calsData?.sessions;
+  if (!Array.isArray(sessions)) return { estimated_kcal: null, estimated_count: null };
+  let kcal = 0, count = 0;
+  for (const sess of sessions) {
+    if (sess?.calories_estimated !== true) continue;
+    kcal += workoutCalories(sess);
+    count++;
+  }
+  return { estimated_kcal: Math.round(kcal), estimated_count: count };
+}
 
 const workoutCalories = w =>
   Number(w?.calories_burned ?? w?.calories ?? w?.total_calories ?? w?.kcal ?? 0) || 0;
@@ -214,15 +305,31 @@ router.get('/today', async (req, res) => {
       : todayLocal(tzFor(getDb(), pid));
     const tzOff = Number.isFinite(parseInt(req.query.tz)) ? parseInt(req.query.tz) : 0;
 
-    // Pull the calories endpoint AND recent workouts. The endpoint can miss the
-    // day when IronLog dates workouts in UTC but we ask for the user's local
-    // date; summing recent workouts matched to the local day is tz-robust.
-    const [profileRes, calsRes, recentRes, bwRes] = await Promise.allSettled([
-      getProfile(pid),
-      getWorkoutCalories(pid, today, tzOff),
-      getRecentWorkouts(pid, 30, tzOff),
-      getBodyweight(pid, 30),
-    ]);
+    // One request if IronLog is new enough, four if it is not.
+    //
+    // /summary returns the same four payloads, so everything below reads
+    // identically either way. The fallback is not defensive habit: profile 2210
+    // has its own IronLog instance, and any deployment predating 5432f8d has no
+    // /summary at all — a 404 there must not take Today down.
+    let profileRes, calsRes, recentRes, bwRes, resolved = null;
+    const wrap = v => ({ status: 'fulfilled', value: v });
+    let sum = null;
+    try { sum = await getSummary(pid, today, tzOff); } catch { /* older IronLog */ }
+    const sd = sum?.data ?? sum;
+    if (sd?.profile) {
+      profileRes = wrap(sd.profile);
+      calsRes    = wrap(sd.calories);
+      recentRes  = wrap(sd.recent);
+      bwRes      = wrap(sd.bodyweight);
+      resolved   = sd.resolved ?? null;
+    } else {
+      [profileRes, calsRes, recentRes, bwRes] = await Promise.allSettled([
+        getProfile(pid),
+        getWorkoutCalories(pid, today, tzOff),
+        getRecentWorkouts(pid, 30, tzOff),
+        getBodyweight(pid, 30),
+      ]);
+    }
 
     if (profileRes.status !== 'fulfilled') {
       // calories_burned null, not 0. A failed request knows nothing about
@@ -251,8 +358,28 @@ router.get('/today', async (req, res) => {
       }
     }
 
-    // Prefer the tz-matched recent workouts; fall back to the calories endpoint.
-    const burned = matchedCount > 0 ? matchedBurned : endpointBurned;
+    // Which figure to believe.
+    //
+    // This used to always prefer the locally re-matched sum, because the
+    // calories endpoint "can miss the day when IronLog dates workouts in UTC
+    // but we ask for the user's local date". IronLog says that is fixed and
+    // demonstrated it (two workouts either side of UTC midnight, both returned
+    // for the NZ local day). I have not re-run that against their server, so
+    // this trusts it where it can be CHECKED rather than on the say-so:
+    // /summary echoes `resolved.date`, the day it actually bucketed to, and
+    // when that matches the day we asked for, the endpoint's own total is the
+    // authority.
+    //
+    // Otherwise the old re-derivation still stands. It costs nothing now —
+    // `recent` arrives in the same payload — so keeping the safety net is free
+    // and losing it would be a silent wrong burn on a training day.
+    const dayConfirmed = resolved?.date === today;
+    const burned = dayConfirmed ? endpointBurned
+      : (matchedCount > 0 ? matchedBurned : endpointBurned);
+    // Worth knowing if it ever disagrees by more than rounding.
+    const burnDisagreement = dayConfirmed && matchedCount > 0 && Math.abs(matchedBurned - endpointBurned) > 5
+      ? { endpoint: endpointBurned, matched: Math.round(matchedBurned) } : null;
+    const est = splitEstimated(calsData);
 
     // Latest IronLog bodyweight — shown on Today when nothing is logged locally.
     let bodyweight = null;
@@ -308,6 +435,12 @@ router.get('/today', async (req, res) => {
       connected:       true,
       profile:         profileData,
       calories_burned: burned,
+      // How much of that figure IronLog guessed from duration rather than
+      // measured. Only actionable when the burn is eaten back at all, so the
+      // client shows it beside the Eat Target and nowhere else.
+      calories_estimated_kcal:  est.estimated_kcal,
+      calories_estimated_count: est.estimated_count,
+      burn_disagreement: burnDisagreement,
       tdee_includes_workouts: includesWorkouts,
       calorie_target:  calorieGoal != null ? Math.round(calorieGoal + eatable) : null,
       bodyweight,
@@ -362,6 +495,17 @@ router.post('/sync', async (req, res) => {
   try {
     const db = getDb();
     const pid = req.profileId;
+
+    // Push BEFORE pulling, so the profile we read back a line later is
+    // computed with the height and birth year we just sent — otherwise the
+    // first sync after this always returns the old nulls and the user has to
+    // press Sync twice to see a TDEE appear.
+    //
+    // Best-effort: an IronLog too old to accept the write, or one that rejects
+    // a value, must not stop the pull that already worked before this existed.
+    let pushed = null;
+    try { pushed = await pushProfile(pid); }
+    catch (e) { pushed = { pushed: false, reason: e.message }; }
 
     const profileRaw  = await getProfile(pid);
     const profileData = profileRaw?.data ?? profileRaw;
@@ -475,7 +619,10 @@ router.post('/sync', async (req, res) => {
     // `rejected` is normally empty. When it isn't, IronLog sent something this
     // app will not store, and saying so beats a sync that reports success while
     // one field never moves.
-    res.json({ synced: true, updates, ...(rejected.length ? { rejected } : {}) });
+    // Report the push too. A silent best-effort write is the kind of thing that
+    // quietly stops working, and Settings can say "sent your height" or show
+    // why it could not.
+    res.json({ synced: true, updates, ...(rejected.length ? { rejected } : {}), profile_push: pushed });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -536,4 +683,5 @@ module.exports.shouldRetryIron = shouldRetryIron;
 // becomes a row in weight_log and a URL the server will actually fetch, which
 // makes them the two functions worth pinning down.
 module.exports.importBodyweight = importBodyweight;
+module.exports.splitEstimated = splitEstimated;
 module.exports.getBaseUrl = getBaseUrl;

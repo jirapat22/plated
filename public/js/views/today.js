@@ -298,6 +298,13 @@ export function renderToday(container) {
     // there was a burn. Clamping here keeps the ring and its hint on one
     // budget: at worst Eat Target equals Daily Goal, never less.
     const eatable     = inTdee ? 0 : Math.max(0, burned);
+    // How much of the burn IronLog guessed from duration rather than measured
+    // (4 kcal/min when a session carries no figure). Only said out loud when it
+    // is actually being eaten back — at moderate+ the burn is already inside
+    // the goal, so a caveat about its accuracy would be noise about a number
+    // that changes nothing on the plate.
+    const estKcal     = inTdee ? 0 : Math.max(0, ironlog?.calories_estimated_kcal ?? 0);
+    const estCount    = ironlog?.calories_estimated_count ?? 0;
     // Whether this profile is an IronLog profile at all — read from settings,
     // not from whether a burn happens to have arrived. Settings are loaded
     // before the first paint and cached offline, so the answer is the same on
@@ -605,7 +612,9 @@ export function renderToday(container) {
             </div>
             ${hasWorkout ? `<div style="font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.5;border-top:1px solid var(--border);padding-top:8px">${inTdee
               ? `Your IronLog activity level already assumes regular training, so this burn is inside your ${fmtE(baseGoal)} ${ul} goal — it isn't added on top, or you'd be counting it twice.`
-              : `Added on top of your goal: your IronLog activity level is a baseline without training, so today's session really is extra.`}</div>` : ''}
+              : `Added on top of your goal: your IronLog activity level is a baseline without training, so today's session really is extra.${estKcal > 0
+                  ? ` About ${fmtE(estKcal)} ${ul} of that is IronLog's estimate from how long ${estCount === 1 ? 'a session' : 'some sessions'} ran, not a measured figure — treat it as a rough number, and weigh it against how hard the session felt.`
+                  : ''}`}</div>` : ''}
           </div>
         </div>
       </div>` : ''}
