@@ -165,10 +165,16 @@ test('a corrected IronLog weight updates the row we wrote', () => {
 
 // What happens when the OTHER end sends two readings for one day.
 //
-// Not hypothetical: IronLog's restore inserts bodyweight rows additively, so a
-// user who restores an IronLog backup gets two rows for the same day, both
-// marked as having come from Plated. Its own lookup has no ORDER BY, so the
-// order they reach us in is arbitrary.
+// It was not hypothetical when this was written: IronLog's restore inserted
+// bodyweight rows additively, so restoring a backup minted a second row for a
+// day that already had one, and its lookup had no ORDER BY — the order they
+// reached us in was arbitrary. IronLog has since closed that at the source (a
+// real `source` column plus a per-local-day UPSERT on restore, contract
+// version 4), so this should now be unreachable from their end.
+//
+// Kept anyway, as a tripwire rather than a live defect. One end asserting what
+// it does with a malformed input is cheap, and it is the only thing that would
+// notice a regression over there — Plated has no other way to find out.
 //
 // Pinned rather than fixed. Collapsing to one row is correct and happens for
 // free — `exists.get` finds the row the first entry inserted. But WHICH value
