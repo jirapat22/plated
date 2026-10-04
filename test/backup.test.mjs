@@ -157,6 +157,20 @@ test('a restore does not reach into another profile', async () => {
   // one place a careless import could write across the boundary.
   const day = await (await as(alice)('GET', `/api/meals/day/${DAY1}`)).json();
   assert.ok(day.sessions.length >= 2, 'Alice lost meals when Bob restored');
+
+  // …and the whole of Alice, not just that one day had SOME meals left on it.
+  // The assertion above is what this test shipped with, and it is far weaker
+  // than the comment above it claims: it passes while Bob's restore has
+  // rewritten Alice's weigh-ins, wiped her waist history, cleared her "ate
+  // light" days or moved her goals, because none of those are meal sessions on
+  // DAY1. A missing `WHERE profile_id = ?` in any of the nine delete steps is
+  // the worst bug available in this route, and only one of them was covered.
+  //
+  // Alice has had nothing but restores of her OWN file since `before`, so her
+  // meaning must still be exactly the file's.
+  const alice2 = await (await as(alice)('GET', '/api/settings/export')).json();
+  assert.deepStrictEqual(meaning(alice2), meaning(firstExport),
+    "Bob's restore changed Alice's data");
 });
 
 test('a file that is not an export is refused', async () => {
