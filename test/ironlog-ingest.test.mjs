@@ -163,6 +163,37 @@ test('a corrected IronLog weight updates the row we wrote', () => {
   assert.strictEqual(read().weight_kg, 78.1);
 });
 
+// What happens when the OTHER end sends two readings for one day.
+//
+// Not hypothetical: IronLog's restore inserts bodyweight rows additively, so a
+// user who restores an IronLog backup gets two rows for the same day, both
+// marked as having come from Plated. Its own lookup has no ORDER BY, so the
+// order they reach us in is arbitrary.
+//
+// Pinned rather than fixed. Collapsing to one row is correct and happens for
+// free — `exists.get` finds the row the first entry inserted. But WHICH value
+// survives is "whichever came last in the array", and no rule this side could
+// invent (last-in-array, newest logged_at) is better than a guess at which of
+// two readings the person actually stood on. The fix belongs where the
+// duplicate is minted. This test exists so that if that order ever flips, the
+// failure lands here with an explanation instead of as a weight that quietly
+// changed on someone's Today screen.
+test('two readings for one day collapse to one row, last one winning', () => {
+  const date = '2026-09-12';
+  db.prepare('DELETE FROM weight_log WHERE profile_id = $p').run({ p: PID });
+
+  const n = importBodyweight(db, PID, [{ date, weight_kg: 80.0 }, { date, weight_kg: 82.5 }]);
+  const rows = db.prepare('SELECT weight_kg FROM weight_log WHERE profile_id = $p AND date = $d')
+    .all({ p: PID, d: date });
+  assert.strictEqual(rows.length, 1, 'a duplicate reading created a second row for the same day');
+  assert.strictEqual(rows[0].weight_kg, 82.5, 'the surviving value is not the last one in the array');
+
+  // Non-zero, so the caller still re-derives the macro goals. The insert and
+  // the correction both counted, which is the contract the /today gate reads —
+  // see the `changed` (not `added`) variable in the route.
+  assert.strictEqual(n, 2, 'the insert and the correction did not both count');
+});
+
 test('a weight typed in Plated is never overwritten by IronLog', () => {
   const date = '2026-09-11';
   db.prepare('DELETE FROM weight_log WHERE profile_id = $p').run({ p: PID });

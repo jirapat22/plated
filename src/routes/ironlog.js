@@ -438,10 +438,17 @@ router.get('/today', async (req, res) => {
       // ironlog_last_synced below, and importing here is what finally makes
       // that label true.
       try {
-        const added = importBodyweight(getDb(), pid, bwList);
+        // `changed`, not `added`: importBodyweight returns inserts PLUS
+        // corrections, and the gate has to fire for both. Named `added` here
+        // until the IronLog session read this line, concluded a correction-only
+        // sync skipped the recalc, and carried it to its user as a finding
+        // about Plated. The code was right and the name was lying — a
+        // correction with no insert returns 1 and recalculates, which
+        // ironlog-ingest asserts directly.
+        const changed = importBodyweight(getDb(), pid, bwList);
         // New weigh-ins move trend weight, and in g/kg mode the macro goals
         // follow it. Without this they'd lag until the next manual sync.
-        if (added) { recalcMacroGoals(getDb(), pid); snapshotGoals(getDb(), pid, today); }
+        if (changed) { recalcMacroGoals(getDb(), pid); snapshotGoals(getDb(), pid, today); }
       } catch { /* best-effort — never fail Today over the scale */ }
       if (Array.isArray(bwList) && bwList.length) {
         const norm = bwList
