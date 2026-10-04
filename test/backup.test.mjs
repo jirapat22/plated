@@ -168,6 +168,17 @@ test('a restore does not reach into another profile', async () => {
   //
   // Alice has had nothing but restores of her OWN file since `before`, so her
   // meaning must still be exactly the file's.
+  //
+  // Verified by mutation, and the edit is recorded here so the next person can
+  // re-run the check rather than trust this comment — which is the exact
+  // failure that produced the weak assertion above. In src/routes/settings.js,
+  // replace
+  //   db.prepare('DELETE FROM weight_log    WHERE profile_id = $pid').run({ pid });
+  // with
+  //   db.prepare('DELETE FROM weight_log').run({ });
+  // Expect: this test fails on `weight`, nothing else in the suite fails, and
+  // the sessions.length assertion above still passes. (Borrowed from the
+  // IronLog session, which records the edit per mutation in the test file.)
   const alice2 = await (await as(alice)('GET', '/api/settings/export')).json();
   assert.deepStrictEqual(meaning(alice2), meaning(firstExport),
     "Bob's restore changed Alice's data");
