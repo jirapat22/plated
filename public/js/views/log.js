@@ -8,6 +8,7 @@ import { fmtE, unitLabel, toKcal, wireEnergyUnitToggle } from '../utils/energy.j
 import { localDate, addDaysIso }          from '../utils/date.js';
 import { getFoodIcon }                    from '../utils/foodIcon.js';
 import { openPortion, openLeftoverLog }   from './batches.js';
+import { gestureIntent, unzoom, HOLD_MS } from '../utils/dragIntent.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -1142,6 +1143,172 @@ function showQuantitySheet(food, sessionId, onSuccess, opts = {}) {
   });
 }
 
+// ── Drag a food from one meal into another ───────────────────────────────────
+//
+// The tap path for this already existed and was four taps deep: ⧉ opens a sheet
+// titled "Copy food", you switch it to Move, you correct the date off Tomorrow
+// (right for copying to a meal-prep day, wrong for "that was breakfast"), then
+// you pick the meal. Dragging the row onto the card is the gesture people
+// already expect, and it leaves that sheet untouched for the cross-day work it
+// was actually built for.
+//
+// Three things make this harder here than the usual sortable-list recipe, and
+// all three are load-bearing:
+//
+// 1. The scroll container runs `zoom: var(--ui-scale)` for the text-scaling
+//    feature. Pointer coordinates are viewport px; a row's own CSS box is
+//    1/scale of what getBoundingClientRect() reports. So the ghost is laid out
+//    unzoomed and scaled back up (see unzoom), and the drop target is found
+//    with elementFromPoint rather than by comparing hand-computed rects —
+//    which is the part that would quietly be wrong at 150% and right at 100%.
+//
+// 2. `.meal-session` is `overflow: hidden` (it clips its own rounded corners),
+//    so a row lifted in place is cut off the instant it leaves the card. The
+//    ghost therefore lives on <body>, outside both the clip and the zoom.
+//
+// 3. A finger going down on a food is also how you scroll the day. dragIntent
+//    owns that decision; this only acts on it.
+//
+// Additive, not a replacement. Every existing button still works, because a
+// gesture with no visible affordance cannot be the only way to do something in
+// an app whose primary user is low-vision.
+
+// The live drag, or null. Module-level because the document listener below has
+// to know, and because two fingers must not start two drags.
+let liveDrag = null;
+
+// Non-passive, so it can actually stop the page moving while a food is in the
+// air. preventDefault from a pointermove handler does not stop touch scrolling
+// on iOS; this is the listener that does. Registered once for the module, the
+// same way the menu-closing click handler above is.
+document.addEventListener('touchmove', e => {
+  if (liveDrag) e.preventDefault();
+}, { passive: false });
+
+function makeEntryDraggable(entryEl, entry, onDone) {
+  entryEl.addEventListener('pointerdown', down => {
+    // The row's own buttons keep their taps — 🥡, ⧉, ✏️ and × are all inside
+    // it, and a drag that swallowed those would trade one annoyance for four.
+    if (down.target.closest('button')) return;
+    if (liveDrag) return;                             // one at a time
+    if (down.pointerType === 'mouse' && down.button !== 0) return;
+
+    const startX = down.clientX, startY = down.clientY;
+    const t0 = performance.now();
+    // Read once, at pick-up. Re-reading per move would cost a layout on every
+    // frame, and nobody changes their text size mid-drag.
+    const scale = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1;
+
+    let armed = false, settled = false, ghost = null, over = null;
+
+    const highlight = card => {
+      if (over === card) return;
+      over?.classList.remove('drop-ok');
+      over = card;
+      over?.classList.add('drop-ok');
+    };
+
+    const teardown = () => {
+      settled = true;
+      clearTimeout(holdTimer);
+      entryEl.removeEventListener('pointermove', move);
+      entryEl.removeEventListener('pointerup', up);
+      entryEl.removeEventListener('pointercancel', cancel);
+      try { entryEl.releasePointerCapture(down.pointerId); } catch { /* already gone */ }
+      ghost?.remove();
+      highlight(null);
+      entryEl.classList.remove('dragging');
+      liveDrag = null;
+    };
+
+    // Lift it. The ghost is a copy with the action buttons stripped out: they
+    // are not draggable and a row full of controls flying around reads as a
+    // mistake rather than as the food you picked up.
+    const arm = () => {
+      if (settled || armed) return;
+      armed = true;
+      liveDrag = true;
+      // The only feedback that the hold worked, on a device with no cursor.
+      // Optional everywhere and absent on iOS, hence the ?.
+      navigator.vibrate?.(12);
+      const r = entryEl.getBoundingClientRect();
+      ghost = entryEl.cloneNode(true);
+      ghost.querySelector('.meal-entry-actions')?.remove();
+      ghost.className = 'meal-entry entry-ghost';
+      // Laid out at its own CSS size, then scaled to the size it looked on
+      // screen — see note 1 above.
+      ghost.style.width = `${unzoom(r.width, scale)}px`;
+      ghost.style.left  = `${r.left}px`;
+      ghost.style.top   = `${r.top}px`;
+      ghost.style.transform = `scale(${scale})`;
+      document.body.appendChild(ghost);
+      entryEl.classList.add('dragging');
+    };
+
+    // Fires even if the finger never moves — a perfectly still touch produces
+    // no pointermove at all, so the clock cannot live only in the move handler.
+    let holdTimer = setTimeout(arm, HOLD_MS);
+
+    const move = e => {
+      if (settled) return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if (!armed) {
+        const intent = gestureIntent({
+          dx, dy, elapsedMs: performance.now() - t0, pointerType: down.pointerType,
+        });
+        if (intent === 'scroll') { teardown(); return; }   // latched: leave the browser alone
+        if (intent === 'drag') arm();
+        if (!armed) return;
+      }
+      ghost.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
+      // The ghost is pointer-events:none, so this reports what is underneath it.
+      const card = document.elementFromPoint(e.clientX, e.clientY)?.closest('.meal-session');
+      const sid  = card?.dataset.sessionId;
+      // Its own meal is not a destination, and neither is empty space.
+      highlight(sid && Number(sid) !== entry.meal_session_id ? card : null);
+    };
+
+    const up = async () => {
+      if (settled) return;
+      const card = over;
+      const targetId = card?.dataset.sessionId;
+      const targetName = card?.dataset.sessionName || 'Meal';
+      const wasArmed = armed;
+      teardown();
+      if (!wasArmed || !targetId) return;               // a tap, or dropped on nothing
+
+      const from = entry.meal_session_id;
+      try {
+        // A re-parent, not a copy-then-delete: the row changes which meal owns
+        // it, so batch stock and use counts are deliberately left alone —
+        // nothing new was eaten. Naturally idempotent, so no client_id: sending
+        // the same destination twice is the same destination.
+        await api.patch(`/api/meals/entries/${entry.id}`, { meal_session_id: Number(targetId) });
+        showToast(`Moved to ${targetName}`, 'success', {
+          actionLabel: 'Undo',
+          onAction: async () => {
+            try {
+              await api.patch(`/api/meals/entries/${entry.id}`, { meal_session_id: from });
+              onDone?.();
+            } catch (err) { showToast(err.message, 'error'); }
+          },
+        });
+        onDone?.();
+      } catch (err) { showToast(err.message, 'error'); }
+    };
+
+    const cancel = () => { if (!settled) teardown(); };
+
+    // Captured, so the drag keeps receiving events once the finger leaves the
+    // row it started on — which it does immediately, that being the point.
+    try { entryEl.setPointerCapture(down.pointerId); } catch { /* unsupported */ }
+    entryEl.addEventListener('pointermove', move);
+    entryEl.addEventListener('pointerup', up);
+    entryEl.addEventListener('pointercancel', cancel);
+  });
+}
+
 // ── Shared meal card: header (rename/copy/move/delete) + entry rows
 // (copy/edit/delete) + add-food footer. Used by both Today and History so
 // the two views can't drift into different UX for the same actions.
@@ -1164,6 +1331,12 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
 
   const sessionEl = document.createElement('div');
   sessionEl.className = 'meal-session';
+  // Read back by the drag: elementFromPoint gives us whatever node is under the
+  // finger, and these two say which meal that node belongs to and what to call
+  // it in the toast. On the card rather than looked up in a map, because the
+  // card the finger is over may have been rendered by a different view.
+  sessionEl.dataset.sessionId = session.id;
+  sessionEl.dataset.sessionName = session.name || 'Meal';
   sessionEl.innerHTML = `
     <div class="meal-session-header">
       <button class="session-rename-btn" style="text-align:left;flex:1;min-width:0">
@@ -1236,6 +1409,7 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
       </div>
     `;
 
+    makeEntryDraggable(entryEl, entry, onDone);
     entryEl.querySelector('.entry-left-btn')?.addEventListener('click', () => openLeftover(entry, onDone));
     entryEl.querySelector('.entry-copy-btn').addEventListener('click', () => openCopyEntry(entry, viewDate, onDone));
     entryEl.querySelector('.entry-edit-btn').addEventListener('click', () => openEditEntry(entry, onDone));

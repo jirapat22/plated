@@ -607,6 +607,44 @@ img { display: block; max-width: 100%; }
   overflow: hidden;
 }
 .meal-entry + .meal-entry { border-top: 1px solid var(--border); }
+
+/* ── Dragging a food into another meal ──────────────────────────────────────
+   `manipulation` rather than `none`: it drops the 300ms tap delay without
+   taking scrolling away from the rows, which cover most of the day's screen.
+   The drag suppresses scroll from JS once it has armed (the non-passive
+   touchmove in log.js), so the browser keeps it until then. */
+.meal-entry { touch-action: manipulation; }
+
+/* The row left behind. Dimmed rather than removed, so the list does not reflow
+   under the finger mid-drag and the food is still visibly where it came from. */
+.meal-entry.dragging { opacity: .32; }
+
+/* The thing that actually follows the finger. On <body>, so it escapes both
+   `.meal-session`'s overflow:hidden clip and the `zoom` on the scroll
+   container — log.js sizes it unzoomed and scales it back up, which is why the
+   origin has to be the top-left corner it was measured from.
+   pointer-events:none is not decoration: elementFromPoint is how the drop
+   target is found, and without it the ghost is the only thing ever under the
+   finger. */
+.entry-ghost {
+  position: fixed;
+  z-index: 60;
+  transform-origin: top left;
+  pointer-events: none;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 10px 28px rgba(0,0,0,.45);
+  border: 1px solid var(--accent);
+  opacity: .96;
+}
+
+/* The meal under the finger. A ring and a tint, not a colour swap — this has
+   to be legible with high contrast on and at 150%, and it sits on a card whose
+   own background already changes with the theme. */
+.meal-session.drop-ok {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: var(--accent-dim);
+}
 /* `1 1 0` with a FLOOR, not `flex: 1` (which is `1 1 0` with min-width 0).
    The floor is what makes the row wrap instead of crushing the name: a flex
    line breaks on hypothetical size, which is the basis clamped by min-width, so
