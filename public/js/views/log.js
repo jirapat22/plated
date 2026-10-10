@@ -780,7 +780,7 @@ export function openFoodEntry(sessionId, onSuccess, opts = {}) {
 }
 
 // ── Edit existing entry ──────────────────────────────────────
-export function openEditEntry(entry, onSuccess) {
+export function openEditEntry(entry, onSuccess, viewDate = null) {
   showSheet(content => {
     const ul  = unitLabel();
     const srv = entry.serving_size_g || 100;
@@ -854,6 +854,20 @@ export function openEditEntry(entry, onSuccess) {
           }).join('')}
         </div>
       </div>` : `<div class="qty-macros" id="edit-macros"></div>`}
+
+      <!-- Which meal this food belongs to.
+           The tap-only route to the same thing dragging the row does. Both
+           exist on purpose: the drag is faster once you know it is there, and
+           it is a gesture with no visible affordance, which cannot be the only
+           way to reach a feature in an app whose primary user is low-vision.
+           Here it is a labelled row of chips that grows with the text size.
+           Filled in asynchronously (the day's meals are a fetch) and left out
+           entirely when there is only one meal, since a lone chip reading
+           "Meal 1" offers nothing. -->
+      <div id="edit-meal-wrap" style="display:none;padding:4px 16px 0">
+        <label class="form-label">Meal</label>
+        <div id="edit-meals" style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px"></div>
+      </div>
       <div class="qty-confirm">
         <button class="btn btn-primary btn-full" id="edit-confirm">Update</button>
       </div>
@@ -903,6 +917,36 @@ export function openEditEntry(entry, onSuccess) {
     });
 
     document.getElementById('edit-close').addEventListener('click', hideSheet);
+
+    // Staged, not applied on tap. The route takes quantity_g and
+    // meal_session_id in one request ("send quantity_g, meal_session_id, or
+    // both"), so Update commits the whole edit at once — moving a food and
+    // correcting its weight in one go is one write that either lands or does
+    // not, rather than two that can half-land. It also means tapping a chip is
+    // undoable by tapping the original back, before anything has happened.
+    let targetSession = null;                       // null = leave it where it is
+    if (viewDate) {
+      dayMeals(viewDate).then(sessions => {
+        const wrap = document.getElementById('edit-meal-wrap');
+        const box  = document.getElementById('edit-meals');
+        // The sheet may already be gone — a fetch outlives a dismissal.
+        if (!wrap || !box || sessions.length < 2) return;
+        const paint = () => box.querySelectorAll('.em-meal').forEach(b => b.classList.toggle(
+          'active', Number(b.dataset.sid) === (targetSession ?? entry.meal_session_id)));
+        box.innerHTML = sessions.map(s =>
+          `<button type="button" class="fs-chip em-meal" data-sid="${s.id}">${esc(s.name || 'Meal')}</button>`
+        ).join('');
+        box.querySelectorAll('.em-meal').forEach(btn => btn.addEventListener('click', () => {
+          const sid = Number(btn.dataset.sid);
+          // Tapping the meal it is already in clears the move rather than
+          // staging a no-op, so the chips always show where it will end up.
+          targetSession = sid === entry.meal_session_id ? null : sid;
+          paint();
+        }));
+        paint();
+        wrap.style.display = '';
+      });
+    }
 
     // Quick-log entries also expose the underlying food's own calories/macros
     // for editing (rough numbers typed in on the go are often wrong) — real
@@ -956,9 +1000,16 @@ export function openEditEntry(entry, onSuccess) {
             fat_per_100g:     per100(num('edit-fat')),
           });
         }
-        await api.patch(`/api/meals/entries/${entry.id}`, { quantity_g: qty });
+        await api.patch(`/api/meals/entries/${entry.id}`, {
+          quantity_g: qty,
+          ...(targetSession ? { meal_session_id: targetSession } : {}),
+        });
         hideSheet();
-        showToast('Updated', 'success');
+        // Name the destination when there is one: "Updated" after a move reads
+        // as though the move did not happen.
+        const movedTo = targetSession
+          && document.querySelector(`.meal-session[data-session-id="${targetSession}"]`)?.dataset.sessionName;
+        showToast(targetSession ? `Moved to ${movedTo || 'that meal'}` : 'Updated', 'success');
         onSuccess?.();
       } catch (err) {
         showToast(err.message, 'error');
@@ -1412,7 +1463,7 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
     makeEntryDraggable(entryEl, entry, onDone);
     entryEl.querySelector('.entry-left-btn')?.addEventListener('click', () => openLeftover(entry, onDone));
     entryEl.querySelector('.entry-copy-btn').addEventListener('click', () => openCopyEntry(entry, viewDate, onDone));
-    entryEl.querySelector('.entry-edit-btn').addEventListener('click', () => openEditEntry(entry, onDone));
+    entryEl.querySelector('.entry-edit-btn').addEventListener('click', () => openEditEntry(entry, onDone, viewDate));
     entryEl.querySelector('.entry-del-btn').addEventListener('click', async () => {
       try {
         await api.delete(`/api/meals/entries/${entry.id}`);
