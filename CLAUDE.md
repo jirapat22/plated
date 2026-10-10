@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm start                       # or npm run dev — identical; node --experimental-sqlite server.js
-npm test                        # 224 tests, ~5s
+npm test                        # whole suite, a few seconds
 
 # one file
 node --experimental-sqlite --test test/batch-stock.test.mjs
@@ -108,6 +108,23 @@ It deliberately has no floor: a negative `remaining_g` means the log says more
 came out than went in, which is true and worth knowing. Display floors at 0 and
 reports `overdrawn_g` separately. A portion deducts stock at *portion* time, not
 eat time — that is intended, don't "fix" it.
+
+**Pointer geometry has to go through `elementFromPoint`, not through rects.**
+The scroll container runs `zoom: var(--ui-scale)`, so pointer coordinates are
+viewport px while an element's own CSS box is 1/scale of what
+`getBoundingClientRect()` reports. Hand-comparing the two is right at 100% and
+silently wrong at 150% — which is where the primary user lives. Anything that
+has to float above the page (`public/js/views/log.js`'s drag ghost) belongs on
+`<body>`, outside both the zoom and `.meal-session`'s `overflow: hidden`, laid
+out unzoomed and scaled back up (`utils/dragIntent.js`'s `unzoom`).
+
+**A listener that outlives its subject is a bug, not a leak.** The drag keeps
+`pointermove`/`pointerup` on `document` rather than on the row, because
+removing a `setPointerCapture` target releases the capture silently and the
+teardown never runs — which left a scroll-blocking listener installed for the
+rest of the session. `navigateTo(currentView, true)` replaces every card
+whenever the offline write queue flushes, so "the element is still there" is
+not an assumption any gesture may make.
 
 **Snapshot goals after any goal write.** `snapshotGoals(db, pid, today)` from
 `src/utils/goals.js`; `profile_settings` holds one value per key, so without the

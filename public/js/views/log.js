@@ -931,8 +931,13 @@ export function openEditEntry(entry, onSuccess, viewDate = null) {
         const box  = document.getElementById('edit-meals');
         // The sheet may already be gone — a fetch outlives a dismissal.
         if (!wrap || !box || sessions.length < 2) return;
-        const paint = () => box.querySelectorAll('.em-meal').forEach(b => b.classList.toggle(
-          'active', Number(b.dataset.sid) === (targetSession ?? entry.meal_session_id)));
+        const paint = () => box.querySelectorAll('.em-meal').forEach(b => {
+          const on = Number(b.dataset.sid) === (targetSession ?? entry.meal_session_id);
+          b.classList.toggle('active', on);
+          // The chip's state is otherwise a background tint, which is the thing
+          // that survives least well under high contrast and at 150%.
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
         box.innerHTML = sessions.map(s =>
           `<button type="button" class="fs-chip em-meal" data-sid="${s.id}">${esc(s.name || 'Meal')}</button>`
         ).join('');
@@ -1226,22 +1231,28 @@ function showQuantitySheet(food, sessionId, onSuccess, opts = {}) {
 
 // The live drag, or null. Module-level because the document listener below has
 // to know, and because two fingers must not start two drags.
-let liveDrag = null;
+let dragActive = false;
 
-// Non-passive, so it can actually stop the page moving while a food is in the
-// air. preventDefault from a pointermove handler does not stop touch scrolling
-// on iOS; this is the listener that does. Registered once for the module, the
-// same way the menu-closing click handler above is.
-document.addEventListener('touchmove', e => {
-  if (liveDrag) e.preventDefault();
-}, { passive: false });
+// Stops the page moving while a food is in the air. preventDefault from a
+// pointermove handler does not stop touch scrolling on iOS; this listener is
+// what does, and it has to be non-passive to be allowed to.
+//
+// Added on pick-up and removed on drop, NOT registered for the life of the
+// module. A non-passive touchmove on document is scroll-blocking: the browser
+// cannot begin any scroll until the main thread has run the handler, because
+// the handler might cancel it. That is the entire reason `passive` exists, and
+// today.js already opts into it for its own scroll listener. Registered
+// permanently, this made every scroll in every view — Today, History, the
+// charts in Trends — wait on a handler that does nothing the other 99.99% of
+// the time, on a phone, for the user who has the most content per screen.
+const blockScroll = e => e.preventDefault();
 
 function makeEntryDraggable(entryEl, entry, onDone) {
   entryEl.addEventListener('pointerdown', down => {
     // The row's own buttons keep their taps — 🥡, ⧉, ✏️ and × are all inside
     // it, and a drag that swallowed those would trade one annoyance for four.
     if (down.target.closest('button')) return;
-    if (liveDrag) return;                             // one at a time
+    if (dragActive) return;                           // one at a time
     if (down.pointerType === 'mouse' && down.button !== 0) return;
 
     const startX = down.clientX, startY = down.clientY;
@@ -1263,14 +1274,14 @@ function makeEntryDraggable(entryEl, entry, onDone) {
     const teardown = () => {
       settled = true;
       clearTimeout(holdTimer);
-      entryEl.removeEventListener('pointermove', move);
-      entryEl.removeEventListener('pointerup', up);
-      entryEl.removeEventListener('pointercancel', cancel);
-      try { entryEl.releasePointerCapture(down.pointerId); } catch { /* already gone */ }
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      document.removeEventListener('pointercancel', cancel);
+      document.removeEventListener('touchmove', blockScroll);
       ghost?.remove();
       highlight(null);
       entryEl.classList.remove('dragging');
-      liveDrag = null;
+      dragActive = false;
     };
 
     // Lift it. The ghost is a copy with the action buttons stripped out: they
@@ -1279,7 +1290,8 @@ function makeEntryDraggable(entryEl, entry, onDone) {
     const arm = () => {
       if (settled || armed) return;
       armed = true;
-      liveDrag = true;
+      dragActive = true;
+      document.addEventListener('touchmove', blockScroll, { passive: false });
       // The only feedback that the hold worked, on a device with no cursor.
       // Optional everywhere and absent on iOS, hence the ?.
       navigator.vibrate?.(12);
@@ -1302,7 +1314,13 @@ function makeEntryDraggable(entryEl, entry, onDone) {
     let holdTimer = setTimeout(arm, HOLD_MS);
 
     const move = e => {
-      if (settled) return;
+      if (settled || e.pointerId !== down.pointerId) return;
+      // The row was re-rendered out from under the drag. navigateTo(currentView,
+      // true) runs whenever the offline write queue flushes — on reconnect and
+      // on the app coming back to the foreground — and it replaces every card
+      // on the screen. Abandon rather than finish: the data changed underneath,
+      // and completing a gesture against stale DOM is how the wrong food moves.
+      if (!entryEl.isConnected) { teardown(); return; }
       const dx = e.clientX - startX, dy = e.clientY - startY;
       if (!armed) {
         const intent = gestureIntent({
@@ -1320,8 +1338,8 @@ function makeEntryDraggable(entryEl, entry, onDone) {
       highlight(sid && Number(sid) !== entry.meal_session_id ? card : null);
     };
 
-    const up = async () => {
-      if (settled) return;
+    const up = async e => {
+      if (settled || e.pointerId !== down.pointerId) return;
       const card = over;
       const targetId = card?.dataset.sessionId;
       const targetName = card?.dataset.sessionName || 'Meal';
@@ -1349,14 +1367,20 @@ function makeEntryDraggable(entryEl, entry, onDone) {
       } catch (err) { showToast(err.message, 'error'); }
     };
 
-    const cancel = () => { if (!settled) teardown(); };
+    const cancel = e => { if (!settled && e.pointerId === down.pointerId) teardown(); };
 
-    // Captured, so the drag keeps receiving events once the finger leaves the
-    // row it started on — which it does immediately, that being the point.
-    try { entryEl.setPointerCapture(down.pointerId); } catch { /* unsupported */ }
-    entryEl.addEventListener('pointermove', move);
-    entryEl.addEventListener('pointerup', up);
-    entryEl.addEventListener('pointercancel', cancel);
+    // On DOCUMENT, not on the row, and no setPointerCapture.
+    //
+    // Capture retargets events to the row, which works right up until the row
+    // stops existing: removing a capture target releases the capture silently,
+    // so pointerup went to the real target instead and the drag's own teardown
+    // never ran. That left `dragActive` true for the rest of the session — and
+    // with the scroll blocker keyed off it, NOTHING in the app could scroll
+    // again until a reload, with an orphaned ghost stuck on screen. A listener
+    // on document cannot be orphaned by its subject disappearing.
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+    document.addEventListener('pointercancel', cancel);
   });
 }
 
