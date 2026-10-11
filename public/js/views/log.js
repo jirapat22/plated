@@ -864,9 +864,19 @@ export function openEditEntry(entry, onSuccess, viewDate = null) {
            Filled in asynchronously (the day's meals are a fetch) and left out
            entirely when there is only one meal, since a lone chip reading
            "Meal 1" offers nothing. -->
-      <div id="edit-meal-wrap" style="display:none;padding:4px 16px 0">
-        <label class="form-label">Meal</label>
-        <div id="edit-meals" style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px"></div>
+      <!-- One row that scrolls sideways, NOT flex-wrap, and the label beside it
+           rather than above it. Both choices are height, and height here is
+           paid for by the person the text scaling exists for.
+           Measured on a ten-meal day at 150%: wrapped and stacked, the chips
+           added 158px and pushed Update to y=957 in an 844px viewport. A
+           sideways strip with an inline label is one chip tall whatever the
+           meal count. The strip is the same shape as destinationSheet's date
+           picker, which solved this problem first. -->
+      <div id="edit-meal-wrap" style="display:none;padding:0 16px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <label class="form-label" style="margin:0;flex-shrink:0">Meal</label>
+          <div id="edit-meals" style="display:flex;gap:6px;overflow-x:auto;flex:1;min-width:0;-webkit-overflow-scrolling:touch"></div>
+        </div>
       </div>
       <div class="qty-confirm">
         <button class="btn btn-primary btn-full" id="edit-confirm">Update</button>
@@ -925,12 +935,27 @@ export function openEditEntry(entry, onSuccess, viewDate = null) {
     // not, rather than two that can half-land. It also means tapping a chip is
     // undoable by tapping the original back, before anything has happened.
     let targetSession = null;                       // null = leave it where it is
+    // Captured NOW, synchronously, so they are THIS render's nodes.
+    //
+    // These were looked up with document.getElementById inside the .then(),
+    // which finds whatever sheet is open when the fetch lands — not the one
+    // that asked. showSheet reuses a single #sheet-content element, so a
+    // content-scoped query is no better; only holding the node is.
+    //
+    // Reproduced at the ordering a Railway wake produces, which per CLAUDE.md
+    // is what opening this app normally looks like: open the sheet on a cold
+    // container (slow), close it, open it on a different food (now warm, fast).
+    // The dismissed sheet's response lands last and paints the live one — it
+    // showed "Meal 1" as the current meal for a food sitting in Meal 2, and
+    // wired every chip to a dead closure's `targetSession`, so tapping one did
+    // nothing and Update moved nothing. isConnected is the test, because
+    // showSheet clears the old content and detaches these.
+    const mealWrap = content.querySelector('#edit-meal-wrap');
+    const mealBox  = content.querySelector('#edit-meals');
     if (viewDate) {
       dayMeals(viewDate).then(sessions => {
-        const wrap = document.getElementById('edit-meal-wrap');
-        const box  = document.getElementById('edit-meals');
-        // The sheet may already be gone — a fetch outlives a dismissal.
-        if (!wrap || !box || sessions.length < 2) return;
+        const wrap = mealWrap, box = mealBox;
+        if (!wrap?.isConnected || !box || sessions.length < 2) return;
         const paint = () => box.querySelectorAll('.em-meal').forEach(b => {
           const on = Number(b.dataset.sid) === (targetSession ?? entry.meal_session_id);
           b.classList.toggle('active', on);
@@ -939,7 +964,7 @@ export function openEditEntry(entry, onSuccess, viewDate = null) {
           b.setAttribute('aria-pressed', on ? 'true' : 'false');
         });
         box.innerHTML = sessions.map(s =>
-          `<button type="button" class="fs-chip em-meal" data-sid="${s.id}">${esc(s.name || 'Meal')}</button>`
+          `<button type="button" class="fs-chip em-meal" data-sid="${s.id}" style="flex-shrink:0">${esc(s.name || 'Meal')}</button>`
         ).join('');
         box.querySelectorAll('.em-meal').forEach(btn => btn.addEventListener('click', () => {
           const sid = Number(btn.dataset.sid);
