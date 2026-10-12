@@ -209,9 +209,28 @@ export function renderBatches(container, isCurrent = () => true) {
     const pct = Math.max(2, Math.round(b.remaining_g / b.cooked_g * 100));
     const L = b.left || {};        // macros in what's still left
     const P = b.per_100g || {};    // density — what a portion size buys you
+    // An over-drawn pot is not an empty one, and it used to say it was.
+    //
+    // remaining_g is floored at 0 for display (shapeBatch), so the headline read
+    // "0 g of 900 g left" — character for character what a pot you finished
+    // says — while the only thing distinguishing them was an 11px line
+    // underneath. And because an over-drawn pot is deliberately NOT folded away
+    // (it is asking to be corrected), the one card that looked spent was the one
+    // sitting at the top of the list. Reported from the phone as a food with
+    // "0 g left lingering around", which is exactly how it reads.
+    //
+    // Reproduced two ways, both ordinary use: logging the pot's own backing food
+    // to a meal past what is left (a preset, or Recent foods) left -500 g, and
+    // editing a portion's weight upward left -4500 g. Neither clamps, on
+    // purpose — that is what keeps subtract-then-add reversible.
+    //
+    // So the headline now states the actual problem, and the card stops
+    // offering to portion food it does not have. ⚖️ Fix becomes the only
+    // action, because it is the only one that helps.
+    const over = b.overdrawn_g > 0;
     return `
       <div style="padding:0 16px 12px">
-        <div class="card">
+        <div class="card"${over ? ' style="border-color:var(--warning);box-shadow:inset 3px 0 0 var(--warning)"' : ''}>
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:2px">
             <div style="font-weight:700;font-size:15px">${esc(b.name)}</div>
             <div style="display:flex;gap:8px;flex-shrink:0">
@@ -221,27 +240,31 @@ export function renderBatches(container, isCurrent = () => true) {
             </div>
           </div>
           ${ingTxt ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">${ingTxt}</div>` : ''}
+          ${over ? `
+          <div style="font-size:13px;font-weight:700;color:var(--warning);margin-top:2px">
+            ⚖️ Over by ${g0(b.overdrawn_g)} g — needs fixing
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.45">
+            Your portions add up to ${g0(b.overdrawn_g)} g more than this ${g0(b.cooked_g)} g pot held, so one went in at the wrong weight. Tap ⚖️ Fix to say what is really left — or delete it if the pot is gone.
+          </div>` : `
           <div class="water-bar-outer"><div class="water-bar-fill" style="width:${pct}%"></div></div>
           <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted);margin-top:6px">
             <span><strong style="color:var(--text)">${g0(b.remaining_g)} g</strong> of ${g0(b.cooked_g)} g left</span>
             <span>≈ ${fmtE(b.kcal_left)} ${ul} left</span>
           </div>
-          ${b.overdrawn_g ? `<div style="font-size:11px;color:var(--warning);margin-top:5px;line-height:1.45">
-            Your portions add up to ${g0(b.overdrawn_g)} g more than this pot held — one probably went in at the wrong weight. Tap ⚖️ Fix to set what is really left.
-          </div>` : ''}
           <div style="display:flex;gap:10px;font-size:12px;font-variant-numeric:tabular-nums;margin-top:5px">
             <span style="color:var(--protein)">${mg(L.protein)}g P</span>
             <span style="color:var(--carbs)">${mg(L.carbs)}g C</span>
             <span style="color:var(--fat)">${mg(L.fat)}g F</span>
             ${L.fiber ? `<span style="color:var(--fiber)">${mg(L.fiber)}g fib</span>` : ''}
             <span style="color:var(--text-faint);margin-left:auto">still left</span>
-          </div>
+          </div>`}
           <div style="font-size:11px;color:var(--text-faint);margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">
             Per 100 g: ${fmtE(b.kcal_per_100g)} ${ul} · ${g1(P.protein)}P · ${g1(P.carbs)}C · ${g1(P.fat)}F${P.fiber ? ` · ${g1(P.fiber)} fib` : ''}
           </div>
           <div style="display:flex;gap:8px;margin-top:10px">
-            <button data-portion="${b.id}" class="btn btn-secondary" style="flex:1">Log a portion</button>
-            <button data-adjust="${b.id}" class="btn btn-secondary" style="flex-shrink:0;padding:0 14px" title="Correct how much is actually left">⚖️ Fix</button>
+            ${over ? '' : `<button data-portion="${b.id}" class="btn btn-secondary" style="flex:1">Log a portion</button>`}
+            <button data-adjust="${b.id}" class="btn ${over ? 'btn-primary btn-full' : 'btn-secondary'}"${over ? '' : ' style="flex-shrink:0;padding:0 14px"'} title="Correct how much is actually left">⚖️ Fix${over ? ' how much is left' : ''}</button>
           </div>
         </div>
       </div>`;
