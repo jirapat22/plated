@@ -16,7 +16,12 @@ const ALLOWED = new Set([
   'fiber_goal', 'ironlog_api_url', 'ironlog_api_key',
   'phase', 'tdee', 'cut_deficit', 'bulk_surplus', 'energy_unit', 'ironlog_last_synced',
   'target_weight_kg',
-  'weight_display',   // Today's bodyweight card: 'raw' (default) or 'trend'
+  // Today's bodyweight card: 'trend' (the DEFAULT, including when the key is
+  // absent — it is not in PROFILE_DEFAULTS) or 'raw' to opt out. Both of these
+  // comments said raw was the default long after today.js stopped doing that,
+  // and the reason trend won is the whole point: one weigh-in swings ~2 kg on
+  // water, so the headline number has to be the smoothed one.
+  'weight_display',
   // Macro targets: 'pct' (a % split of the calorie goal, applied once) or
   // 'gkg' (multiples of trend bodyweight, re-derived whenever weight moves).
   'macro_mode', 'protein_multiplier', 'fat_multiplier',

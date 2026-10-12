@@ -430,7 +430,7 @@ export function renderToday(container) {
 
     // Trend weight — 7-day smoothed average as of today (same movingAvg used
     // on the Trends weight chart), an optional alternate to the raw logged
-    // value. weight_display in Settings ('raw' default, 'trend') picks which
+    // value. weight_display in Settings ('trend' is the default, 'raw' opts out) picks which
     // one leads on the collapsed card; the other is still one tap away.
     // Dedupe to one value per date (same approach as Trends) before averaging,
     // so a same-day re-log doesn't double-count that day in the window.
