@@ -4,7 +4,7 @@ import { localDate, addDaysIso }      from '../utils/date.js';
 import { showToast, navigateTo, showConfirm } from '../app.js';
 import { openFoodEntry, lazySession, undoAteLight } from './log.js';
 import { classifyDay, isFlagged, calcStreak, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY, LOG_TODAY } from '../utils/logCheck.js';
-import { movingAvg, trendWeightNow, weeklyTrendChange, etaWeeks, maintenanceShortfall } from '../utils/stats.js';
+import { movingAvg, trendWeightNow, weeklyTrendChange, etaWeeks, maintenanceShortfall, tCrit95 } from '../utils/stats.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -768,7 +768,11 @@ export function renderTrends(container) {
     // past.
     const ADJUST_KCAL = 150;
     const slopeSE  = linFitStdErr(wWinX, wWinVals, slopePerDay);
-    const maintCI  = slopeSE != null ? Math.round(1.96 * slopeSE * 7700) : null;
+    // t, not 1.96: the fit has wWinVals.length - 2 degrees of freedom, and on a
+    // sparse month 1.96 reported a band ~60% tighter than the weigh-ins support
+    // (see tCrit95). slopeSE is null below three weigh-ins, so df is >= 1 here.
+    const maintCI  = slopeSE != null
+      ? Math.round(tCrit95(wWinVals.length - 2) * slopeSE * 7700) : null;
     const maintSteady = maintCI != null && maintCI <= ADJUST_KCAL && (staleDays == null || staleDays <= 3);
 
     // Does the measured figure square with your size and training? Only

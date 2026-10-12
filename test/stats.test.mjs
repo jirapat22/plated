@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { trendWeightNow, movingAvg, etaWeeks, estimateTdee } from '../public/js/utils/stats.js';
+import { trendWeightNow, movingAvg, etaWeeks, estimateTdee , tCrit95 } from '../public/js/utils/stats.js';
 
 const shift = (iso, n) => {
   const d = new Date(iso + 'T00:00:00Z');
@@ -71,4 +71,43 @@ test('both answers still work, and differ by the Mifflin sex constant', () => {
   assert.strictEqual(female, 1857);
   // 166 kcal of BMR x the activity multiplier, which is the whole point.
   assert.strictEqual(male - female, Math.round(166 * 1.375));
+});
+
+// The multiplier behind the "steady · ±N" band in Trends.
+//
+// It was 1.96 — the normal value — against a fit with n-2 degrees of freedom.
+// That is fine on a month of daily weigh-ins and wrong on a sparse one, in the
+// direction that matters: a band reported tighter than the data supports makes
+// the app say "steady" and invite a goal change off a figure that had not
+// earned it.
+test('the maintenance band widens when there are few weigh-ins to fit', () => {
+  // Five weigh-ins -> df 3. The band must be ~62% wider than the normal value,
+  // not equal to it.
+  assert.strictEqual(tCrit95(3), 3.182);
+  assert.ok(tCrit95(3) > 1.96 * 1.6, 'a sparse fit is barely wider than normal');
+  // A month of near-daily weigh-ins -> df 26, where the difference is small
+  // and the old constant was defensible.
+  assert.ok(tCrit95(26) > 1.96 && tCrit95(26) < 2.1, `df 26 gave ${tCrit95(26)}`);
+});
+
+test('the band stops shrinking once t and normal agree', () => {
+  assert.strictEqual(tCrit95(29), 2.045);
+  assert.strictEqual(tCrit95(30), 1.96);
+  assert.strictEqual(tCrit95(500), 1.96);
+});
+
+test('too little data gets no critical value rather than a flattering one', () => {
+  // Trends never asks below df 1 (slopeSE is null under three weigh-ins), but a
+  // silent 0 or undefined here would print a band of +/-0 and read as certainty.
+  assert.strictEqual(tCrit95(0), null);
+  assert.strictEqual(tCrit95(-1), null);
+  assert.strictEqual(tCrit95(NaN), null);
+  assert.strictEqual(tCrit95(undefined), null);
+});
+
+test('the multiplier is monotonic — more data never widens the band', () => {
+  for (let df = 2; df <= 29; df++) {
+    assert.ok(tCrit95(df) <= tCrit95(df - 1),
+      `df ${df} (${tCrit95(df)}) is wider than df ${df - 1} (${tCrit95(df - 1)})`);
+  }
 });

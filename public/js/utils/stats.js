@@ -171,3 +171,29 @@ export function weeklyTrendChange(entries, monday, win = 7) {
   const prev = trendAsOf(entries, shift(monday, -1), shift(monday, -7), win);
   return end != null && prev != null ? end - prev : null;
 }
+
+// Two-sided 95% critical value for `df` degrees of freedom.
+//
+// The maintenance band multiplied the slope's standard error by 1.96 — the
+// NORMAL value — on a fit whose error has n−2 degrees of freedom. With a month
+// of near-daily weigh-ins that is close enough (df 26 wants 2.056, under 5%
+// out). With five weigh-ins it is badly wrong: df 3 wants 3.182, so the band
+// was being reported 60% narrower than the data supports.
+//
+// That direction is the one that costs something. The band is what decides
+// whether Trends says "steady · ±N" and tells you this is the moment a goal
+// change is worth making. Understating the uncertainty invites a change off a
+// figure that had not earned it — the same failure the ADJUST_KCAL threshold
+// was already fixed for once, arriving through the multiplier instead.
+//
+// A table, not a function: the inverse t CDF is an incomplete beta and this
+// needs twenty-nine numbers. Beyond df 29 the t and normal values agree to
+// within 5%, which is well inside what a kcal estimate can claim anyway.
+// ponytail: 95% only, since that is the one interval the app reports.
+const T95 = [null,
+  12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228,
+  2.201,  2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086,
+  2.080,  2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045,
+];
+export const tCrit95 = df =>
+  !Number.isFinite(df) || df < 1 ? null : (df <= 29 ? T95[df] : 1.96);
