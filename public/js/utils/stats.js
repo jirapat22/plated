@@ -195,5 +195,14 @@ const T95 = [null,
   2.201,  2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086,
   2.080,  2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045,
 ];
-export const tCrit95 = df =>
-  !Number.isFinite(df) || df < 1 ? null : (df <= 29 ? T95[df] : 1.96);
+// Floors a fractional df rather than indexing the table with it: T95[3.5] is
+// `undefined`, which slips past a null check and then multiplies to 0 — and a
+// band of +/-0 is the single most dangerous value this can take, because it
+// reads as certainty AND satisfies the "steady" test. Flooring is also the
+// conservative direction (fewer degrees of freedom, wider band).
+export const tCrit95 = df => {
+  if (!Number.isFinite(df)) return null;
+  const d = Math.floor(df);
+  if (d < 1) return null;
+  return d <= 29 ? T95[d] : 1.96;
+};

@@ -111,3 +111,15 @@ test('the multiplier is monotonic — more data never widens the band', () => {
       `df ${df} (${tCrit95(df)}) is wider than df ${df - 1} (${tCrit95(df - 1)})`);
   }
 });
+
+test('a fractional df never yields undefined, which would read as certainty', () => {
+  // T95[3.5] is undefined. Returned as-is it multiplies to 0, and a band of
+  // +/-0 both reads as certainty and passes the "steady" threshold that invites
+  // a goal change. Floored, so it errs wide.
+  assert.strictEqual(tCrit95(3.5), tCrit95(3));
+  assert.strictEqual(tCrit95(29.9), tCrit95(29));
+  for (const df of [1, 1.5, 3.7, 10.2, 28.8, 29.5, 30.1, 1000]) {
+    const v = tCrit95(df);
+    assert.ok(Number.isFinite(v) && v >= 1.96, `df ${df} gave ${v}`);
+  }
+});

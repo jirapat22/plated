@@ -771,8 +771,18 @@ export function renderTrends(container) {
     // t, not 1.96: the fit has wWinVals.length - 2 degrees of freedom, and on a
     // sparse month 1.96 reported a band ~60% tighter than the weigh-ins support
     // (see tCrit95). slopeSE is null below three weigh-ins, so df is >= 1 here.
-    const maintCI  = slopeSE != null
-      ? Math.round(tCrit95(wWinVals.length - 2) * slopeSE * 7700) : null;
+    // Fails closed on a missing critical value, rather than multiplying by it.
+    //
+    // Unreachable today — linFitStdErr returns null below three weigh-ins, so
+    // df is always >= 1 here — but that is an invariant living in a different
+    // function in a different file, and the consequence of it breaking is the
+    // worst available: `null * x` rounds to 0, a band of +/-0 passes
+    // `maintCI <= ADJUST_KCAL`, and the card turns green saying "steady · ±0"
+    // over a paragraph inviting a goal change. Absolute confidence from absent
+    // data, in the one number that gates advice.
+    const tc       = tCrit95(wWinVals.length - 2);
+    const maintCI  = (slopeSE != null && tc != null)
+      ? Math.round(tc * slopeSE * 7700) : null;
     const maintSteady = maintCI != null && maintCI <= ADJUST_KCAL && (staleDays == null || staleDays <= 3);
 
     // Does the measured figure square with your size and training? Only
