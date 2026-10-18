@@ -1,7 +1,9 @@
 const express = require('express');
 const crypto = require('crypto');
 const { getDb } = require('../db');
-const { tzFor } = require('../utils/tz');
+const { buildRangeReport, toMarkdown, toCsv } = require('../utils/report');
+const { buildExportPayload } = require('../utils/exportPayload');
+const { tzFor, isRealDate } = require('../utils/tz');
 
 const router = express.Router();
 
@@ -136,6 +138,41 @@ router.get('/', (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/orbit/weekly-export?profile_id=1&from=YYYY-MM-DD&to=YYYY-MM-DD
+// Weekly backup + nutrition summary for the Obsidian vault, fetched by the
+// GitHub Action in jirapat22/orbit-vault every Sunday night. Same Orbit key
+// gate as the rest of this router. from/to are LOCAL calendar dates (the
+// caller works out Mon..Sun in the user's zone), both inclusive.
+router.get('/weekly-export', (req, res) => {
+  const pid = Number(req.query.profile_id);
+  const { from, to } = req.query;
+  if (!Number.isInteger(pid) || pid <= 0) return res.status(400).json({ error: 'profile_id required' });
+  if (!isRealDate(from) || !isRealDate(to) || from > to) {
+    return res.status(400).json({ error: 'from and to must be YYYY-MM-DD with from <= to' });
+  }
+  try {
+    const db = getDb();
+    if (!db.prepare('SELECT 1 FROM profiles WHERE id = $pid').get({ pid })) {
+      return res.status(404).json({ error: 'no such profile' });
+    }
+    const report = buildRangeReport(db, pid, from, to);
+    const week = String(req.query.week || '');
+    // Reuse the report's own Markdown, retitled for the vault.
+    const markdown = toMarkdown(report).replace(/^# Nutrition report/, `# 🥗 Plated: week ${week}`.trim());
+    res.json({
+      app: 'plated',
+      generated_at: new Date().toISOString(),
+      summary: { from, to, ...report.summary, goals: report.goals, vsGoal: report.vsGoal, adherence: report.adherence, weight: report.weight },
+      markdown,
+      csv: toCsv(report),
+      full: buildExportPayload(db, pid),
+    });
+  } catch (err) {
+    console.error('weekly export error:', err);
+    res.status(500).json({ error: 'internal server error' });
   }
 });
 
