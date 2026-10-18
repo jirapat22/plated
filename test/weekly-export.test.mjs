@@ -44,7 +44,8 @@ before(async () => {
   users.pat = await makeUser('WEEKPAT', '4418');
   users.other = await makeUser('WEEKOTHER', '4419');
   const T = users.pat.token;
-  await call('PATCH', '/api/settings', { calorie_goal: 2000, protein_goal: 150 }, T);
+  await call('PATCH', '/api/settings', { calorie_goal: 2000, protein_goal: 150,
+    ironlog_api_url: 'https://ironlog.example', ironlog_api_key: 'live-secret-key-0123456789abcdef' }, T);
   // Week of Mon 12 Oct – Sun 18 Oct 2026: three days logged.
   for (const date of ['2026-10-12', '2026-10-13', '2026-10-15']) {
     const r = await call('POST', '/api/meals/log', { food_id: 1, quantity_g: 300, date, meal_name: 'Lunch' }, T);
@@ -98,4 +99,14 @@ test('returns a readable note, a CSV and the full backup payload', async () => {
   assert.ok(typeof body.csv === 'string' && body.csv.includes('2026-10-15'));
   assert.ok(!body.csv.includes('2026-10-19'), 'a day after the week leaked into the CSV');
   assert.ok(body.full && typeof body.full === 'object' && body.full.exported_at);
+});
+
+test('the vault copy never carries a credential', async () => {
+  // The first real run committed the profile's ironlog_api_key to orbit-vault.
+  const body = await (await weekly(Q())).json();
+  assert.ok(!JSON.stringify(body).includes('live-secret-key-0123456789abcdef'), 'API key leaked into the weekly export');
+  assert.strictEqual(body.full.settings.ironlog_api_key, undefined);
+  // Only credentials go: ordinary settings, including the URL, stay for a restore.
+  assert.strictEqual(body.full.settings.ironlog_api_url, 'https://ironlog.example');
+  assert.strictEqual(String(body.full.settings.calorie_goal), '2000');
 });

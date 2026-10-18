@@ -141,6 +141,19 @@ router.get('/', (req, res) => {
   }
 });
 
+// The weekly copy lands in a git repo (orbit-vault), where anything committed
+// stays in history for good. The first run shipped the profile's
+// ironlog_api_key that way. The manual export keeps credentials (a restore
+// needs them to reconnect IronLog); this copy drops every setting whose name
+// says it's a credential, so the vault never holds a live key again.
+const SECRET_SETTING = /(^|_)(api_?key|key|token|secret|password|passcode)$/i;
+function withoutSecrets(payload) {
+  const settings = Object.fromEntries(
+    Object.entries(payload.settings || {}).filter(([k]) => !SECRET_SETTING.test(k))
+  );
+  return { ...payload, settings };
+}
+
 // GET /api/orbit/weekly-export?profile_id=1&from=YYYY-MM-DD&to=YYYY-MM-DD
 // Weekly backup + nutrition summary for the Obsidian vault, fetched by the
 // GitHub Action in jirapat22/orbit-vault every Sunday night. Same Orbit key
@@ -168,7 +181,7 @@ router.get('/weekly-export', (req, res) => {
       summary: { from, to, ...report.summary, goals: report.goals, vsGoal: report.vsGoal, adherence: report.adherence, weight: report.weight },
       markdown,
       csv: toCsv(report),
-      full: buildExportPayload(db, pid),
+      full: withoutSecrets(buildExportPayload(db, pid)),
     });
   } catch (err) {
     console.error('weekly export error:', err);
