@@ -43,6 +43,23 @@ const PORT = process.env.PORT || 3000;
 // internet as one client — one attacker would lock everybody out.
 app.set('trust proxy', 1);
 
+// Old address → new domain. Since 18/10/2026 the app lives at
+// plated.jirapat.dev; a browser visiting the old *.up.railway.app address
+// gets a permanent (301) redirect so bookmarks move over by themselves.
+// Only page loads (GET/HEAD) are redirected — /api keeps working on the old
+// address, because a redirect can drop the auth header or turn a POST into a
+// GET, which would break Orbit, Ironlog and old installed PWAs still syncing.
+const CANONICAL_HOST = 'plated.jirapat.dev';
+app.use((req, res, next) => {
+  const onOldHost = (req.get('host') || '').endsWith('.up.railway.app');
+  const isPageLoad = req.method === 'GET' || req.method === 'HEAD';
+  const isMachinePath = req.path.startsWith('/api') || req.path === '/health';
+  if (onOldHost && isPageLoad && !isMachinePath) {
+    return res.redirect(301, `https://${CANONICAL_HOST}${req.originalUrl}`);
+  }
+  next();
+});
+
 // CORS only where something off-origin actually reads.
 //
 // This was `cors({ origin: true, credentials: true })` on every route, which
