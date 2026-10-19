@@ -194,14 +194,27 @@ router.get('/:id/portions', (req, res) => {
     // A pot with no backing food has no portions to find, and that is not an
     // error — pre-food_id batches exist.
     if (!b.food_id) return res.json([]);
+    // Nothing dated after today.
+    //
+    // The portion picker offers up to seven days ahead, so meal-prepping a week
+    // leaves PLANNED portions in this table. Ordered by date alone, the newest
+    // was one of those — and the sheet offers the newest as "that portion was
+    // wrong", so correcting a pot you had just weighed would have resized a
+    // portion nobody has eaten yet, moving grams onto a future day to explain
+    // food that went missing in the past. Measured: ate 250 g today, planned
+    // 250 g for the 21st, and the 21st came back first.
+    //
+    // meal_session_id rides along so the caller can file a catch-up portion
+    // into the meal the original is already in, rather than starting a second
+    // meal card for the same sitting.
     res.json(db.prepare(`
-      SELECT me.id, me.quantity_g, me.calories, ms.date, ms.name AS meal_name
+      SELECT me.id, me.quantity_g, me.calories, me.meal_session_id, ms.date, ms.name AS meal_name
       FROM meal_entries me
       JOIN meal_sessions ms ON ms.id = me.meal_session_id
-      WHERE me.food_id = $f AND ms.profile_id = $p
+      WHERE me.food_id = $f AND ms.profile_id = $p AND ms.date <= $today
       ORDER BY ms.date DESC, me.id DESC
       LIMIT 5
-    `).all({ f: b.food_id, p: req.profileId }));
+    `).all({ f: b.food_id, p: req.profileId, today: todayLocal(tzFor(db, req.profileId)) }));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -226,6 +239,22 @@ router.post('/:id/portion', (req, res) => {
     // answered 201, so the UI reported it as a successful log.
     if (!(b.remaining_g > 0)) {
       return res.status(409).json({ error: `There's none of ${b.name} left — the batch is finished` });
+    }
+    // No backing food means the entry below would be written with food_id NULL,
+    // and loadDay INNER JOINs foods — so it is stored, draws the stock down,
+    // answers 201 "logged 250 g", and then never appears on the day. Measured
+    // on a pot made the way a pre-food_id database holds one: the day showed 0
+    // entries and 0 kcal while the database held the row and 500 kcal, and the
+    // pot went 1000 -> 750. Calories that leave the pot and never reach the
+    // diary, reported as success — the same shape as the leftover bug in
+    // settings.js, through a different door.
+    //
+    // Fails closed, and names the way out: PATCH below now mints the missing
+    // food, so opening the batch and saving it repairs the pot in place.
+    if (!b.food_id) {
+      return res.status(409).json({
+        error: `"${b.name}" was saved before portions could be logged — tap ✏️ and save it again to fix that`,
+      });
     }
     grams = Math.min(grams, b.remaining_g);   // can't take more than is left
 
@@ -379,13 +408,25 @@ router.patch('/:id', (req, res) => {
         cal: totals.calories, pr: totals.protein, cb: totals.carbs, ft: totals.fat, fb: totals.fiber,
         ing: ingredients, id: b.id,
       });
+      const per = k => (totals[k] == null ? null : round1(totals[k] / cooked * 100));
       if (b.food_id) {
-        const per = k => (totals[k] == null ? null : round1(totals[k] / cooked * 100));
         db.prepare(`UPDATE foods SET name = $n, calories_per_100g = $cal, protein_per_100g = $p,
           carbs_per_100g = $c, fat_per_100g = $f, fiber_per_100g = $fb WHERE id = $fid`).run({
           n: name, cal: per('calories'), p: per('protein'), c: per('carbs'), f: per('fat'), fb: per('fiber'),
           fid: b.food_id,
         });
+      } else {
+        // Mint the one this pot never had, so a pre-food_id batch becomes
+        // portionable instead of permanently refused. Same columns POST uses,
+        // including source 'batch' and created_by_profile, which together are
+        // what keeps it out of search and inside the privacy gate.
+        const fid = db.prepare(`INSERT INTO foods
+          (name, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, serving_size_g, source, created_by_profile)
+          VALUES ($n, $cal, $p, $c, $f, $fb, 100, 'batch', $by)`).run({
+          n: name, cal: per('calories'), p: per('protein'), c: per('carbs'),
+          f: per('fat'), fb: per('fiber'), by: req.profileId,
+        }).lastInsertRowid;
+        db.prepare('UPDATE batches SET food_id = $f WHERE id = $id').run({ f: fid, id: b.id });
       }
       db.exec('COMMIT');
     } catch (e) {

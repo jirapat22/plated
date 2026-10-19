@@ -333,9 +333,20 @@ function reconcileStep(content, batch, actual, missing, onDone) {
   // One id for the catch-up portion, minted once: this draws down stock, so a
   // retry after a lost response must not take the grams twice.
   const catchUpId = newClientId();
+  // Which meal to file it into, once the fetch below says. Null until then, and
+  // null means a new meal — which is what this did unconditionally, and it split
+  // one sitting across two cards: "Dinner · 300 g" plus a second card called
+  // after the batch holding the 400 g catch-up. Same food, same meal, same
+  // moment, two rows in the day. Only used when the original portion is on
+  // TODAY; an older one means these grams are being eaten now, not then, and a
+  // new meal today is then the honest place for them.
+  let sameMeal = null;
   content.querySelector('#rc-eat').addEventListener('click', () => run(
     `Logged ${g0(missing)} g today`,
-    () => api.post(`/api/batches/${batch.id}/portion`, { grams: missing, client_id: catchUpId })));
+    () => api.post(`/api/batches/${batch.id}/portion`, {
+      grams: missing, client_id: catchUpId,
+      ...(sameMeal ? { meal_session_id: sameMeal } : {}),
+    })));
 
   content.querySelector('#rc-pot').addEventListener('click', () => run(
     `${g0(actual)} g left`,
@@ -348,6 +359,14 @@ function reconcileStep(content, batch, actual, missing, onDone) {
   api.get(`/api/batches/${batch.id}/portions`).then(list => {
     if (!resizeBox?.isConnected || !Array.isArray(list) || !list.length) return;
     const last = list[0];
+    // The route already drops anything dated after today, so list[0] is the
+    // most recent portion that has actually been eaten.
+    if (last.date === localDate() && last.meal_session_id) {
+      sameMeal = last.meal_session_id;
+      const eat = content.querySelector('#rc-eat');
+      // Say where it is going, now that there is somewhere to name.
+      if (eat && last.meal_name) eat.textContent = `I ate it \u2014 add ${g0(missing)} g to ${last.meal_name}`;
+    }
     const when = new Date(last.date + 'T00:00:00')
       .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     const to = round1(last.quantity_g + missing);
