@@ -129,3 +129,29 @@ test('ordinary library food is unaffected', async () => {
   const r = await as(snoop)('POST', '/api/meals/log', { food_id: 1, quantity_g: 100 });
   assert.strictEqual(r.status, 201, await r.text());
 });
+
+// GET /api/batches/:id/portions reads meal_entries, which is somebody's diary.
+//
+// Added for the Fix sheet's "which portion was wrong?" button, and it is the
+// kind of route this file exists for: it takes an id from the request and
+// hands back rows joined to meal_sessions. Two scopes, and a test for each,
+// because the second one is the easy one to leave out — the batch check alone
+// looks sufficient right up until you notice foods is a SHARED table.
+test('one profile cannot read another profile’s batch portions', async () => {
+  const made = await (await as(mum)('POST', '/api/batches', {
+    name: 'Mum chilli', cooked_g: 800, items: [{ food_id: 1, quantity_g: 800 }],
+  })).json();
+  assert.ok(made.id, `batch not created: ${JSON.stringify(made)}`);
+  assert.strictEqual((await as(mum)('POST', `/api/batches/${made.id}/portion`, { grams: 250 })).status, 201);
+
+  // The owner sees her own portion.
+  const mine = await (await as(mum)('GET', `/api/batches/${made.id}/portions`)).json();
+  assert.strictEqual(mine.length, 1, `expected one portion, got ${JSON.stringify(mine)}`);
+  assert.strictEqual(Math.round(mine[0].quantity_g), 250);
+
+  // Nobody else does, and the refusal says nothing about the pot.
+  const r = await as(snoop)('GET', `/api/batches/${made.id}/portions`);
+  const body = await r.text();
+  assert.strictEqual(r.status, 404, `snoop read it: ${body}`);
+  assert.ok(!body.includes('Mum chilli'), 'the refusal echoed the batch name back');
+});

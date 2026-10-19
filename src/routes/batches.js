@@ -173,6 +173,38 @@ router.post('/', (req, res) => {
 
 // POST /:id/portion { grams, meal_session_id?, date? } — log a portion into a
 // meal and draw the batch down by that weight.
+// GET /:id/portions — the portions logged against this pot, newest first.
+//
+// Exists for one question: "⚖️ Fix says 400 g came out that I never logged —
+// which portion was wrong?" Fix could always correct the pot, but the grams it
+// reconciled never reached the diary, so a 900 g pot weighed down to 200 g left
+// 1,520 kcal unlogged with nothing flagging it (overdrawn_g stays 0, because
+// the pot's own number is now right). To offer "my last portion was wrong"
+// the sheet has to know which entry that was.
+//
+// Scoped twice: the batch must be this profile's, and so must the session each
+// entry hangs off. Without the second one a batch id would read entries out of
+// another profile's day — the food row is shared, the days are not.
+router.get('/:id/portions', (req, res) => {
+  try {
+    const db = getDb();
+    const b = db.prepare('SELECT id, food_id FROM batches WHERE id = $id AND profile_id = $p')
+      .get({ id: req.params.id, p: req.profileId });
+    if (!b) return res.status(404).json({ error: 'Batch not found' });
+    // A pot with no backing food has no portions to find, and that is not an
+    // error — pre-food_id batches exist.
+    if (!b.food_id) return res.json([]);
+    res.json(db.prepare(`
+      SELECT me.id, me.quantity_g, me.calories, ms.date, ms.name AS meal_name
+      FROM meal_entries me
+      JOIN meal_sessions ms ON ms.id = me.meal_session_id
+      WHERE me.food_id = $f AND ms.profile_id = $p
+      ORDER BY ms.date DESC, me.id DESC
+      LIMIT 5
+    `).all({ f: b.food_id, p: req.profileId }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.post('/:id/portion', (req, res) => {
   try {
     const db = getDb();

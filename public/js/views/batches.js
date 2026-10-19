@@ -8,6 +8,12 @@ import { newClientId }                from '../utils/offlineStore.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const g0  = n => Math.round(n || 0);                                    // whole grams
+// A NUMBER rounded to 1dp, for arithmetic — not a formatted string like g1.
+// The reconcile step does gram sums (cooked − left, last portion + missing) and
+// floats produce 399.99999999999994, which then renders as a different figure
+// in the copy than the one sent to the server. Named to match the identical
+// helper in src/routes/batches.js, since both ends round the same way.
+const round1 = n => Math.round(n * 10) / 10;
 // Whole grams of a MACRO, where null means "no ingredient recorded this" and
 // has to stay a dash. Separate from g0 because g0 also formats weights —
 // remaining_g, cooked_g, an input's value, an operand in arithmetic — which are
@@ -271,6 +277,94 @@ export function renderBatches(container, isCurrent = () => true) {
   }
 }
 
+// Step two of the Fix sheet: the grams the correction cannot explain.
+//
+// Only reached when LESS is left than the log accounts for, i.e. the diary is
+// light. The opposite direction (more left than expected, so the diary
+// over-counted) keeps the old behaviour of correcting the pot alone: the
+// reported case is this one, the leftover split already covers the common shape
+// of the other, and a wrong guess there would delete calories someone ate.
+function reconcileStep(content, batch, actual, missing, onDone) {
+  const out    = round1(batch.cooked_g - actual);                      // really came out
+  const logged = round1(batch.cooked_g - (batch.remaining_g ?? 0));    // what the log says
+  const kcal   = batch.kcal_per_100g != null ? Math.round(missing / 100 * batch.kcal_per_100g) : null;
+  const ul     = unitLabel();
+  content.innerHTML = `
+    <div class="sheet-header">
+      <span class="sheet-title">${g0(missing)} g unaccounted for</span>
+      <button class="sheet-close" id="rc-close">X</button>
+    </div>
+    <div style="padding:0 16px">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;line-height:1.55">
+        <strong style="color:var(--text)">${esc(batch.name)}</strong> &mdash; you cooked ${g0(batch.cooked_g)} g and ${g0(actual)} g is left,
+        so ${g0(out)} g has come out of it. Your log only accounts for ${g0(logged)} g.
+      </div>
+      ${kcal != null ? `<div style="font-size:12px;color:var(--warning);margin-bottom:16px;line-height:1.5">
+        That is <strong>${fmtE(kcal)} ${ul}</strong> that has left the pot but is not in your diary.
+      </div>` : '<div style="height:8px"></div>'}
+      <button class="btn btn-primary btn-full" id="rc-eat" style="margin-bottom:8px">I ate it &mdash; log ${g0(missing)} g today</button>
+      <div id="rc-resize"></div>
+      <button class="btn btn-secondary btn-full" id="rc-pot">It was not eaten &mdash; just fix the pot</button>
+      <div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">
+        Thrown out, spilled, or eaten by someone who logs their own food? That last button is the right one &mdash; the pot was wrong, your diary never was.
+      </div>
+    </div>`;
+
+  const resizeBox = content.querySelector('#rc-resize');
+  content.querySelector('#rc-close').addEventListener('click', hideSheet);
+
+  // Disable the lot while one is in flight. Every other sheet in this file
+  // learned this the same way: the sheet stays up for the whole round trip, so
+  // a second tap runs a second reconciliation against stock the first moved.
+  const run = async (label, fn) => {
+    const all = [...content.querySelectorAll('#rc-eat, #rc-pot, #rc-resize button')];
+    all.forEach(b => { b.disabled = true; });
+    try {
+      await fn();
+      hideSheet();
+      showToast(label, 'success');
+      onDone?.();
+    } catch (err) {
+      showToast(err.message, 'error');
+      all.forEach(b => { b.disabled = false; });
+    }
+  };
+
+  // One id for the catch-up portion, minted once: this draws down stock, so a
+  // retry after a lost response must not take the grams twice.
+  const catchUpId = newClientId();
+  content.querySelector('#rc-eat').addEventListener('click', () => run(
+    `Logged ${g0(missing)} g today`,
+    () => api.post(`/api/batches/${batch.id}/portion`, { grams: missing, client_id: catchUpId })));
+
+  content.querySelector('#rc-pot').addEventListener('click', () => run(
+    `${g0(actual)} g left`,
+    () => api.patch(`/api/batches/${batch.id}`, { remaining_g: actual })));
+
+  // "That portion was wrong" needs to know which entry it was. The node is
+  // captured now and checked with isConnected, not looked up by id when the
+  // fetch lands: showSheet reuses one #sheet-content element, so a dismissed
+  // sheet's response would otherwise paint whichever sheet is open by then.
+  api.get(`/api/batches/${batch.id}/portions`).then(list => {
+    if (!resizeBox?.isConnected || !Array.isArray(list) || !list.length) return;
+    const last = list[0];
+    const when = new Date(last.date + 'T00:00:00')
+      .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const to = round1(last.quantity_g + missing);
+    resizeBox.innerHTML = `
+      <button class="btn btn-secondary btn-full" id="rc-resize-btn" style="margin-bottom:8px;height:auto;padding:10px 14px;line-height:1.4">
+        That portion was wrong &mdash; make it ${g0(to)} g
+        <div style="font-size:11px;color:var(--text-faint);font-weight:400">${g0(last.quantity_g)} g on ${when}${last.meal_name ? ` &middot; ${esc(last.meal_name)}` : ''}</div>
+      </button>`;
+    resizeBox.querySelector('#rc-resize-btn').addEventListener('click', () => run(
+      `Portion corrected to ${g0(to)} g`,
+      // Resizing re-derives the entry's macros and moves the pot by the delta
+      // in one request: the same call the quantity sheet makes, so the stock
+      // arithmetic is the one that is already tested.
+      () => api.patch(`/api/meals/entries/${last.id}`, { quantity_g: to })));
+  }).catch(() => { /* no list, no button; the other two still work */ });
+}
+
 // ── Correct what's left ──────────────────────────────────────
 // Was a prompt() — a system dialog in an otherwise fully themed app, with the
 // max weight buried in a paragraph of text and no way to tap a common answer.
@@ -305,6 +399,23 @@ function openAdjust(batch, onDone) {
     document.getElementById('a-save').addEventListener('click', async () => {
       const grams = parseFloat(gi.value);
       if (!Number.isFinite(grams) || grams < 0) return showToast('Enter grams (0 or more)', 'error');
+      // Correcting the pot used to be the whole of this button, and the grams
+      // it reconciled never reached the diary.
+      //
+      // Measured on the reported case: cook 900 g, log a 300 g portion, weigh
+      // the pot and find 200 g. Fix set the pot to 200 and stopped there, so
+      // 400 g and 1,520 kcal had come out of the fridge with no record of it
+      // anywhere. Nothing warned either: overdrawn_g is 0, because after the
+      // Fix the pot's own number IS right. The only wrong number was the day's,
+      // and it was wrong silently.
+      //
+      // So when the correction implies grams nobody logged, ask what they were.
+      // The two answers that matter land the calories on different days, and
+      // only the person who ate it knows which: a portion that went in at the
+      // wrong weight belongs on the day it was eaten, food eaten unlogged
+      // belongs today. Guessing either way would be inventing history.
+      const missing = round1((batch.remaining_g ?? 0) - grams);
+      if (missing > 1) return reconcileStep(content, batch, grams, missing, onDone);
       const btn = document.getElementById('a-save');
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
