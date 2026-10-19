@@ -3,6 +3,7 @@ import { showToast, showSheet, hideSheet, showPrompt, showConfirm } from '../app
 import { renderFoodSearch }           from '../components/foodSearch.js';
 import { fmtE, unitLabel, toKcal }    from '../utils/energy.js';
 import { localDate }                  from '../utils/date.js';
+import { isFinishedBatch }            from '../utils/batchState.js';
 import { savePresetFrom }             from './presets.js';
 import { newClientId }                from '../utils/offlineStore.js';
 
@@ -74,9 +75,13 @@ export function renderBatches(container, isCurrent = () => true) {
     // So they stay listed and stay fixable, just folded away. An over-drawn pot
     // is NOT finished: it is mis-recorded, it is asking to be corrected, and it
     // belongs where the warning can be seen.
-    const isFinished = b => b.remaining_g <= 1 && !b.overdrawn_g;
-    const live = batches.filter(b => !isFinished(b));
-    const done = batches.filter(isFinished);
+    // The line now lives in utils/batchState.js, with its own tests. It was
+    // `remaining_g <= 1`, which is tighter than any real scale reading, so pots
+    // holding 2-10 g of scrapings kept a full card. 10 g alone would be wrong
+    // the other way (a fifth of a 50 g pot), so it is 10 g AND under a
+    // twentieth of what was cooked.
+    const live = batches.filter(b => !isFinishedBatch(b));
+    const done = batches.filter(isFinishedBatch);
     container.innerHTML = `
       <div style="padding:0 16px 12px">
         <button class="btn btn-primary btn-full" id="new-batch">+ New meal-prep batch</button>
@@ -284,29 +289,37 @@ export function renderBatches(container, isCurrent = () => true) {
 // over-counted) keeps the old behaviour of correcting the pot alone: the
 // reported case is this one, the leftover split already covers the common shape
 // of the other, and a wrong guess there would delete calories someone ate.
-function reconcileStep(content, batch, actual, missing, onDone) {
+function reconcileStep(content, batch, actual, delta, onDone) {
+  const short  = delta > 0;                                            // diary is light
+  const gap    = Math.abs(delta);
   const out    = round1(batch.cooked_g - actual);                      // really came out
   const logged = round1(batch.cooked_g - (batch.remaining_g ?? 0));    // what the log says
-  const kcal   = batch.kcal_per_100g != null ? Math.round(missing / 100 * batch.kcal_per_100g) : null;
+  const kcal   = batch.kcal_per_100g != null ? Math.round(gap / 100 * batch.kcal_per_100g) : null;
   const ul     = unitLabel();
   content.innerHTML = `
     <div class="sheet-header">
-      <span class="sheet-title">${g0(missing)} g unaccounted for</span>
+      <span class="sheet-title">${g0(gap)} g ${short ? 'unaccounted for' : 'you did not eat'}</span>
       <button class="sheet-close" id="rc-close">X</button>
     </div>
     <div style="padding:0 16px">
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;line-height:1.55">
         <strong style="color:var(--text)">${esc(batch.name)}</strong> &mdash; you cooked ${g0(batch.cooked_g)} g and ${g0(actual)} g is left,
-        so ${g0(out)} g has come out of it. Your log only accounts for ${g0(logged)} g.
+        so ${g0(out)} g has come out of it. Your log ${short ? `only accounts for ${g0(logged)} g` : `says ${g0(logged)} g`}.
       </div>
       ${kcal != null ? `<div style="font-size:12px;color:var(--warning);margin-bottom:16px;line-height:1.5">
-        That is <strong>${fmtE(kcal)} ${ul}</strong> that has left the pot but is not in your diary.
+        That is <strong>${fmtE(kcal)} ${ul}</strong> ${short
+          ? 'that has left the pot but is not in your diary.'
+          : 'in your diary that never left the pot.'}
       </div>` : '<div style="height:8px"></div>'}
-      <button class="btn btn-primary btn-full" id="rc-eat" style="margin-bottom:8px">I ate it &mdash; log ${g0(missing)} g today</button>
+      ${short ? `<button class="btn btn-primary btn-full" id="rc-eat" style="margin-bottom:8px">I ate it &mdash; log ${g0(gap)} g today</button>` : ''}
       <div id="rc-resize"></div>
-      <button class="btn btn-secondary btn-full" id="rc-pot">It was not eaten &mdash; just fix the pot</button>
+      <button class="btn btn-secondary btn-full" id="rc-pot">${short
+        ? 'It was not eaten &mdash; just fix the pot'
+        : 'I put some back &mdash; just fix the pot'}</button>
       <div style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5">
-        Thrown out, spilled, or eaten by someone who logs their own food? That last button is the right one &mdash; the pot was wrong, your diary never was.
+        ${short
+          ? 'Thrown out, spilled, or eaten by someone who logs their own food? That last button is the right one &mdash; the pot was wrong, your diary never was.'
+          : 'Served a portion, ate half, tipped the rest back in? Correct the portion. If the pot simply weighs more than it was recorded as, fix the pot alone.'}
       </div>
     </div>`;
 
@@ -341,10 +354,10 @@ function reconcileStep(content, batch, actual, missing, onDone) {
   // TODAY; an older one means these grams are being eaten now, not then, and a
   // new meal today is then the honest place for them.
   let sameMeal = null;
-  content.querySelector('#rc-eat').addEventListener('click', () => run(
-    `Logged ${g0(missing)} g today`,
+  content.querySelector('#rc-eat')?.addEventListener('click', () => run(
+    `Logged ${g0(gap)} g today`,
     () => api.post(`/api/batches/${batch.id}/portion`, {
-      grams: missing, client_id: catchUpId,
+      grams: gap, client_id: catchUpId,
       ...(sameMeal ? { meal_session_id: sameMeal } : {}),
     })));
 
@@ -365,11 +378,16 @@ function reconcileStep(content, batch, actual, missing, onDone) {
       sameMeal = last.meal_session_id;
       const eat = content.querySelector('#rc-eat');
       // Say where it is going, now that there is somewhere to name.
-      if (eat && last.meal_name) eat.textContent = `I ate it \u2014 add ${g0(missing)} g to ${last.meal_name}`;
+      if (eat && last.meal_name) eat.textContent = `I ate it \u2014 add ${g0(gap)} g to ${last.meal_name}`;
     }
     const when = new Date(last.date + 'T00:00:00')
       .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    const to = round1(last.quantity_g + missing);
+    const to = round1(short ? last.quantity_g + gap : last.quantity_g - gap);
+    // Shrinking it has a floor: an entry of 0 g or less is not an entry, and
+    // PATCH would refuse it anyway. When one portion cannot absorb the whole
+    // difference the button is simply not offered, leaving the pot-only answer
+    // rather than a button that 400s.
+    if (!short && to <= 0) return;
     resizeBox.innerHTML = `
       <button class="btn btn-secondary btn-full" id="rc-resize-btn" style="margin-bottom:8px;height:auto;padding:10px 14px;line-height:1.4">
         That portion was wrong &mdash; make it ${g0(to)} g
@@ -433,8 +451,17 @@ function openAdjust(batch, onDone) {
       // only the person who ate it knows which: a portion that went in at the
       // wrong weight belongs on the day it was eaten, food eaten unlogged
       // belongs today. Guessing either way would be inventing history.
-      const missing = round1((batch.remaining_g ?? 0) - grams);
-      if (missing > 1) return reconcileStep(content, batch, grams, missing, onDone);
+      // Both directions now. `delta` is what the correction cannot explain:
+      // positive means MORE came out than the log accounts for (the diary is
+      // light), negative means LESS did (the diary over-counted, e.g. a portion
+      // was served, half eaten, and the rest tipped back into the pot).
+      //
+      // The second case was deliberately left alone when this shipped, on the
+      // grounds that guessing would delete calories someone really ate. Guessing
+      // would; offering a choice does not, and without it the only way to
+      // correct an over-counted day was to go and find the entry by hand.
+      const delta = round1((batch.remaining_g ?? 0) - grams);
+      if (Math.abs(delta) > 1) return reconcileStep(content, batch, grams, delta, onDone);
       const btn = document.getElementById('a-save');
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
