@@ -4,6 +4,7 @@ const { getDb } = require('../db');
 const { buildRangeReport, toMarkdown, toCsv } = require('../utils/report');
 const { buildExportPayload } = require('../utils/exportPayload');
 const { tzFor, isRealDate } = require('../utils/tz');
+const { trendWeight } = require('../utils/macros');
 
 const router = express.Router();
 
@@ -76,6 +77,40 @@ function dayTotals(db, pid, date) {
   };
 }
 
+// When food was last logged, as opposed to when the app was last touched.
+//
+// lastActive() counts opening the app (it reads sessions.created_at), which is
+// the right signal for "is this profile still in use" and the wrong one for the
+// widget's honesty line. The widget says "nothing logged since 9:04am" so that
+// "740 kcal left" cannot imply room that has already been eaten — and a login
+// at noon must not clear that warning without a meal behind it.
+function lastLoggedAt(db, pid) {
+  const row = db.prepare(`
+    SELECT MAX(me.logged_at) AS t FROM meal_entries me
+    JOIN meal_sessions ms ON ms.id = me.meal_session_id
+    WHERE ms.profile_id = $pid
+  `).get({ pid });
+  return row?.t || null;
+}
+
+// Bodyweight for the widget's home-screen line. Both figures on purpose: the
+// trend is what Plated's own card leads with (one weigh-in carries ~2 kg of
+// water, see today.js), and the raw reading is what the person last stood on,
+// so a widget can show either without this feed deciding for it. Null when
+// there is nothing recent enough to average — never a stale number dressed up
+// as a current one.
+function weightFor(db, pid) {
+  const latest = db.prepare(
+    'SELECT weight_kg FROM weight_log WHERE profile_id = $pid ORDER BY date DESC, id DESC LIMIT 1'
+  ).get({ pid })?.weight_kg ?? null;
+  let trend = null;
+  try {
+    trend = trendWeight(db, pid);
+  } catch { /* a feed must not fail over a garnish */ }
+  const r1 = n => (n == null ? null : Math.round(n * 10) / 10);
+  return { weight_kg: r1(latest), trend_weight_kg: r1(trend) };
+}
+
 function lastActive(db, pid) {
   const row = db.prepare(`
     SELECT MAX(t) AS t FROM (
@@ -118,6 +153,9 @@ router.get('/', (req, res) => {
         accent_color: p.accent_color,
         created_at:   p.created_at,
         last_active:  lastActive(db, p.id),
+        // Separate from last_active, which a login bumps — see lastLoggedAt.
+        last_logged_at: lastLoggedAt(db, p.id),
+        ...weightFor(db, p.id),
         goals: {
           calories: g.calorie_goal ?? null,
           protein:  g.protein_goal ?? null,
