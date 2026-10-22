@@ -299,6 +299,19 @@ test('a backup cannot set a setting the settings form would refuse', async () =>
   }
 });
 
+// ── a real-sized backup restores ──
+// The app-wide 256kb JSON parser used to run before the import route's own
+// 10mb one, so any real history (the main profile's was 420kb on 22/10/2026)
+// died with 413 "request entity too large" and restoring a backup never worked.
+test('a backup bigger than 256kb is accepted, other routes keep the small limit', async () => {
+  const exported = await (await api('GET', '/api/settings/export')).json();
+  const big = await api('POST', '/api/settings/import', { ...exported, padding: 'x'.repeat(400_000) });
+  assert.strictEqual(big.status, 200, JSON.stringify(await big.json()));
+
+  const r = await api('PATCH', '/api/settings', { padding: 'x'.repeat(400_000) });
+  assert.strictEqual(r.status, 413);
+});
+
 // ── the URL is checked where the request is made, not only where it is set ──
 // Any ironlog_api_url stored before that guard existed is still in the database
 // unvalidated, so the check has to happen at the point of use too.

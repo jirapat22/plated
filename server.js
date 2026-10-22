@@ -85,7 +85,12 @@ app.use('/api/orbit', orbitCors);
 // it covers JSON bodies too, which matters most for the summary feed History
 // pulls and the full-history export.
 app.use(compression());
-app.use(express.json({ limit: '256kb' }));
+// 256kb for every route EXCEPT the backup import, which brings its own 10mb
+// parser (routes/settings.js). An app-wide parser runs first, so without this
+// skip it rejected any real history (a few months of meals is ~400kb) with
+// "request entity too large" before the import route ever saw it.
+const jsonSmall = express.json({ limit: '256kb' });
+app.use((req, res, next) => (req.path === '/api/settings/import' ? next() : jsonSmall(req, res, next)));
 
 // Dashboard tile for Orbit. Two things were wrong with this: it was public, and
 // it SUMMED every profile's intake into one figure — so it leaked what people
