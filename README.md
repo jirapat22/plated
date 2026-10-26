@@ -18,7 +18,7 @@ A mobile-first food diary for logging meals, calories and macros, built on New Z
 - **Batch cooking:** log a pot of chilli once, then eat it over several days. Plated tracks how much is left, so leftovers are counted correctly.
 - **Trends:** calorie and macro averages, weigh-in trend lines and goal tracking.
 - **Works offline:** it installs to the home screen (PWA), and meals logged with no signal are queued and sent when the connection returns.
-- **Accessible:** built around a low-vision user, with text scaling up to 150%, bold text, high contrast and big tap targets, set per person.
+- **Accessible:** strong accessibility settings, with text scaling up to 150%, bold text, high contrast and big tap targets, set per person.
 - **Multi-user:** each person has a private profile.
 - **Talks to my gym app:** body weight and activity sync with [Ironlog](https://github.com/jirapat22/ironlog) through a per-user API key.
 

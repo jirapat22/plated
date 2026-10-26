@@ -127,7 +127,7 @@ eat time — that is intended, don't "fix" it.
 The scroll container runs `zoom: var(--ui-scale)`, so pointer coordinates are
 viewport px while an element's own CSS box is 1/scale of what
 `getBoundingClientRect()` reports. Hand-comparing the two is right at 100% and
-silently wrong at 150% — which is where the primary user lives. Anything that
+silently wrong at 150%, which is where real users run it. Anything that
 has to float above the page (`public/js/views/log.js`'s drag ghost) belongs on
 `<body>`, outside both the zoom and `.meal-session`'s `overflow: hidden`, laid
 out unzoomed and scaled back up (`utils/dragIntent.js`'s `unzoom`).
@@ -173,7 +173,7 @@ live values are per-profile in `profile_settings`).
 
 ## Accessibility is a hard constraint
 
-The primary user is low-vision and runs the UI at up to 150% text scale. Every
+Real users run the UI at up to 150% text scale. Every
 dimension in `style.css` is in `px` and scaling goes through
 `zoom: var(--ui-scale)` on `.view-container` / `.sheet-content` — **not** root
 font-size. Elements outside those subtrees (nav, toasts, profile pill, lock
@@ -191,7 +191,7 @@ Don't re-propose these; they were decided deliberately.
 
 - **The passcode stays 4 digits.** No longer codes, no escalating lockouts — the
   per-IP limiter (10 failures / 15 min, then a 15-min block) is the accepted
-  mitigation. Every version of that hardening is paid for by the low-vision user.
+  mitigation. Every version of that hardening is paid for by the users who need large text.
 - **No logging reminders or push nags.** Rejected.
 - **No micronutrient tracking.** Rejected 2026-07-23.
 - **`isSafeExternalUrl` must not be weakened for testability.** It is the line
