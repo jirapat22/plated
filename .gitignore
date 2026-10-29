@@ -6,3 +6,6 @@ data/
 *.db-wal
 .DS_Store
 Thumbs.db
+
+# Bug reports filed from Discord by I.O. (screenshots + notes, stay on the Mac)
+.bugs/
