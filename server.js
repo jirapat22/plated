@@ -34,6 +34,7 @@ const batchesRoutes    = require('./src/routes/batches');
 const connectionsRoutes = require('./src/routes/connections');
 const leftoversRoutes   = require('./src/routes/leftovers');
 const presetsRoutes     = require('./src/routes/presets');
+const ioRoutes          = require('./src/routes/io');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -159,6 +160,9 @@ app.use('/api/batches',    requireProfile, batchesRoutes);
 app.use('/api/leftovers',  requireProfile, leftoversRoutes);
 app.use('/api/connections', requireProfile, connectionsRoutes);
 app.use('/api/presets',    requireProfile, presetsRoutes);
+
+// I.O. (Pat's Discord assistant): its own key, one profile, three routes. See src/routes/io.js.
+app.use('/api/io', ioRoutes);
 
 // SPA fallback
 app.get('*', (req, res) => {
