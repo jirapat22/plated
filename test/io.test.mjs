@@ -86,7 +86,9 @@ test('a label becomes a library food that can then be logged by weight', async (
 
 test('everything outside the allowlist is closed', async () => {
   for (const [m, p] of [
-    ['GET', '/api/io/meals/summary'],
+    ['POST', '/api/io/weight'],
+    ['DELETE', '/api/io/weight/1'],
+    ['GET', '/api/io/weight/day/2026-10-29'],
     ['DELETE', '/api/io/meals/sessions/1'],
     ['GET', '/api/io/foods/search?q=egg'],
     ['GET', '/api/io/settings'],
@@ -94,4 +96,14 @@ test('everything outside the allowlist is closed', async () => {
   ]) {
     assert.strictEqual((await io(m, p)).status, 404, `${m} ${p} should be closed to I.O.`);
   }
+});
+
+test('the coach can read daily totals, weight and measurements, for the pinned profile only', async () => {
+  for (const p of ['/api/io/meals/summary?days=14', '/api/io/weight?limit=30', '/api/io/measurements']) {
+    assert.strictEqual((await io('GET', p)).status, 200, p);
+  }
+  const days = await (await io('GET', '/api/io/meals/summary?days=14')).json();
+  const kcal = (Array.isArray(days) ? days : days.days || []).reduce((t, d) => t + (d.calories || 0), 0);
+  assert.ok(kcal >= 750, `the meal logged above should be in the totals (${JSON.stringify(days).slice(0, 200)})`);
+  assert.strictEqual((await io('GET', '/api/io/meals/summary?profile=2')).status, 400);
 });
