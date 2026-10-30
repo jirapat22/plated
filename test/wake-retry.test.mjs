@@ -68,3 +68,17 @@ test('writes are never retried', async () => {
     err => err.unreachable === true);
   assert.strictEqual(calls.length, 1, `a POST was sent ${calls.length} times`);
 });
+
+test("the app's own 503 message is shown as written, not as 'server restarting'", async () => {
+  // Bug from Discord 29/10: searching "Frozen" while building a batch said "The
+  // server is restarting" because Open Food Facts was busy and the app said so
+  // with a JSON 503. No retry either: the app answered, it isn't waking.
+  globalThis.fetch = async (p, o) => {
+    calls.push(o.method);
+    return new Response(JSON.stringify({ error: 'Open Food Facts is busy right now — try that again in a moment' }),
+      { status: 503, headers: { 'Content-Type': 'application/json' } });
+  };
+  await assert.rejects(() => api.get('/api/foods/search/remote?q=Frozen'),
+    err => /Open Food Facts is busy/.test(err.message) && !err.unreachable && err.status === 503);
+  assert.strictEqual(calls.length, 1, 'an answer from the app should not be retried as a wake');
+});

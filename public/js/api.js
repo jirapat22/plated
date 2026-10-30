@@ -160,6 +160,19 @@ async function request(method, path, body, retried = false) {
     // cache sat populated and unused, and a 30-second redeploy blanked the
     // screen it was built to protect. cachedOr re-throws for writes and for
     // paths outside the allowlist, so only cacheable GETs change behaviour.
+    // ...unless the APP wrote this 503 itself. The branded-food search answers
+    // 503 {error: "Open Food Facts is busy right now"} when that outside site
+    // rate-limits it, and this branch replaced that true sentence with "The
+    // server is restarting", on a server that was up and had just said so.
+    // The app only ever sends 503 (with JSON {error}); a deploy or a dead origin
+    // shows up as the proxy's 502/504, so those keep the restarting story. The
+    // app's own 503 is shown as written, and not reported as a bug either: the
+    // app chose that answer, it didn't crash.
+    const appAnswered = resp.status === 503 && data && typeof data === 'object' && typeof data.error === 'string';
+    if (UNREACHABLE.has(resp.status) && appAnswered) {
+      markReachable();
+      throw Object.assign(new Error(data.error), { status: resp.status, data });
+    }
     if (UNREACHABLE.has(resp.status)) {
       if (method === 'GET' && !retried) {
         await new Promise(r => setTimeout(r, WAKE_RETRY_MS));
