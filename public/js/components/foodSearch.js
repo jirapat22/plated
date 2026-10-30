@@ -69,6 +69,13 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
   let query  = '';
   let remoteRows = [];
   let pendingBarcode = null;
+  // Which search is the latest. Bug from Discord (29/10): typing "Edama…",
+  // then changing it to "Frozen", showed "Frozen" in the box but the results,
+  // the error note and the "add it" name ("Edamafrozen") of the OLDER search.
+  // That one had no local matches, so it went on to Open Food Facts (up to 8s)
+  // and landed after the newer search had already drawn. Every search now takes
+  // a number, and anything but the latest throws its answer away.
+  let searchSeq = 0;
 
   // ── Chip filter ─────────────────────────────────────────────
   container.querySelectorAll('.fs-chip').forEach(chip => {
@@ -92,6 +99,8 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
 
   // ── Search ───────────────────────────────────────────────────
   async function search(fetchRemote = false) {
+    const mySeq = ++searchSeq;
+    const stale = () => mySeq !== searchSeq;   // a newer search has started since
     let remoteError = '';
     // A typed query searches FOODS, whichever chip was last tapped — Recent,
     // Favourites, Batches, Leftovers and Presets are all "when there is no
@@ -118,6 +127,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
         // that was the only way to correct one. You still cannot eat from an
         // empty pot, so the picker is where that filter belongs.
         const batches = (await api.get('/api/batches')).filter(b => b.remaining_g > 1);
+        if (stale()) return;
         results.innerHTML = '';
         if (!batches.length) {
           results.innerHTML = `<div class="empty-state"><div class="empty-icon" style="font-size:28px">🍱</div>
@@ -138,6 +148,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
       // filling. Batches had the identical problem and solved it this way.
       if (filter === 'leftovers' && !q) {
         const leftovers = await api.get('/api/leftovers');
+        if (stale()) return;
         results.innerHTML = '';
         if (!leftovers.length) {
           results.innerHTML = `<div class="empty-state"><div class="empty-icon" style="font-size:28px">🥡</div>
@@ -153,6 +164,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
       // lives in Foods → Presets, next to the batch it makes.
       if (filter === 'presets' && !q) {
         const presets = (await api.get('/api/presets')).filter(p => p.kind === 'meal');
+        if (stale()) return;
         results.innerHTML = '';
         if (!presets.length) {
           results.innerHTML = `<div class="empty-state"><div class="empty-icon" style="font-size:28px">📋</div>
@@ -177,6 +189,7 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
         if (fetchRemote || rows.length === 0) {
           try {
             const remote = await api.get(`/api/foods/search/remote?q=${encodeURIComponent(q)}`);
+            if (stale()) return;                 // don't let an old query's rows leak into remoteRows
             const existing = new Set(rows.map(r => r.name.toLowerCase()));
             remoteRows = remote.filter(r => !existing.has(r.name.toLowerCase()));
             rows = [...rows, ...remoteRows];
@@ -190,8 +203,10 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
         rows = await api.get('/api/foods/recent');
       }
 
+      if (stale()) return;
       renderResults(rows, q, fetchRemote, remoteError);
     } catch (err) {
+      if (stale()) return;
       results.innerHTML = `<div class="empty-state"><div class="empty-text">${esc(err.message)}</div></div>`;
     }
   }
