@@ -84,6 +84,21 @@ test('a label becomes a library food that can then be logged by weight', async (
   assert.strictEqual((await r.json()).entry.calories, 229.9);
 });
 
+test('I.O. can undo an entry it logged itself, and nothing else', async () => {
+  const auth = { Authorization: `Bearer ${patToken}` };
+  const logged = await (await io('POST', '/api/io/meals/log', { ...meal, client_id: 'io-food-undo-test-1' })).json();
+  // Pat's own entry from the app: I.O. must not be able to touch it
+  const app = await (await call('POST', '/api/meals/log', meal, auth)).json();
+  assert.strictEqual((await io('DELETE', `/api/io/meals/entries/${app.entry.id}`)).status, 404);
+  // An I.O. log without an "io-" client id doesn't count either
+  const plain = await (await io('POST', '/api/io/meals/log', meal)).json();
+  assert.strictEqual((await io('DELETE', `/api/io/meals/entries/${plain.entry.id}`)).status, 404);
+  assert.strictEqual((await io('DELETE', `/api/io/meals/entries/${logged.entry.id}`)).status, 200);
+  const day = await (await call('GET', `/api/meals/day/${today()}`, undefined, auth)).json();
+  const ids = day.sessions.flatMap(s => s.entries.map(e => e.id));
+  assert.ok(!ids.includes(logged.entry.id) && ids.includes(app.entry.id));
+});
+
 test('everything outside the allowlist is closed', async () => {
   for (const [m, p] of [
     ['POST', '/api/io/weight'],

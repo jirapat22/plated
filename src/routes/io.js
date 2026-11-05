@@ -6,10 +6,11 @@
 // fails closed when either is unset. It reuses the real meals/foods routers so
 // a quick log from Discord goes through the same validation, idempotency and
 // bookkeeping as one typed in the app — but only through the handful of routes
-// allowlisted below. Everything else (settings, export, deletes, weight edits,
+// allowlisted below. Everything else (settings, export, most deletes, weight edits,
 // other profiles) answers 404, so a leaked key can add meals and read Pat's own
 // food/weight history (for the coach), nothing more.
 const express = require('express');
+const { getDb } = require('../db');
 const { sameKey } = require('./orbit');
 const mealsRoutes = require('./meals');
 const foodsRoutes = require('./foods');
@@ -50,7 +51,21 @@ function allow(...rules) {
 
 const router = express.Router();
 router.use(requireIoKey);
-router.use('/meals', allow('POST /log', 'GET /day/', 'GET /summary'), mealsRoutes); // log a meal, read days back
+// Undo, for the ↩️ button under a logged meal in Discord (Pat, 05/11). Only an entry I.O. logged
+// ITSELF in the last 2 days: its id is in the answer Plated stored for one of I.O.'s own log calls
+// (client_id "io-..."). Anything Pat logged in the app, or anything older, stays out of reach.
+function ioLoggedEntry(req, res, next) {
+  if (req.method !== 'DELETE' || !req.path.startsWith('/entries/')) return next();
+  const id = parseInt(req.path.slice('/entries/'.length));
+  const mine = id > 0 && getDb().prepare(`SELECT 1 FROM idempotency
+    WHERE profile_id = $p AND client_id LIKE 'meal-log:io-%' AND created_at >= datetime('now', '-2 days')
+      AND json_extract(response, '$.entry.id') = $id`).get({ p: req.profileId, id });
+  if (!mine) return res.status(404).json({ error: 'I.O. can only undo what it logged itself (last 2 days)' });
+  next();
+}
+
+router.use('/meals', allow('POST /log', 'GET /day/', 'GET /summary', 'DELETE /entries/'), ioLoggedEntry,
+  mealsRoutes);                                                      // log a meal (and undo it), read days back
 router.use('/foods', allow('POST /'), foodsRoutes);                    // save a food read off a label
 // Read-only, for I.O.'s training coach (daily totals above, plus weight and tape measurements)
 router.use('/weight', allow('GET /'), weightRoutes);
