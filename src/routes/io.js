@@ -61,6 +61,14 @@ function ioLoggedEntry(req, res, next) {
     WHERE profile_id = $p AND client_id LIKE 'meal-log:io-%' AND created_at >= datetime('now', '-2 days')
       AND json_extract(response, '$.entry.id') = $id`).get({ p: req.profileId, id });
   if (!mine) return res.status(404).json({ error: 'I.O. can only undo what it logged itself (last 2 days)' });
+  // Each I.O. log starts its own meal, so undoing the entry also removes that meal once it's empty.
+  // Without this every ↩️ left an empty "Meal N" behind (33 of them on 14/11, from I.O.'s scenario tests).
+  const sid = getDb().prepare('SELECT meal_session_id FROM meal_entries WHERE id = $id').get({ id })?.meal_session_id;
+  if (sid) res.on('finish', () => {
+    if (res.statusCode !== 200) return;
+    getDb().prepare(`DELETE FROM meal_sessions WHERE id = $s AND profile_id = $p
+      AND NOT EXISTS (SELECT 1 FROM meal_entries WHERE meal_session_id = $s)`).run({ s: sid, p: req.profileId });
+  });
   next();
 }
 

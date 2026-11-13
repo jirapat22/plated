@@ -97,6 +97,8 @@ test('I.O. can undo an entry it logged itself, and nothing else', async () => {
   const day = await (await call('GET', `/api/meals/day/${today()}`, undefined, auth)).json();
   const ids = day.sessions.flatMap(s => s.entries.map(e => e.id));
   assert.ok(!ids.includes(logged.entry.id) && ids.includes(app.entry.id));
+  // ...and the meal that log started goes too, instead of staying behind empty
+  assert.ok(!day.sessions.some(s => s.id === logged.session_id));
 });
 
 test('everything outside the allowlist is closed', async () => {
