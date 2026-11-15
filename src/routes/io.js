@@ -63,11 +63,22 @@ function ioLoggedEntry(req, res, next) {
   if (!mine) return res.status(404).json({ error: 'I.O. can only undo what it logged itself (last 2 days)' });
   // Each I.O. log starts its own meal, so undoing the entry also removes that meal once it's empty.
   // Without this every ↩️ left an empty "Meal N" behind (33 of them on 14/11, from I.O.'s scenario tests).
-  const sid = getDb().prepare('SELECT meal_session_id FROM meal_entries WHERE id = $id').get({ id })?.meal_session_id;
+  const row = getDb().prepare('SELECT meal_session_id, food_id FROM meal_entries WHERE id = $id').get({ id });
+  const sid = row?.meal_session_id;
   if (sid) res.on('finish', () => {
     if (res.statusCode !== 200) return;
     getDb().prepare(`DELETE FROM meal_sessions WHERE id = $s AND profile_id = $p
       AND NOT EXISTS (SELECT 1 FROM meal_entries WHERE meal_session_id = $s)`).run({ s: sid, p: req.profileId });
+    // A quick log's typed text is stored as its own 'quick' food. Once its only entry is undone nothing
+    // points at it any more, so it goes too (15/11: 24 of them were left behind by I.O.'s scenario tests).
+    if (row.food_id) {
+      getDb().prepare('DELETE FROM profile_food_stats WHERE food_id = $f AND NOT EXISTS (SELECT 1 FROM meal_entries WHERE food_id = $f)').run({ f: row.food_id });
+      getDb().prepare(`DELETE FROM foods WHERE id = $f AND source = 'quick' AND created_by_profile = $p
+        AND NOT EXISTS (SELECT 1 FROM meal_entries WHERE food_id = $f)
+        AND NOT EXISTS (SELECT 1 FROM leftovers WHERE food_id = $f)
+        AND NOT EXISTS (SELECT 1 FROM batches WHERE food_id = $f)
+        AND NOT EXISTS (SELECT 1 FROM preset_items WHERE food_id = $f)`).run({ f: row.food_id, p: req.profileId });
+    }
   });
   next();
 }

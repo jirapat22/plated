@@ -99,6 +99,12 @@ test('I.O. can undo an entry it logged itself, and nothing else', async () => {
   assert.ok(!ids.includes(logged.entry.id) && ids.includes(app.entry.id));
   // ...and the meal that log started goes too, instead of staying behind empty
   assert.ok(!day.sessions.some(s => s.id === logged.session_id));
+  // ...and so does the quick food that held its typed text (15/11: 24 were left behind)
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(path.join(dataDir, 'plated.db'), { readOnly: true });
+  assert.strictEqual(db.prepare('SELECT COUNT(*) c FROM foods WHERE id = ?').get(logged.entry.food_id).c, 0);
+  assert.strictEqual(db.prepare('SELECT COUNT(*) c FROM foods WHERE id = ?').get(app.entry.food_id).c, 1);
+  db.close();
 });
 
 test('everything outside the allowlist is closed', async () => {

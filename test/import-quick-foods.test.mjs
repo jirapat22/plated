@@ -106,7 +106,8 @@ test('restoring a backup keeps your Quick Logs pointing at YOUR food', async () 
 test('a restored Quick Log can still be edited and undeleted', async () => {
   // The two things that broke downstream, exercised end to end rather than
   // asserted about ids.
-  const day = await json(await as(pat)('GET', `/api/meals/day/${new Date().toISOString().slice(0, 10)}`));
+  // The LOCAL date, like the app (the UTC one is yesterday in NZ before 1pm)
+  const day = await json(await as(pat)('GET', `/api/meals/day/${(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })()}`));
   const entry = day.sessions.flatMap(s => s.entries).find(e => e.food_name === SHARED_WORDS);
   assert.ok(entry, 'nothing to edit');
 

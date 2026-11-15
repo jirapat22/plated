@@ -225,7 +225,8 @@ test('two batches with the same name stay separate across a restore', async () =
   const p = await A('POST', `/api/batches/${small.id}/portion`, { grams: 100 });
   assert.strictEqual(p.status, 201, await p.text());
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The LOCAL date, like the app: the UTC one is yesterday in NZ before 1pm, and this failed after midnight
+  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
   const day = await (await A('GET', `/api/meals/day/${today}`)).json();
   const entry = day.sessions.flatMap(s => s.entries).filter(e => e.food_name === 'Sunday chilli').at(-1);
   assert.ok(entry, 'the portion did not appear on the day');
