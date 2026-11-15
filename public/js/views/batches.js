@@ -381,7 +381,7 @@ function reconcileStep(content, batch, actual, delta, onDone) {
       if (eat && last.meal_name) eat.textContent = `I ate it \u2014 add ${g0(gap)} g to ${last.meal_name}`;
     }
     const when = new Date(last.date + 'T00:00:00')
-      .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      .toLocaleDateString('en-NZ', { weekday: 'short', month: 'short', day: 'numeric' });
     const to = round1(short ? last.quantity_g + gap : last.quantity_g - gap);
     // Shrinking it has a floor: an entry of 0 g or less is not an entry, and
     // PATCH would refuse it anyway. When one portion cannot absorb the whole
@@ -689,7 +689,7 @@ export function openLeftoverLog(l, onDone, opts = {}) {
     // past-leaning strip label yesterday "Tomorrow" elsewhere in this app.
     const label = iso => iso === today ? 'Today' : iso === addDays(today, 1) ? 'Tomorrow'
       : iso === addDays(today, -1) ? 'Yesterday'
-      : new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      : new Date(iso + 'T00:00:00').toLocaleDateString('en-NZ', { weekday: 'short', month: 'short', day: 'numeric' });
     let date = today;
 
     content.innerHTML = `
@@ -830,7 +830,7 @@ export function openPortion(batch, onDone, opts = {}) {
     const dayLabel = iso => iso === today ? 'Today'
       : iso === addDays(today, 1)  ? 'Tomorrow'
       : iso === addDays(today, -1) ? 'Yesterday'
-      : new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      : new Date(iso + 'T00:00:00').toLocaleDateString('en-NZ', { weekday: 'short', month: 'short', day: 'numeric' });
     let selectedDate = today;
 
     content.innerHTML = `

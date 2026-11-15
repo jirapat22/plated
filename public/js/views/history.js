@@ -14,11 +14,11 @@ function fmtDateFull(iso) {
   const today = isoDate(new Date());
   if (iso === today) return 'Today';
   if (iso === isoDate(addDays(new Date(), 1))) return 'Tomorrow';
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  return d.toLocaleDateString('en-NZ', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
 function fmtWeekday(d) {
-  return d.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 3);
+  return d.toLocaleDateString('en-NZ', { weekday: 'short' }).slice(0, 3);
 }
 
 // Accent colors come from another profile's record and end up interpolated

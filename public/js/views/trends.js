@@ -208,7 +208,8 @@ function daySpan(fromISO, toISO) {
   }
   return out;
 }
-const mmdd = iso => { const d = new Date(iso + 'T00:00:00'); return `${d.getMonth() + 1}/${d.getDate()}`; };
+// NZ order (day/month): "10/17" read as nonsense to Pat (re-audit 15/11)
+const mmdd = iso => { const d = new Date(iso + 'T00:00:00'); return `${d.getDate()}/${d.getMonth() + 1}`; };
 
 function makeChart(id, labels, data, color, yLabel, opts = {}) {
   destroyChart(id);
@@ -607,7 +608,7 @@ export function renderTrends(container) {
     const wkAvg   = wkRows.length ? wkTotal / wkRows.length : 0;
     const wkLabel = (() => {
       const m = new Date(thisMon + 'T00:00:00'), su = new Date(m); su.setDate(su.getDate() + 6);
-      const f = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const f = d => d.toLocaleDateString('en-NZ', { month: 'short', day: 'numeric' });
       return `${f(m)} – ${f(su)}`;
     })();
 
@@ -667,7 +668,7 @@ export function renderTrends(container) {
       if (!box) return;
       const max = Math.max(m.goal || 1, ...weekData.map(w => w[metric]).filter(v => v != null)) * 1.08;  // headroom
       const goalPct = m.goal ? (m.goal / max) * 100 : null;
-      const f = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const f = d => d.toLocaleDateString('en-NZ', { month: 'short', day: 'numeric' });
       // A week's weight move counts as progress when it goes the way the phase
       // wants. Colouring by raw direction would mark every good bulking week red.
       const phase = settings.phase || 'maintain';
@@ -689,7 +690,7 @@ export function renderTrends(container) {
         const kgColor = w.kg == null ? 'var(--text-faint)'
           : kgGood(w.kg) ? 'var(--success)' : 'var(--text-muted)';
         return `<div style="display:flex;align-items:center;gap:8px;margin:9px 0">
-          <span style="width:74px;flex-shrink:0;font-size:11px;color:var(--text-muted)">${f(mon)}–${sun.getDate()}</span>
+          <span style="width:84px;flex-shrink:0;font-size:11px;color:var(--text-muted)">${mon.getMonth() === sun.getMonth() ? `${mon.getDate()}–${f(sun)}` : `${f(mon)}–${f(sun)}`}</span>
           <div style="flex:1;min-width:30px;height:20px;background:var(--surface-2);border-radius:5px;position:relative;overflow:hidden">
             <div style="height:100%;width:${none ? 0 : Math.round(val / max * 100)}%;background:${m.color};border-radius:5px"></div>
             ${goalPct != null ? `<div title="goal" style="position:absolute;top:-1px;bottom:-1px;left:${goalPct}%;width:2px;background:var(--text);opacity:.5"></div>` : ''}
@@ -817,7 +818,7 @@ export function renderTrends(container) {
     }
     const etaLabel = weeksToTarget ? (() => {
       const d = new Date(); d.setDate(d.getDate() + Math.round(weeksToTarget * 7));
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return d.toLocaleDateString('en-NZ', { month: 'short', day: 'numeric' });
     })() : null;
 
     // ── Expected weight from logged calories (fixed last 28 days) ──
@@ -1183,7 +1184,7 @@ export function renderTrends(container) {
         <div style="padding:0 12px 8px">
           ${recentFlagged.slice().reverse().map(r => {
             const d = new Date(r.date + 'T00:00:00');
-            const lbl = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            const lbl = d.toLocaleDateString('en-NZ', { weekday: 'short', month: 'short', day: 'numeric' });
             const pct = goal ? Math.round((r.calories / goal) * 100) : 0;
             return `
             <div class="review-row">

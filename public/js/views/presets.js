@@ -165,7 +165,7 @@ export function openPresetLog(preset, onDone, opts = {}) {
     const dayLabel = d => d === today ? 'Today'
       : d === addDaysIso(today, -1) ? 'Yesterday'
       : d === addDaysIso(today, 1) ? 'Tomorrow'
-      : new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      : new Date(d + 'T00:00:00').toLocaleDateString('en-NZ', { weekday: 'short', month: 'short', day: 'numeric' });
     let date = want;
     const rows = preset.items.map(i => ({ ...i, grams: i.quantity_g }));
     // One id per intent — see the block in log.js's quantity sheet. A preset

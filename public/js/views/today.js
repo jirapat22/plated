@@ -464,7 +464,7 @@ export function renderToday(container) {
       <div class="today-header" style="padding-bottom:4px">
         <div>
           <div class="today-date">Today</div>
-          <div class="today-day">${new Date(viewDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+          <div class="today-day">${new Date(viewDate + 'T00:00:00').toLocaleDateString('en-NZ', { weekday: 'long', month: 'long', day: 'numeric' })}</div>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
           ${phaseBadge(settings.phase)}

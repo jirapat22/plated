@@ -105,7 +105,7 @@ function destinationSheet(title, subtitle, viewDate, excludeSessionId, initialOt
     const dayLabel = iso => iso === today ? 'Today'
       : iso === addDaysIso(today, 1)  ? 'Tomorrow'
       : iso === addDaysIso(today, -1) ? 'Yesterday'
-      : new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      : new Date(iso + 'T00:00:00').toLocaleDateString('en-NZ', { weekday: 'short', month: 'short', day: 'numeric' });
     // By date, not by index. quickDays[1] happened to be tomorrow only while the
     // strip started at today; the comment above this block is the same warning.
     let selectedDate = opts.defaultDate || addDaysIso(today, 1);   // copy still defaults to tomorrow
