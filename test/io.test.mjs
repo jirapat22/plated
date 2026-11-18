@@ -130,3 +130,13 @@ test('the coach can read daily totals, weight and measurements, for the pinned p
   assert.ok(kcal >= 750, `the meal logged above should be in the totals (${JSON.stringify(days).slice(0, 200)})`);
   assert.strictEqual((await io('GET', '/api/io/meals/summary?profile=2')).status, 400);
 });
+
+test('I.O. can read the goal numbers for the weekly review, and nothing else from Settings', async () => {
+  const r = await io('GET', '/api/io/targets');
+  assert.strictEqual(r.status, 200);
+  const body = await r.json();
+  assert.deepStrictEqual(Object.keys(body).sort(),
+    ['calorie_goal', 'phase', 'protein_goal', 'protein_min', 'target_weight_kg', 'trend_weight_kg', 'week_budget']);
+  assert.strictEqual((await call('GET', '/api/io/targets')).status, 401);           // no key, no numbers
+  assert.strictEqual((await io('GET', '/api/io/settings')).status, 404);            // the rest stays closed
+});

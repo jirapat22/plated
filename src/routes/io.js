@@ -16,6 +16,8 @@ const mealsRoutes = require('./meals');
 const foodsRoutes = require('./foods');
 const weightRoutes = require('./weight');
 const measurementsRoutes = require('./measurements');
+const { allSettings } = require('../utils/profileSettings');
+const { trendWeight } = require('../utils/macros');
 
 function requireIoKey(req, res, next) {
   const required = process.env.IO_API_KEY?.trim();
@@ -82,6 +84,23 @@ function ioLoggedEntry(req, res, next) {
   });
   next();
 }
+
+// Read-only goal numbers for I.O.'s Sunday weekly review (19/11/2026): the calorie goal, protein minimum
+// and aim, weekly budget switch, phase, target weight and today's trend weight. Just these keys, so the
+// rest of Settings (passcodes, connections, export) stays closed to the key.
+const TARGET_KEYS = ['calorie_goal', 'protein_goal', 'protein_min', 'week_budget', 'phase', 'target_weight_kg'];
+router.get('/targets', (req, res) => {
+  try {
+    const db = getDb();
+    const all = allSettings(db, req.profileId);
+    const out = Object.fromEntries(TARGET_KEYS.map(k => [k, all[k] ?? null]));
+    const bw = trendWeight(db, req.profileId);
+    out.trend_weight_kg = bw != null ? Math.round(bw * 10) / 10 : null;
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 router.use('/meals', allow('POST /log', 'GET /day/', 'GET /summary', 'DELETE /entries/'), ioLoggedEntry,
   mealsRoutes);                                                      // log a meal (and undo it), read days back
