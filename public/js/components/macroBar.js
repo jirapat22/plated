@@ -30,7 +30,23 @@ export function renderMacroBar(container, totals, goals, showRemaining = true, p
     // e.g. 220g/191g goal → the last ~13% of the bar (29 of 220g) glows.
     const overSegPct = over ? ((consumed - goal) / consumed) * 100 : 0;
 
-    const rightLabel = (showRemaining && goal > 0)
+    // Protein can carry a MINIMUM under the goal (settings 'protein_min'): the
+    // floor to hit every day, with the goal as the aim. Drawn as a tick on the
+    // bar at the minimum's spot, and the label says which zone the day is in:
+    //   under the min  -> "12g to min"   (the number that matters most)
+    //   min..goal      -> "min ✓ · 20g to aim"
+    //   over the goal  -> "+8g over", same as without a minimum.
+    // Only when the min sits below the goal; otherwise it means nothing.
+    const min = m.key === 'protein' ? Math.round(goals.proteinMin ?? 0) : 0;
+    const hasMin = min > 0 && goal > 0 && min < goal;
+    const minPct = hasMin ? (min / goal) * 100 : 0;
+    const minLabel = !hasMin || over || unsure ? null
+      : consumed < min
+        ? `<span style="color:var(--text-muted);font-weight:600">${min - consumed}g to min</span>`
+        : `<span style="color:${m.color};font-weight:600">min ✓</span> · <span style="color:var(--text-faint)">${remaining}g to aim</span>`;
+
+    const rightLabel = (showRemaining && minLabel) ? minLabel
+      : (showRemaining && goal > 0)
       ? over
         ? `<span style="color:${m.color};font-weight:700">+${consumed - goal}g over</span>`
         : unsure
@@ -43,11 +59,12 @@ export function renderMacroBar(container, totals, goals, showRemaining = true, p
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
           <span style="font-size:13px;font-weight:700;color:${m.color}">${m.label}</span>
           <span style="font-size:13px;font-variant-numeric:tabular-nums">
-            <strong style="color:${m.color}">${consumed}${unsure ? '+' : ''}</strong><span style="color:var(--text-faint)">${goal > 0 ? ` / ${goal}g` : 'g'}</span>${rightLabel ? ` · ${rightLabel}` : ''}
+            <strong style="color:${m.color}">${consumed}${unsure ? '+' : ''}</strong><span style="color:var(--text-faint)">${goal > 0 ? ` / ${goal}g` : 'g'}${hasMin ? ` (min ${min})` : ''}</span>${rightLabel ? ` · ${rightLabel}` : ''}
           </span>
         </div>
         <div style="height:9px;background:var(--surface-2);border-radius:999px;position:relative">
           <div style="height:100%;width:${pct}%;background:${m.color};border-radius:999px;transition:width 600ms ease-out"></div>
+          ${hasMin ? `<div title="Minimum ${min}g" style="position:absolute;top:-2px;bottom:-2px;left:calc(${minPct}% - 1px);width:2px;background:var(--text-muted);border-radius:1px;opacity:.8"></div>` : ''}
           ${over ? `<div style="position:absolute;top:0;right:0;height:100%;width:${overSegPct}%;background:${m.color};filter:brightness(1.3) saturate(1.3);box-shadow:0 0 8px 2px ${m.color};border-left:2px solid rgba(255,255,255,.6);border-radius:0 999px 999px 0"></div>` : ''}
         </div>
       </div>

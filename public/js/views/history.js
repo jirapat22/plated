@@ -239,6 +239,8 @@ export function renderHistory(container) {
     const goals = {
       cal:     pick('calorie_goal', 2000),
       protein: pick('protein_goal', 150),
+      // Current setting, not history: the minimum isn't in goal_history yet.
+      proteinMin: parseFloat(settings.protein_min) || 0,
       carbs:   pick('carb_goal', 250),
       fat:     pick('fat_goal', 65),
       fiber:   pick('fiber_goal', 30),

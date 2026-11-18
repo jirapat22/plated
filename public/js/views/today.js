@@ -227,6 +227,7 @@ export function renderToday(container) {
     const goals  = {
       cal:    parseFloat(settings.calorie_goal)  || 2000,
       protein:parseFloat(settings.protein_goal)  || 150,
+      proteinMin: parseFloat(settings.protein_min) || 0,   // floor; 0 = none
       carbs:  parseFloat(settings.carb_goal)      || 250,
       fat:    parseFloat(settings.fat_goal)        || 65,
       fiber:  parseFloat(settings.fiber_goal)      || 30,

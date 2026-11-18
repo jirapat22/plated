@@ -16,6 +16,12 @@ const router = express.Router();
 
 const ALLOWED = new Set([
   'calorie_goal', 'protein_goal', 'carb_goal', 'fat_goal',
+  // Protein MINIMUM (18/11/2026, Pat): the floor that must be hit every day,
+  // with protein_goal as the "aim". Research puts most of the muscle benefit
+  // by ~1.6 g/kg, so the goal can sit higher (fullness on a cut) without
+  // every 125 g day reading as a miss. Blank = no minimum (the old behaviour).
+  // Plain grams, not g/kg: it is a line Pat picked, it shouldn't drift.
+  'protein_min',
   'fiber_goal', 'ironlog_api_url', 'ironlog_api_key',
   'phase', 'tdee', 'cut_deficit', 'bulk_surplus', 'energy_unit', 'ironlog_last_synced',
   'target_weight_kg',

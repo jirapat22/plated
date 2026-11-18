@@ -94,6 +94,7 @@ function isSafeExternalUrl(str) {
 const NUMERIC_RANGE = {
   calorie_goal:        [200, 20000, 'kcal'],
   protein_goal:        [0, 2000, 'g'],
+  protein_min:         [0, 2000, 'g'],
   carb_goal:           [0, 2000, 'g'],
   fat_goal:            [0, 2000, 'g'],
   fiber_goal:          [0, 500, 'g'],

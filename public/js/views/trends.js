@@ -441,6 +441,8 @@ export function renderTrends(container) {
     if (!container.isConnected) return;
     const goal        = parseFloat(settings.calorie_goal) || 2000;
     const proteinGoal = parseFloat(settings.protein_goal) || 150;
+    // Optional daily floor under the aim (Settings → Protein minimum).
+    const proteinMin  = parseFloat(settings.protein_min) || 0;
     const carbGoal    = parseFloat(settings.carb_goal) || 250;
     const fatGoal     = parseFloat(settings.fat_goal)  || 65;
     const ul          = unitLabel();
@@ -1137,6 +1139,15 @@ export function renderTrends(container) {
           ['protein', 'carbs', 'fat'].some(k => anyPartial(wkRows, k))
             ? `<div style="color:var(--text-muted);font-size:11px;margin-top:6px">+ = at least this much; a meal this week didn't record every macro.</div>`
             : ''}`}
+        ${/* With a protein minimum: "must hit X every day, average Y over the
+             week" is the plan, so the week card answers both halves of it.
+             Partial (Quick Log) days count by their floor, which can only
+             under-report, never invent a hit. */
+          wkRows.length && proteinMin > 0 && proteinMin < proteinGoal ? (() => {
+            const hit = wkRows.filter(r => (r.protein || 0) >= proteinMin).length;
+            const aimOk = wkP >= proteinGoal;
+            return `<div style="font-size:12px;color:var(--text-muted);margin-top:8px">Protein: <strong style="color:var(--protein)">${hit}/${wkRows.length}</strong> days at your ${Math.round(proteinMin)}g minimum · week average ${aimOk ? '<strong style="color:var(--protein)">on aim ✓</strong>' : `${Math.round(proteinGoal - wkP)}g under your ${Math.round(proteinGoal)}g aim`}</div>`;
+          })() : ''}
         ${wkToday ? `<div style="font-size:12px;color:var(--text-faint);margin-top:10px;border-top:1px solid var(--border);padding-top:10px">Today in progress · <strong style="color:var(--text-muted)">${fmtE(wkToday.calories || 0)} ${ul}</strong> so far, not counted above.</div>` : ''}
       </div>` : ''}
 

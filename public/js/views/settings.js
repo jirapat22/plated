@@ -263,6 +263,9 @@ export function renderSettings(container) {
         })()}
         <div id="msplit-box"></div>
         ${goalRow('protein_goal',      'Protein',       s.protein_goal,      'g', false, s.macro_mode === 'gkg')}
+        ${/* The floor under the protein aim: always typed, even in g/kg mode,
+             because it's a line you choose rather than a formula. Blank = none. */
+          goalRow('protein_min', 'Protein minimum', s.protein_min, 'g')}
         ${goalRow('carb_goal',         'Carbs',         s.carb_goal,         'g', false, s.macro_mode === 'gkg')}
         ${goalRow('fat_goal',          'Fat',           s.fat_goal,          'g', false, s.macro_mode === 'gkg')}
         ${goalRow('fiber_goal',        'Fiber',         s.fiber_goal,        'g')}
