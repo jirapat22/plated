@@ -269,6 +269,12 @@ export function renderSettings(container) {
         ${goalRow('carb_goal',         'Carbs',         s.carb_goal,         'g', false, s.macro_mode === 'gkg')}
         ${goalRow('fat_goal',          'Fat',           s.fat_goal,          'g', false, s.macro_mode === 'gkg')}
         ${goalRow('fiber_goal',        'Fiber',         s.fiber_goal,        'g')}
+        <div class="settings-row" style="align-items:flex-start;gap:12px">
+          <span class="settings-row-label" style="display:block">Weekly calorie budget
+            <span style="display:block;font-size:11px;font-weight:400;color:var(--text-faint);margin-top:2px;line-height:1.4">Shows your goal × 7 on Today (Mon–Sun), so a big night out can be planned around.</span>
+          </span>
+          <button class="seg-btn pref-btn${s.week_budget === '1' ? ' active' : ''}" data-pref="week_budget" style="flex-shrink:0">${s.week_budget === '1' ? 'On' : 'Off'}</button>
+        </div>
         <div style="padding:10px 16px 14px;font-size:11px;color:var(--text-muted)">${[
           // A locked field with no signpost is just a field that stopped working.
           // Energy is still reachable to any value you like — it's TDEE minus
@@ -621,6 +627,23 @@ export function renderSettings(container) {
         btn.classList.toggle('active', next === '1');
         btn.textContent = next === '1' ? 'On' : 'Off';
         setA11y({ [key]: next }, { [key]: s[key] });
+      });
+    });
+
+    // Plain on/off preferences (no styling side effects, unlike a11y).
+    body.querySelectorAll('.pref-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const key = btn.dataset.pref;
+        const next = s[key] === '1' ? '0' : '1';
+        try {
+          await api.patch('/api/settings', { [key]: next });
+          s[key] = next;
+          btn.classList.toggle('active', next === '1');
+          btn.textContent = next === '1' ? 'On' : 'Off';
+          showToast('Saved', 'success');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
       });
     });
 

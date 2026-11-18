@@ -7,6 +7,7 @@ import { localDate, addDaysIso }           from '../utils/date.js';
 import { classifyDay, isFlagged, LOG_STRONG } from '../utils/logCheck.js';
 import { assert } from '../utils/bugReport.js';
 import { trendWeightNow } from '../utils/stats.js';
+import { weekBudget } from '../utils/weekBudget.js';
 import { classifyIronlog } from '../utils/ironlogState.js';
 import { openOnboarding } from '../components/onboarding.js';
 
@@ -408,12 +409,15 @@ export function renderToday(container) {
     // day is worth saying; over is not. Carbs/fat over the split is already
     // covered by the calorie chip — three more chips restating it is noise.
     const lateInDay = new Date().getHours() >= 19;
-    const proteinShort = Math.round(goals.protein - t.protein);
+    // With a protein minimum set, the warning is about the MINIMUM: 130 g on a
+    // 120 min / 145 aim day is a good day, not a "15g short" one.
+    const proteinFloor = goals.proteinMin > 0 && goals.proteinMin < goals.protein ? goals.proteinMin : goals.protein;
+    const proteinShort = Math.round(proteinFloor - t.protein);
     const concerns = [];
     if (showNoCal)        concerns.push({ t: `${noCalNames.length} food${noCalNames.length === 1 ? '' : 's'} no calories`, kind: 'bad' });
     if (eaten > combined) concerns.push({ t: `+${fmtE(eaten - combined)} ${ul} over`, kind: 'warn' });
     if (lateInDay && eaten > 0 && proteinShort >= 10) {
-      concerns.push({ t: `Protein ${proteinShort}g short`, kind: 'warn' });
+      concerns.push({ t: proteinFloor < goals.protein ? `Protein ${proteinShort}g to min` : `Protein ${proteinShort}g short`, kind: 'warn' });
     }
     const showConcernRow = concerns.length > 0 || eaten > 0;
 
@@ -543,6 +547,30 @@ export function renderToday(container) {
             Your ${fmtE(burned)} ${ul} workout is already inside your goal, so your eat target is unchanged.
           </div>` : ''}
           <div id="macro-bar-root" style="margin-top:12px"></div>
+          ${/* Weekly budget (Settings → Weekly calorie budget). Only for your
+               own today: a past day or a connected profile has no "rest of
+               the week" to plan. */
+            settings.week_budget === '1' && isToday ? (() => {
+            const wb = weekBudget(today, baseGoal, recentDays, t.calories || 0);
+            const pct = Math.min(100, Math.max(0, wb.used / wb.budget * 100));
+            const over = wb.left < 0;
+            const last = wb.daysLeft === 1;
+            return `
+          <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:10px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;font-size:13px">
+              <span style="font-weight:700">This week</span>
+              <span class="num"><strong>${fmtE(wb.used)}</strong><span style="color:var(--text-faint)"> / ${fmtE(wb.budget)} ${ul}</span></span>
+            </div>
+            <div style="height:9px;background:var(--surface-2);border-radius:999px">
+              <div style="height:100%;width:${pct}%;background:${over ? 'var(--warning)' : 'var(--accent)'};border-radius:999px"></div>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:6px;line-height:1.45">${over
+              ? `<span style="color:var(--warning);font-weight:600">${fmtE(-wb.left)} ${ul} over</span> this week's budget`
+              : `<strong style="color:var(--text)">${fmtE(wb.left)} ${ul} left</strong> ${last ? 'today (last day of the week)' : `over ${wb.daysLeft} days`}`}${
+              !last && !over ? ` · today's fair share ~${fmtE(wb.todayShare)}` : ''}${
+              wb.banked > 150 ? ` · ${fmtE(wb.banked)} banked so far 👍` : ''}</div>
+          </div>`;
+          })() : ''}
         </div>
       </div>
 

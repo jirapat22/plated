@@ -22,6 +22,9 @@ const ALLOWED = new Set([
   // every 125 g day reading as a miss. Blank = no minimum (the old behaviour).
   // Plain grams, not g/kg: it is a line Pat picked, it shouldn't drift.
   'protein_min',
+  // '1' shows the weekly calorie budget card on Today (goal x 7, Mon-Sun).
+  // Opt-in per profile: not everyone wants their week judged as one number.
+  'week_budget',
   'fiber_goal', 'ironlog_api_url', 'ironlog_api_key',
   'phase', 'tdee', 'cut_deficit', 'bulk_surplus', 'energy_unit', 'ironlog_last_synced',
   'target_weight_kg',
