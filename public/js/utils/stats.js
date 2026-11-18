@@ -206,3 +206,29 @@ export const tCrit95 = df => {
   if (d < 1) return null;
   return d <= 29 ? T95[d] : 1.96;
 };
+
+// Progress to your target weight (Pat, 18/11/2026: "how far to go, and when?").
+// Two finish dates, because they answer different questions:
+//   * pace:  at your REAL pace (the 4-week weight trend, `weeklyRate` kg/week).
+//            null when the trend isn't heading to the target fast enough to
+//            mean anything: `paceWhy` says why ('flat', 'wrong-way', 'far',
+//            'unknown' = not enough weigh-ins yet).
+//   * half:  if you lost (or gained) a steady 0.5 kg a week from today, a
+//            common safe pace for a cut that keeps muscle.
+// 0.1 kg/week is the same "can't tell it from flat" floor as etaWeeks.
+// Dates are ISO strings (YYYY-MM-DD) so the page and tests format them alike.
+export function progressToTarget({ curWeight, targetWeight, weeklyRate, today }) {
+  if (curWeight == null || targetWeight == null || !today) return null;
+  const toGo = Math.round((curWeight - targetWeight) * 10) / 10;   // + = still to lose, - = still to gain
+  if (Math.abs(toGo) < 0.2) return { toGo: 0, reached: true, pace: null, paceWhy: null, half: null };
+  const direction = toGo > 0 ? -1 : 1;                              // -1 = losing towards it
+  const weeksAt = rate => Math.abs(toGo) / rate;
+  const half = shift(today, Math.round(weeksAt(0.5) * 7));
+  let pace = null, paceWhy = null;
+  if (weeklyRate == null) paceWhy = 'unknown';
+  else if (Math.abs(weeklyRate) < 0.1) paceWhy = 'flat';
+  else if (Math.sign(weeklyRate) !== direction) paceWhy = 'wrong-way';
+  else if (weeksAt(Math.abs(weeklyRate)) > 104) paceWhy = 'far';   // past 2 years, a date means nothing
+  else pace = shift(today, Math.round(weeksAt(Math.abs(weeklyRate)) * 7));
+  return { toGo, reached: false, pace, paceWhy, half };
+}

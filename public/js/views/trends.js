@@ -4,7 +4,7 @@ import { localDate, addDaysIso }      from '../utils/date.js';
 import { showToast, navigateTo, showConfirm } from '../app.js';
 import { openFoodEntry, lazySession, undoAteLight } from './log.js';
 import { classifyDay, isFlagged, calcStreak, LOG_STRONG, LOG_COMPLETE, LOG_EMPTY, LOG_TODAY } from '../utils/logCheck.js';
-import { movingAvg, trendWeightNow, weeklyTrendChange, etaWeeks, maintenanceShortfall, tCrit95 } from '../utils/stats.js';
+import { movingAvg, trendWeightNow, weeklyTrendChange, etaWeeks, maintenanceShortfall, tCrit95, progressToTarget } from '../utils/stats.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -823,6 +823,23 @@ export function renderTrends(container) {
       return d.toLocaleDateString('en-NZ', { month: 'short', day: 'numeric' });
     })() : null;
 
+    // ── Progress to target (18/11/2026) ──
+    // Kg to go from the TREND weight, and two finish dates: at your real 4-week
+    // pace (only when there are enough weigh-ins and the pace isn't scale noise)
+    // and at a steady 0.5 kg a week. See progressToTarget in utils/stats.js.
+    const trendUsable = wWinVals.length >= 4 && spanDays >= 10 && rateReliable;
+    const progress = progressToTarget({
+      curWeight, targetWeight, weeklyRate: trendUsable ? weeklyRate : null, today: todayISO,
+    });
+    // DD/MM/YYYY, the way NZ writes dates
+    const nzDate = iso => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '';
+    const paceText = progress && (progress.pace ? nzDate(progress.pace) : ({
+      flat: 'no date yet, weight is flat',
+      'wrong-way': `no date yet, weight is going ${progress.toGo > 0 ? 'up' : 'down'}`,
+      far: 'no date yet, over 2 years away',
+      unknown: 'no date yet, needs ~2 weeks of weigh-ins',
+    })[progress.paceWhy]);
+
     // ── Expected weight from logged calories (fixed last 28 days) ──
     // Anchor to the first weigh-in in the window, then walk each day applying
     // (logged intake − set TDEE) / 7700 kcal-per-kg. Days with no log count as
@@ -1015,6 +1032,21 @@ export function renderTrends(container) {
           <div style="font-size:13px;color:var(--text-muted);line-height:1.55">Keep logging to unlock your verdict — it weighs your intake against your real weight change to say whether it's working, and estimates your true maintenance calories.<br><span style="color:var(--text-faint)">Needs ~2 weeks of weigh-ins (have ${wWinVals.length}) and ≥5 fully-logged days (have ${validForAvg.length}).</span></div>
         `}
       </div>
+
+      ${progress ? `
+      <!-- Progress to target: kg to go + two finish dates -->
+      <div class="card progress-card" style="margin-bottom:12px">
+        <div class="label" style="margin-bottom:8px">Progress to ${targetWeight} kg</div>
+        ${progress.reached ? `<div style="font-size:15px;font-weight:700;color:var(--success)">You're there 🎉 trend weight ${curWeight.toFixed(1)} kg</div>` : `
+        <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <span style="font-family:var(--font-display);font-size:24px;font-weight:800">${Math.abs(progress.toGo).toFixed(1)} kg</span>
+          <span style="font-size:13px;color:var(--text-muted)">to go · trend weight ${curWeight.toFixed(1)} kg</span>
+        </div>
+        <div style="font-size:13px;line-height:1.7">
+          <div>At your current pace: <strong style="color:${progress.pace ? 'var(--success)' : 'var(--text-muted)'}">${paceText}</strong></div>
+          <div>At 0.5 kg/week: <strong>${nzDate(progress.half)}</strong></div>
+        </div>`}
+      </div>` : ''}
 
       <!-- Bodyweight + target + expected (the verdict's weight evidence) -->
       <div class="card" style="margin-bottom:12px">
