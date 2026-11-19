@@ -1312,28 +1312,16 @@ canvas { max-width: 100%; }
    fetch and Plated has to look the same offline. The hierarchy that the two
    faces gave is now done with size and weight; see "Calm redesign" at the end. */
 
-/* ─── Trends' instrument type (scoped) ───────────────────────
-   Same Space Grotesk + Space Mono pairing as Today, applied to Trends
-   so the analytics page reads like a lab instrument: Grotesk on the
-   uppercase labels, Mono on every figure. The number-line signature
-   lives in trends.js. */
-.trends-view .label,
-.trends-view .stat-lbl,
-.trends-view .today-date {
-  font-family: var(--font-display);
-}
-.trends-view .num,
-.trends-view .stat-num {
-  font-family: var(--font-mono);
-}
+/* Trends had the same Space Grotesk + Space Mono pairing; it moved to the
+   system font with the calm redesign (see "Calm redesign" at the end). */
 /* One consistent window indicator on every card so it's clear which cards
    follow the 7d/30d/90d toggle ("N days") vs which are fixed. */
 .trends-view .range-chip {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-faint);
   white-space: nowrap;
-  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 /* Collapsible disclosures (Trends + Today) — hide the native marker, flip the chevron. */
 .trends-view summary::-webkit-details-marker,
@@ -1837,10 +1825,10 @@ canvas { max-width: 100%; }
 
 /* ── Today ── */
 /* Header, numbers and cards: shared by every converted screen. */
-:is(.today-view, .history-view) .today-header { padding: 18px 18px 8px; }
-:is(.today-view, .history-view) .today-date { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
-:is(.today-view, .history-view) .num { font-weight: 700; font-variant-numeric: tabular-nums; }
-:is(.today-view, .history-view) .card {
+:is(.today-view, .history-view, .trends-view) .today-header { padding: 18px 18px 8px; }
+:is(.today-view, .history-view, .trends-view) .today-date { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+:is(.today-view, .history-view, .trends-view) .num { font-weight: 700; font-variant-numeric: tabular-nums; }
+:is(.today-view, .history-view, .trends-view) .card {
   border-color: var(--border-soft);
   border-radius: var(--radius-lg);
   padding: 18px;
@@ -1987,3 +1975,31 @@ canvas { max-width: 100%; }
 /* When the buttons do wrap under the meal name, keep them on the right where
    the thumb expects them. No effect when they share the line. */
 :is(.today-view, .history-view) .meal-session-actions { margin-left: auto; }
+
+/* ── Trends ── */
+/* The two web-font tokens point at the system stack inside Trends, so every
+   inline font-family:var(--font-mono) in trends.js (the number line, a few
+   figures) follows without touching each one. */
+.trends-view {
+  --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+/* Card titles ("BODYWEIGHT · 30 DAYS") take the section-header style. */
+.trends-view .label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.trends-view .stat-grid { gap: 8px; }
+.trends-view .stat-cell {
+  background: var(--surface-2);
+  border: none;
+  border-radius: var(--radius-md);
+}
+/* Weight only: the size still comes from .stat-num and its 430px rule, which
+   is what keeps "-0.40" inside a third of the card at 150%. */
+.trends-view .stat-num { font-weight: 800; letter-spacing: -0.01em; }
+.trends-view .today-header { flex-wrap: wrap; gap: 8px; }
+.trends-view .nl-details summary { list-style: none; }

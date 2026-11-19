@@ -373,7 +373,9 @@ export function renderTrends(container) {
 
   // Inline range button styles
   const style = document.createElement('style');
-  style.textContent = `.range-btn{height:28px;padding:0 12px;border-radius:999px;font-size:12px;font-weight:700;background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border);transition:all .15s}.range-btn.active{background:var(--accent-dim);color:var(--accent);border-color:rgba(200,184,255,.3)}`;
+  // Calm redesign: unselected ranges sit on the soft card edge rather than a
+  // filled grey, so the one that IS selected is the only filled pill.
+  style.textContent = `.range-btn{height:30px;padding:0 12px;border-radius:999px;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;background:transparent;color:var(--text-muted);border:1px solid var(--border-soft);transition:all .15s}.range-btn.active{background:var(--accent-dim);color:var(--accent);border-color:color-mix(in srgb, var(--accent) 40%, transparent)}`;
   container.prepend(style);
 
   async function load() {
@@ -691,14 +693,17 @@ export function renderTrends(container) {
           : `${w.kg > 0 ? '+' : w.kg < 0 ? '−' : ''}${Math.abs(w.kg).toFixed(1)}`;
         const kgColor = w.kg == null ? 'var(--text-faint)'
           : kgGood(w.kg) ? 'var(--success)' : 'var(--text-muted)';
+        // The date may wrap (flex 0 1 84px) and the kg may not: at 150% text the
+        // row is ~190px wide, and a fixed 84px date pushed "−0.4 kg" onto two
+        // lines and the bar down to a stub.
         return `<div style="display:flex;align-items:center;gap:8px;margin:9px 0">
-          <span style="width:84px;flex-shrink:0;font-size:11px;color:var(--text-muted)">${mon.getMonth() === sun.getMonth() ? `${mon.getDate()}–${f(sun)}` : `${f(mon)}–${f(sun)}`}</span>
-          <div style="flex:1;min-width:30px;height:20px;background:var(--surface-2);border-radius:5px;position:relative;overflow:hidden">
-            <div style="height:100%;width:${none ? 0 : Math.round(val / max * 100)}%;background:${m.color};border-radius:5px"></div>
+          <span style="flex:0 1 84px;min-width:48px;font-size:11px;color:var(--text-muted)">${mon.getMonth() === sun.getMonth() ? `${mon.getDate()}–${f(sun)}` : `${f(mon)}–${f(sun)}`}</span>
+          <div style="flex:1;min-width:30px;height:14px;background:var(--track);border-radius:999px;position:relative;overflow:hidden">
+            <div style="height:100%;width:${none ? 0 : Math.round(val / max * 100)}%;background:${m.color};border-radius:999px"></div>
             ${goalPct != null ? `<div title="goal" style="position:absolute;top:-1px;bottom:-1px;left:${goalPct}%;width:2px;background:var(--text);opacity:.5"></div>` : ''}
           </div>
           <span style="width:46px;text-align:right;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;${over ? 'color:var(--warning)' : ''}">${none ? '–' : m.disp(val) + (unsure ? '+' : '')}</span>
-          ${anyKg ? `<span title="trend weight change" style="width:52px;text-align:right;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:${kgColor}">${kgTxt}${w.kg == null ? '' : ' kg'}</span>` : ''}
+          ${anyKg ? `<span title="trend weight change" style="min-width:52px;white-space:nowrap;text-align:right;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:${kgColor}">${kgTxt}${w.kg == null ? '' : ' kg'}</span>` : ''}
         </div>`;
       }).join('') + `${weekData.some(w => w.part?.[metric]) ? `<div style="font-size:10px;color:var(--text-faint);margin-top:8px">+ = at least this much; a meal that week didn't record ${m.label.toLowerCase()}.</div>` : ''}<div style="display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--text-faint);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
           <span>avg per fully-logged day</span>
@@ -992,13 +997,13 @@ export function renderTrends(container) {
     if (!trendsBody) return;   // view torn down before render
     trendsBody.innerHTML = `
       <!-- Verdict (hero) -->
-      <div class="card" style="margin-bottom:12px;border:1px solid ${haveVerdict ? (verdictGood ? 'rgba(93,202,138,.45)' : 'rgba(249,115,22,.45)') : 'var(--border)'};background:${haveVerdict ? `linear-gradient(180deg, ${verdictGood ? 'rgba(93,202,138,.09)' : 'rgba(249,115,22,.10)'} 0%, transparent 58%), var(--surface)` : 'var(--surface)'}">
+      <div class="card" style="margin-bottom:12px;border:1px solid ${haveVerdict ? (verdictGood ? 'rgba(93,202,138,.32)' : 'rgba(249,115,22,.35)') : 'var(--border-soft)'};background:${haveVerdict ? `linear-gradient(180deg, ${verdictGood ? 'rgba(93,202,138,.07)' : 'rgba(249,115,22,.08)'} 0%, transparent 58%), var(--surface)` : 'var(--surface)'}">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px">
           <div class="label">${phase === 'cut' ? 'Is your cut working?' : phase === 'bulk' ? 'Is your bulk working?' : 'Holding maintenance?'}</div>
           <div style="font-size:10px;color:var(--text-faint);flex-shrink:0">last 4 weeks · fixed</div>
         </div>
         ${haveVerdict ? `
-          <div style="font-family:var(--font-display);font-size:24px;font-weight:800;text-transform:uppercase;letter-spacing:.02em;color:${verdictGood ? 'var(--success)' : FLAG}">${verdictGood ? 'On track ✓' : 'Off track ⚠'}</div>
+          <div style="font-size:26px;font-weight:800;letter-spacing:-.01em;color:${verdictGood ? 'var(--success)' : FLAG}">${verdictGood ? 'On track ✓' : 'Off track ⚠'}</div>
           <div style="font-size:13px;color:var(--text-muted);margin:2px 0 12px">${verdictSub}</div>
           <div class="stat-grid">
             <div class="stat-cell"><div class="stat-num">${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(2)}</div><div class="stat-lbl">kg / week</div><div class="stat-sub">your real pace</div></div>
@@ -1039,7 +1044,7 @@ export function renderTrends(container) {
         <div class="label" style="margin-bottom:8px">Progress to ${targetWeight} kg</div>
         ${progress.reached ? `<div style="font-size:15px;font-weight:700;color:var(--success)">You're there 🎉 trend weight ${curWeight.toFixed(1)} kg</div>` : `
         <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-          <span style="font-family:var(--font-display);font-size:24px;font-weight:800">${Math.abs(progress.toGo).toFixed(1)} kg</span>
+          <span class="num" style="font-size:26px;font-weight:800;letter-spacing:-.01em">${Math.abs(progress.toGo).toFixed(1)} kg</span>
           <span style="font-size:13px;color:var(--text-muted)">to go · trend weight ${curWeight.toFixed(1)} kg</span>
         </div>
         <div style="font-size:13px;line-height:1.7">
@@ -1142,7 +1147,7 @@ export function renderTrends(container) {
       </div>
 
       <!-- ── Shift from "is it working" to "your week & logging" ── -->
-      <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);font-family:var(--font-display);margin:18px 4px 10px">Your week &amp; logging</div>
+      <div class="calm-head" style="padding:12px 2px 8px"><h2>Your week &amp; logging</h2></div>
 
       <!-- This week (Mon–Sun) -->
       ${wkAll.length ? `
