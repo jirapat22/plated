@@ -1825,10 +1825,10 @@ canvas { max-width: 100%; }
 
 /* ── Today ── */
 /* Header, numbers and cards: shared by every converted screen. */
-:is(.today-view, .history-view, .trends-view) .today-header { padding: 18px 18px 8px; }
-:is(.today-view, .history-view, .trends-view) .today-date { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
-:is(.today-view, .history-view, .trends-view) .num { font-weight: 700; font-variant-numeric: tabular-nums; }
-:is(.today-view, .history-view, .trends-view) .card {
+:is(.today-view, .history-view, .trends-view, .foods-view) .today-header { padding: 18px 18px 8px; }
+:is(.today-view, .history-view, .trends-view, .foods-view) .today-date { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+:is(.today-view, .history-view, .trends-view, .foods-view) .num { font-weight: 700; font-variant-numeric: tabular-nums; }
+:is(.today-view, .history-view, .trends-view, .foods-view) .card {
   border-color: var(--border-soft);
   border-radius: var(--radius-lg);
   padding: 18px;
@@ -2003,3 +2003,53 @@ canvas { max-width: 100%; }
 .trends-view .stat-num { font-weight: 800; letter-spacing: -0.01em; }
 .trends-view .today-header { flex-wrap: wrap; gap: 8px; }
 .trends-view .nl-details summary { list-style: none; }
+
+/* ── Foods ── */
+/* Search box and "+ Add" on the card surface with the soft edge, so the top
+   of the screen reads as two calm controls rather than two grey slabs. */
+.foods-view .input {
+  background: var(--surface);
+  border-color: var(--border-soft);
+  border-radius: var(--radius-md);
+}
+.foods-view .input:focus { border-color: var(--accent); }
+.foods-view #add-custom-btn {
+  background: var(--surface);
+  border-color: var(--border-soft);
+  border-radius: var(--radius-md);
+}
+/* Tabs: only the selected one is filled. */
+.foods-view .search-tab {
+  background: transparent;
+  border-color: var(--border-soft);
+}
+.foods-view .search-tab.active {
+  background: var(--accent-dim);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+/* A food list sits in one soft card, rows split by hairlines, like a meal.
+   :has() so the card only appears around food rows: Batches and Presets draw
+   their own cards into the same #foods-list, and the empty state wants none. */
+.foods-view #foods-list:has(> .food-list-item) {
+  margin: 4px 16px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.foods-view .food-list-item { border-bottom-color: var(--border-soft); padding: 12px 16px; }
+.foods-view .food-list-item:last-child { border-bottom: none; }
+.foods-view .food-list-icon { border-radius: 10px; }
+.foods-view .food-list-name { font-weight: 600; }
+.foods-view .food-list-sub { font-variant-numeric: tabular-nums; }
+/* Two lines, then "...", like a meal entry. One line cut "Flat White (trim
+   milk)" to "Flat White (tri..." at 150%, which is the name you are looking for. */
+.foods-view .food-list-name {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}

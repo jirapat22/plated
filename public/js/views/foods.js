@@ -36,6 +36,8 @@ function debounce(fn, ms) {
 }
 
 export function renderFoods(container) {
+  // Scope for the calm redesign's Foods rules in style.css.
+  container.classList.add('foods-view');
   container.innerHTML = `
     <div class="today-header"><div class="today-date">Foods</div></div>
     <!-- "+ Add" lives up here with the search box, not down in the tab strip.
@@ -49,7 +51,7 @@ export function renderFoods(container) {
         </svg>
         <input class="input" id="foods-search" placeholder="Search foods…" autocomplete="off" />
       </div>
-      <button class="btn btn-secondary" id="add-custom-btn" style="height:40px;font-size:12px;flex-shrink:0;padding:0 14px">+ Add</button>
+      <button class="btn btn-secondary" id="add-custom-btn" style="height:48px;font-size:12px;flex-shrink:0;padding:0 14px">+ Add</button>
     </div>
     <!-- Still no sideways scroll — that was rejected once for hiding tabs off
          the right edge with nothing to hint they were there, and it would be
