@@ -686,7 +686,7 @@ export function renderToday(container) {
           </svg>
           New Meal
         </button>
-        <button class="new-meal-btn" id="quick-log-standalone" style="margin:0;flex:1;color:var(--carbs);border-color:var(--carbs)44">
+        <button class="new-meal-btn" id="quick-log-standalone" style="margin:0;flex:1;color:var(--carbs);border-color:color-mix(in srgb, var(--carbs) 35%, transparent)">
           ${icon(ICON_BOLT, 14)} Quick Log
         </button>
       </div>

@@ -453,16 +453,16 @@ export function renderFoodSearch(container, onSelect, opts = {}) {
           </div>
 
           <div class="nutr-lbl" style="color:var(--protein)">Pro</div>
-          <input id="qa-pro" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:var(--protein)55" />
-          <input id="qa-pro-srv" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:var(--protein)55" />
+          <input id="qa-pro" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:color-mix(in srgb, var(--protein) 35%, transparent)" />
+          <input id="qa-pro-srv" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:color-mix(in srgb, var(--protein) 35%, transparent)" />
 
           <div class="nutr-lbl" style="color:var(--carbs)">Crb</div>
-          <input id="qa-carb" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:var(--carbs)55" />
-          <input id="qa-carb-srv" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:var(--carbs)55" />
+          <input id="qa-carb" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:color-mix(in srgb, var(--carbs) 35%, transparent)" />
+          <input id="qa-carb-srv" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:color-mix(in srgb, var(--carbs) 35%, transparent)" />
 
           <div class="nutr-lbl" style="color:var(--fat)">Fat</div>
-          <input id="qa-fat" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:var(--fat)55" />
-          <input id="qa-fat-srv" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:var(--fat)55" />
+          <input id="qa-fat" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:color-mix(in srgb, var(--fat) 35%, transparent)" />
+          <input id="qa-fat-srv" class="input nutr-input" type="text" inputmode="decimal" placeholder="g" style="border-color:color-mix(in srgb, var(--fat) 35%, transparent)" />
         </div>
         <button id="qa-save" class="btn btn-primary btn-full" style="height:44px">Save & Add to Meal</button>
       </div>

@@ -640,9 +640,12 @@ export function openQuickLog(sessionId, onSuccess, viewDate) {
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
           ${['pro','carb','fat'].map((id, i) => {
             const [label, color] = [['Protein','var(--protein)'],['Carbs','var(--carbs)'],['Fat','var(--fat)']][i];
+            // color-mix, not `${color}44`: gluing hex alpha onto a var() gives
+            // "#1E88E5 44" (two tokens), which is invalid, so the border fell back
+            // to the text colour: black boxes in light mode, white ones in dark.
             return `<div style="position:relative">
               <input class="input" id="ql-${id}" type="text" placeholder="${label}" inputmode="decimal"
-                style="height:42px;padding-right:20px;border-color:${color}44"/>
+                style="height:42px;padding-right:20px;border-color:color-mix(in srgb, ${color} 35%, transparent)"/>
               <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:${color}">${label[0]}</span>
             </div>`;
           }).join('')}
@@ -848,7 +851,7 @@ export function openEditEntry(entry, onSuccess, viewDate = null) {
             const [label, color] = [['Protein','var(--protein)'],['Carbs','var(--carbs)'],['Fat','var(--fat)']][i];
             return `<div style="position:relative">
               <input class="input" id="edit-${id}" type="text" placeholder="${label}" inputmode="decimal"
-                style="height:42px;padding-right:20px;border-color:${color}44"/>
+                style="height:42px;padding-right:20px;border-color:color-mix(in srgb, ${color} 35%, transparent)"/>
               <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:${color}">${label[0]}</span>
             </div>`;
           }).join('')}

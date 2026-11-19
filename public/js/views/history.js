@@ -407,7 +407,7 @@ export function renderHistory(container) {
 
       const qlBtn = document.createElement('button');
       qlBtn.className = 'new-meal-btn';
-      qlBtn.style.cssText = 'margin:0;flex:1;color:var(--carbs);border-color:var(--carbs)44';
+      qlBtn.style.cssText = 'margin:0;flex:1;color:var(--carbs);border-color:color-mix(in srgb, var(--carbs) 35%, transparent)';
       qlBtn.textContent = '⚡ Quick Log';
       qlBtn.addEventListener('click', () =>
         openQuickLog(lazySession(date), () => refresh(date)));

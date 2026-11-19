@@ -1,7 +1,7 @@
-/* Space Grotesk + Space Mono are loaded via <link> in index.html (not
-   @import here) so the fetch runs in parallel with style.css instead of
-   behind it. They're a matched pair from the same foundry, used only on
-   Today (see .today-view below) as a scoped typographic identity. */
+/* No web fonts. Space Grotesk + Space Mono used to load from Google Fonts for
+   Today and Trends; the calm redesign (20/11/2026) moved everything to the
+   system font so the app looks identical offline. --font-display and
+   --font-mono survive as names because inline styles still read them. */
 
 /* ─── Design Tokens ──────────────────────────────────────── */
 :root {
@@ -90,8 +90,8 @@
   --safe-top:     env(safe-area-inset-top, 0px);
   /* Read through --safe-top, never env() directly: the standalone override
      below is the whole point, and a rule that reaches past it double-counts. */
-  --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono:    'Space Mono', ui-monospace, 'SF Mono', monospace;
+  --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* ─── Light theme ────────────────────────────────────────── */
@@ -1977,14 +1977,9 @@ canvas { max-width: 100%; }
 :is(.today-view, .history-view) .meal-session-actions { margin-left: auto; }
 
 /* ── Trends ── */
-/* The two web-font tokens point at the system stack inside Trends, so every
-   inline font-family:var(--font-mono) in trends.js (the number line, a few
-   figures) follows without touching each one. */
-.trends-view {
-  --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono:    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-variant-numeric: tabular-nums;
-}
+/* Tabular figures throughout, so the stat tiles and the number line keep
+   their columns now that the monospace face is gone. */
+.trends-view { font-variant-numeric: tabular-nums; }
 /* Card titles ("BODYWEIGHT · 30 DAYS") take the section-header style. */
 .trends-view .label {
   font-size: 12px;
@@ -2043,8 +2038,9 @@ canvas { max-width: 100%; }
 .foods-view .food-list-name { font-weight: 600; }
 .foods-view .food-list-sub { font-variant-numeric: tabular-nums; }
 /* Two lines, then "...", like a meal entry. One line cut "Flat White (trim
-   milk)" to "Flat White (tri..." at 150%, which is the name you are looking for. */
-.foods-view .food-list-name {
+   milk)" to "Flat White (tri..." at 150%, which is the name you are looking for.
+   Same in the food search sheets (Add Food, the batch builder). */
+:is(.foods-view, .sheet-content) .food-list-name {
   white-space: normal;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -2079,3 +2075,54 @@ canvas { max-width: 100%; }
   flex-shrink: 0;
 }
 .settings-view .settings-row { border-bottom-color: var(--border-soft); }
+
+/* Ring centre text gets the ring's width, not half of it. .ring-center is
+   absolutely placed at left:50%, so its shrink-to-fit width was capped at the
+   half of the ring to the right of that point: on a 78px side ring that is
+   39px, and "100 left" (about 40px) broke onto two lines. 80% stays inside
+   the band at every size the hero card allows. */
+.hero-card .ring-center { width: 80%; }
+.hero-card .ring-hint { white-space: nowrap; }
+
+/* ── Shared sheets and pickers (log.js, batches.js, presets.js, food search,
+   confirm). Global rather than scoped: a sheet opens over whichever screen
+   you are on, and every screen has the new look now. ── */
+.sheet {
+  border-radius: 24px 24px 0 0;
+  border-top: 1px solid var(--border-soft);
+}
+.sheet-handle { width: 40px; height: 5px; background: var(--track); }
+.sheet-title { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
+.sheet-content .card {
+  border-color: var(--border-soft);
+  border-radius: var(--radius-lg);
+}
+.sheet-content .food-list-item { border-bottom-color: var(--border-soft); }
+.sheet-content .food-list-icon { border-radius: 10px; }
+.sheet-content .food-list-name { font-weight: 600; }
+.sheet-content .food-list-sub { font-variant-numeric: tabular-nums; }
+/* Pills and chips everywhere: only the selected one is filled. */
+.fs-chip, .search-tab, .qty-mode-btn, .water-btn, .eunit-btn {
+  background: transparent;
+  border-color: var(--border-soft);
+}
+.fs-chip.active, .search-tab.active, .qty-mode-btn.active, .eunit-btn.active {
+  background: var(--accent-dim);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+/* Inputs and buttons: a step rounder, to sit with 20px cards. */
+.input, .settings-row-input { border-radius: 12px; }
+.btn { border-radius: 14px; }
+.qty-input { border-radius: var(--radius-md); }
+/* The portion's live totals in one soft tile, numbers heavier. */
+.qty-macros {
+  margin: 6px 16px 0;
+  padding: 14px 8px;
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+}
+.qty-macro-val { font-weight: 800; }
+/* A text input's intrinsic width is ~20 characters, and flex:1 alone will not
+   shrink it below that: at 150% the portion box ran past the right edge and
+   pushed "g" off the screen. */
+.qty-input { min-width: 0; }
