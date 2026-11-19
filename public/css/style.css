@@ -9,6 +9,13 @@
   --surface:      #16161a;
   --surface-2:    #1e1e24;
   --border:       #2c2c35;
+  /* Calm redesign (20/11/2026): cards sit on a SOFTER edge than inputs and
+     dividers, which keep --border. A hairline you barely see is what makes a
+     stack of cards read as calm rather than as a grid of boxes. */
+  --border-soft:  #232329;
+  /* Empty part of a bar or ring. A wash of the text colour rather than
+     --surface-2, so a track reads the same on a card and on a sheet. */
+  --track:        rgba(118,117,133,.25);
   --text:         #f0eff4;
   --text-muted:   #8b8a96;
   /* Was #4a4a55: 2.06:1 on a card, against a 4.5:1 floor — and not decoration,
@@ -98,6 +105,8 @@
   --surface:      #ffffff;
   --surface-2:    #efedf4;
   --border:       #e0dde8;
+  --border-soft:  #ebe8f1;
+  --track:        rgba(26,25,34,.09);
   --text:         #1a1922;
   --text-muted:   #6a6779;
   --text-faint:   #726e86;   /* was #9b97a9 — 2.84:1 on white. Now 4.89:1, and 4.51:1 on --bg. */
@@ -152,11 +161,17 @@
   --text-muted: #c6c4d2;
   --text-faint: #9c99ab;
   --border:     #45454f;
+  /* High contrast wants the edges back: the soft hairline is a calm-look
+     choice, and calm is the first thing to give way here. */
+  --border-soft: #45454f;
+  --track:      rgba(198,196,210,.28);
 }
 :root[data-theme="light"][data-contrast="1"] {
   --text-muted: #3b3949;
   --text-faint: #55526a;
   --border:     #b3aec3;
+  --border-soft: #b3aec3;
+  --track:      rgba(26,25,34,.16);
 }
 
 /* Bigger tap targets — independent of text size, for unsteady hands. 44px is
@@ -1291,27 +1306,11 @@ canvas { max-width: 100%; }
 .today-date { font-size: 22px; font-weight: 700; }
 .today-day  { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 
-/* ─── Today's type identity ──────────────────────────────────
-   Scoped to .today-view only, so History/Trends/Settings keep the
-   system stack untouched. Space Grotesk carries section labels and
-   titles; Space Mono carries every numeric readout — calories, grams,
-   ml, kg — so Today reads like an instrument display, not a form. */
-.today-view .today-date,
-.today-view .label,
-.today-view .ring-title,
-.today-view .section-header h2 {
-  font-family: var(--font-display);
-}
-/* :not(.ring-kcal-sm) — the two small side rings are clamped down to
-   58-82px on narrow phones (see the @media block below); monospace
-   digits run wider per-glyph than the system-sans tabular figures this
-   was tuned against, so the small rings keep the plain numeral face
-   to avoid risking overflow at that breakpoint. */
-.today-view .num:not(.ring-kcal-sm),
-.today-view .meal-session-kcal,
-.today-view .meal-entry-kcal {
-  font-family: var(--font-mono);
-}
+/* Today used to carry its own type identity here (Space Grotesk labels, Space
+   Mono numbers, loaded from Google Fonts). Removed in the calm redesign
+   (20/11/2026): Pat chose the system font, because a web font is a network
+   fetch and Plated has to look the same offline. The hierarchy that the two
+   faces gave is now done with size and weight; see "Calm redesign" at the end. */
 
 /* ─── Trends' instrument type (scoped) ───────────────────────
    Same Space Grotesk + Space Mono pairing as Today, applied to Trends
@@ -1717,4 +1716,235 @@ canvas { max-width: 100%; }
   border: 1px solid rgba(255,179,71,.28);
   border-radius: var(--radius-sm);
   padding: 8px 10px; margin-top: 10px;
+}
+
+/* ═══ Calm redesign (20/11/2026) ═════════════════════════════════════════
+   Pat's approved mock (Today, 19/11): calmer cards on a soft hairline, 20px
+   corners and 18px padding, grouped under small uppercase section headers;
+   thinner rings; numbers in tabular figures at a heavier weight so they read
+   at a glance. System font only, every size in px, scaling still through
+   `zoom: var(--ui-scale)` on .view-container (see App Shell).
+
+   Scoped per screen (.today-view, ...) rather than changed globally, so a
+   screen only takes the new look in the commit that converts AND checks it.
+   A half-converted History would be worse than either look. */
+
+/* ── Shared pieces ── */
+.calm-block { padding: 0 16px 14px; }
+/* Section header: small, uppercase, muted, with an optional note on the
+   right ("3 logged · 1643 kcal"). baseline so the two sizes share a line. */
+.calm-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 18px 8px;
+}
+.calm-head h2 {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.calm-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 0;
+}
+/* Icon tile for slim one-line cards (Bodyweight). */
+.calm-ic {
+  width: 32px; height: 32px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.calm-slim {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.calm-slim-t { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+.calm-slim-n { margin-left: auto; font-size: 17px; font-weight: 700; text-align: right; }
+
+/* ── Macro bars (components/macroBar.js; Today and History share them) ──
+   --mb is the macro's own colour, set inline per row. */
+.mb-row + .mb-row { margin-top: 15px; }
+.mb-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.mb-name { font-size: 13px; font-weight: 700; color: var(--mb); flex-shrink: 0; }
+.mb-val {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.mb-val strong { font-size: 14px; font-weight: 700; color: var(--text); }
+/* nowrap per piece, so at 150% a long row breaks BETWEEN "min ✓" and
+   "14g to aim" rather than leaving "over" alone on a line. */
+.mb-hit  { color: var(--mb); font-weight: 700; white-space: nowrap; }
+.mb-warn { color: var(--text); font-weight: 600; white-space: nowrap; }
+.mb-rest { white-space: nowrap; }
+.mb-track {
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--track);
+  position: relative;
+}
+.mb-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--mb);
+  transition: width 600ms ease-out;
+}
+/* The protein minimum: a tick that stands a little proud of the bar, so it
+   still shows once the fill has passed it. */
+.mb-tick {
+  position: absolute;
+  top: -3px; bottom: -3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--text);
+  opacity: .55;
+}
+/* The over-goal slice. The surface-coloured left edge is the part that does
+   not rely on colour: the boundary stays findable in high contrast and for
+   anyone who cannot tell the two oranges apart. */
+.mb-over {
+  position: absolute;
+  top: 0; right: 0;
+  height: 100%;
+  border-radius: 0 var(--radius-full) var(--radius-full) 0;
+  border-left: 2px solid var(--surface);
+  background: var(--mb);
+  filter: brightness(1.2) saturate(1.2);
+  box-shadow: 0 0 8px 1px var(--mb);
+}
+.mb-note { font-size: 11px; color: var(--text-muted); margin-top: 12px; line-height: 1.45; }
+
+/* ── Today ── */
+.today-view .today-header { padding: 18px 18px 8px; }
+.today-view .today-date { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+.today-view .num { font-weight: 700; font-variant-numeric: tabular-nums; }
+.today-view .card {
+  border-color: var(--border-soft);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+}
+.today-view details.card { padding: 14px 16px; }
+
+/* Hero: the three rings. A size container, so the layout answers to the
+   card's own width, which is what zoom shrinks; a media query only ever sees
+   the 390px phone. Measured content widths at 390px: 324 at 100%, 273 at
+   115%, 234 at 130%, 194 at 150%. In a row the rings need 308, so they shrink
+   a little at 115% and wrap from 130%. */
+.today-view .hero-card { container-type: inline-size; padding: 22px 16px 16px; }
+.hero-card .tri-rings { gap: 12px; }
+.hero-card .ring-col-lg { flex: 0 1 128px; min-width: 0; }
+.hero-card .ring-col-sm { flex: 0 1 78px;  min-width: 0; }
+.hero-card .ring-wrap-relative { width: 100%; }
+/* (0,3,0)/(0,4,0) so they beat the older @media (max-width:430px) clamp()s,
+   which sized the rings from vw and are what ran them off the card at 150%. */
+.hero-card .tri-rings .calorie-ring,
+.hero-card .tri-rings .calorie-ring.ring-sm { width: 100%; height: auto; aspect-ratio: 1 / 1; }
+/* Thinner bands (Pat: the thick ones felt "overwhelming"). In viewBox units:
+   9 of 140 is ~8px at the big ring's 128px, 11 of 140 is ~6px at 78px. The
+   over-goal slice stays a step thicker so it is findable without colour. */
+.hero-card .ring-bg,
+.hero-card .ring-fill           { stroke-width: 9; }
+.hero-card .ring-sm .ring-bg,
+.hero-card .ring-sm .ring-fill  { stroke-width: 11; }
+.hero-card .ring-fill.ring-over          { stroke-width: 12; }
+.hero-card .ring-sm .ring-fill.ring-over { stroke-width: 14; }
+/* :not(.earned): the workout ring's amber track IS information. */
+.hero-card .ring-bg:not(.earned) { stroke: var(--track); }
+
+.hero-card .tri-rings .ring-kcal    { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; }
+.hero-card .tri-rings .ring-goal    { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+.hero-card .tri-rings .ring-kcal-sm { font-size: 15px; font-weight: 700; }
+.hero-card .tri-rings .ring-goal-sm { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+/* --hint is the traffic-light colour (left / last quarter / over), set inline
+   by today.js. The big ring's hint is a tinted chip, the mock's "100 left". */
+.hero-card .ring-hint { color: var(--hint); }
+.hero-card .tri-rings .ring-hint-sm { font-size: 10px; font-weight: 700; margin-top: 2px; }
+.hero-card .tri-rings .ring-hint-chip {
+  display: inline-block;
+  margin-top: 7px;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--surface-2);   /* fallback where color-mix is missing */
+  background: color-mix(in srgb, var(--hint) 15%, transparent);
+}
+/* Narrow card (130% text and up): the big ring takes its own row and the
+   two side rings sit under it, all at full size. */
+@container (max-width: 250px) {
+  .hero-card .tri-rings { flex-wrap: wrap; row-gap: 14px; column-gap: 24px; }
+  .hero-card .ring-col-lg { order: -1; flex: 0 0 100%; display: flex; justify-content: center; }
+  .hero-card .ring-col-lg .ring-wrap-relative { width: 128px; }
+  .hero-card .ring-col-sm { flex: 0 0 78px; }
+}
+.ring-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 18px;
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.ring-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.ring-legend i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* Weekly budget card. */
+.week-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.week-amt { font-size: 19px; }
+.week-amt span { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+.week-cap { font-size: 12px; color: var(--text-muted); margin-top: 10px; line-height: 1.5; }
+.week-cap strong { color: var(--text); }
+
+/* Meal cards (log.js renderMealCard), Today's copy. */
+.today-view .meal-session {
+  border-color: var(--border-soft);
+  border-radius: var(--radius-lg);
+}
+.today-view .meal-session-header { padding: 14px 16px; border-bottom-color: var(--border-soft); }
+.today-view .meal-session-title { font-size: 14px; font-weight: 700; }
+.today-view .meal-entry { padding: 12px 16px; }
+.today-view .meal-entry + .meal-entry,
+.today-view .meal-session-footer,
+.today-view .meal-session-add { border-color: var(--border-soft); }
+.today-view .meal-session-add { padding: 12px 16px; }
+.today-view .meal-entry-kcal { font-size: 15px; font-weight: 700; }
+
+/* New Meal / Quick Log: solid soft cards instead of dashed outlines. */
+.calm-add-row { display: flex; gap: 8px; margin: 4px 16px 16px; }
+.calm-add-row .new-meal-btn {
+  margin: 0;
+  flex: 1;
+  width: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+}
+
+/* Floating + Log: the mock's rounded square-ish pill with an accent glow. */
+.today-view .fab-log {
+  border-radius: 16px;
+  box-shadow: 0 12px 24px -8px var(--shadow);
+  box-shadow: 0 12px 24px -8px color-mix(in srgb, var(--accent) 65%, transparent);
 }

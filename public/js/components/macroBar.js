@@ -9,7 +9,10 @@
 //     — the missing grams could close the gap or blow past it.
 //   • "+36g over" STAYS. A floor that is already past the goal proves you are
 //     over; only the size of the excess is a minimum, which the + already says.
-export function renderMacroBar(container, totals, goals, showRemaining = true, partial = null) {
+// opts.minInHeader: the caller already prints the protein minimum above the
+// card (Today's "Macros" header does), so the row drops its "(min 120)" rather
+// than say it twice on a 390px line. History has no such header and keeps it.
+export function renderMacroBar(container, totals, goals, showRemaining = true, partial = null, opts = {}) {
   const macros = [
     { key: 'protein', label: 'Protein', color: 'var(--protein)' },
     { key: 'carbs',   label: 'Carbs',   color: 'var(--carbs)'   },
@@ -42,30 +45,35 @@ export function renderMacroBar(container, totals, goals, showRemaining = true, p
     const minPct = hasMin ? (min / goal) * 100 : 0;
     const minLabel = !hasMin || over || unsure ? null
       : consumed < min
-        ? `<span style="color:var(--text-muted);font-weight:600">${min - consumed}g to min</span>`
-        : `<span style="color:${m.color};font-weight:600">min ✓</span> · <span style="color:var(--text-faint)">${remaining}g to aim</span>`;
+        ? `<span class="mb-warn">${min - consumed}g to min</span>`
+        : `<span class="mb-hit">min ✓</span> · <span class="mb-rest">${remaining}g to aim</span>`;
 
     const rightLabel = (showRemaining && minLabel) ? minLabel
       : (showRemaining && goal > 0)
       ? over
-        ? `<span style="color:${m.color};font-weight:700">+${consumed - goal}g over</span>`
+        ? `<span class="mb-hit">+${consumed - goal}g over</span>`
         : unsure
           ? ''
-          : `<span style="color:var(--text-faint)">${remaining}g left</span>`
+          : `<span class="mb-rest">${remaining}g left</span>`
       : '';
 
+    // Calm redesign (20/11/2026): the look lives in style.css (.mb-*) rather
+    // than inline, so light/dark/high-contrast all come from the theme tokens
+    // and History and Today stay identical. The TEXT is unchanged on purpose:
+    // the tests read it with the tags stripped ("Protein 99 / 166g · 67g left").
+    // Only the colours that mean "which macro" stay inline, via --mb.
     return `
-      <div style="margin-bottom:11px">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
-          <span style="font-size:13px;font-weight:700;color:${m.color}">${m.label}</span>
-          <span style="font-size:13px;font-variant-numeric:tabular-nums">
-            <strong style="color:${m.color}">${consumed}${unsure ? '+' : ''}</strong><span style="color:var(--text-faint)">${goal > 0 ? ` / ${goal}g` : 'g'}${hasMin ? ` (min ${min})` : ''}</span>${rightLabel ? ` · ${rightLabel}` : ''}
+      <div class="mb-row" style="--mb:${m.color}">
+        <div class="mb-head">
+          <span class="mb-name">${m.label}</span>
+          <span class="mb-val">
+            <strong>${consumed}${unsure ? '+' : ''}</strong><span class="mb-goal">${goal > 0 ? ` / ${goal}g` : 'g'}${hasMin && !opts.minInHeader ? ` (min ${min})` : ''}</span>${rightLabel ? ` · ${rightLabel}` : ''}
           </span>
         </div>
-        <div style="height:9px;background:var(--surface-2);border-radius:999px;position:relative">
-          <div style="height:100%;width:${pct}%;background:${m.color};border-radius:999px;transition:width 600ms ease-out"></div>
-          ${hasMin ? `<div title="Minimum ${min}g" style="position:absolute;top:-2px;bottom:-2px;left:calc(${minPct}% - 1px);width:2px;background:var(--text-muted);border-radius:1px;opacity:.8"></div>` : ''}
-          ${over ? `<div style="position:absolute;top:0;right:0;height:100%;width:${overSegPct}%;background:${m.color};filter:brightness(1.3) saturate(1.3);box-shadow:0 0 8px 2px ${m.color};border-left:2px solid rgba(255,255,255,.6);border-radius:0 999px 999px 0"></div>` : ''}
+        <div class="mb-track">
+          <div class="mb-fill" style="width:${pct}%"></div>
+          ${hasMin ? `<div class="mb-tick" title="Minimum ${min}g" style="left:calc(${minPct}% - 1px)"></div>` : ''}
+          ${over ? `<div class="mb-over" style="width:${overSegPct}%"></div>` : ''}
         </div>
       </div>
     `;
@@ -80,7 +88,7 @@ export function renderMacroBar(container, totals, goals, showRemaining = true, p
   // on both surfaces beats a parameter telling it which one it is on.
   const anyPartial = macros.some(m => partial?.[m.key]);
   const note = anyPartial
-    ? `<div style="font-size:11px;color:var(--text-muted);margin:-4px 0 2px">+ means at least this much — one of the day's meals didn't record every macro.</div>`
+    ? `<div class="mb-note">+ means at least this much: one of the day's meals didn't record every macro.</div>`
     : '';
 
   container.innerHTML = rows + note;

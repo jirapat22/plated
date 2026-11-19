@@ -452,7 +452,7 @@ export function renderToday(container) {
     const rawToday = todayWeight?.weight_kg
       ?? (isToday && ironlog?.bodyweight?.is_today ? ironlog.bodyweight.weight_kg : null);
     const weightBigHtml = weightDisplay === 'trend'
-      ? `${trendWeight.toFixed(1)} <span style="font-size:11px;color:var(--accent);font-weight:400">kg · 7d trend</span>`
+      ? `${trendWeight.toFixed(1)} <span style="font-size:11px;color:var(--text-muted);font-weight:500">kg · 7d trend</span>`
       : todayWeight
         ? `${todayWeight.weight_kg} <span style="font-size:11px;color:var(--text-muted);font-weight:400">kg · today ✓</span>`
         : (isToday && ironlog?.bodyweight)
@@ -503,36 +503,38 @@ export function renderToday(container) {
         </div>
       </div>` : ''}
 
-      <!-- Calorie ring(s) -->
-      <div style="padding:0 16px 14px">
-        <div class="card" id="goal-card">
+      <!-- Calorie ring(s). Calm redesign (20/11/2026, Pat's approved mock):
+           thinner bands, no bezel ticks, and the ring names moved out of the
+           rings into one legend row underneath. The hero card is a size
+           container (see .hero-card in style.css) so the three rings wrap onto
+           two rows when the card is narrow: before this, three rings at 150%
+           text ran 40px off both sides of a 390px phone. -->
+      <div class="calm-block">
+        <div class="card hero-card" id="goal-card">
           <div class="tri-rings">
             ${usesIronlog ? `
-            <div class="ring-col">
-              <div class="ring-title">Eat Target</div>
+            <div class="ring-col ring-col-sm" aria-label="Eat target">
               <div class="ring-wrap-relative">
                 ${calRingSvg(leftPct, 'target', true, leftOver)}
                 <div class="ring-center">
                   <div class="num ring-kcal-sm">${fmtE(eaten)}</div>
                   <div class="ring-goal-sm">/ ${fmtE(combined)}</div>
-                  <div class="ring-hint ring-hint-sm" style="color:${targetHint.color}">${targetHint.text}</div>
+                  <div class="ring-hint ring-hint-sm" style="--hint:${targetHint.color}">${targetHint.text}</div>
                 </div>
               </div>
             </div>` : ''}
-            <div class="ring-col">
-              <div class="ring-title">Daily Goal</div>
+            <div class="ring-col ring-col-lg" aria-label="Daily goal">
               <div class="ring-wrap-relative">
-                ${calRingSvg(midPct, '', false, midOver, true)}
+                ${calRingSvg(midPct, '', false, midOver)}
                 <div class="ring-center">
                   <div class="num ring-kcal">${fmtE(eaten)}${partial?.calories ? '+' : ''}</div>
-                  <div class="ring-goal muted">/ ${fmtE(baseGoal)} ${ul}</div>
-                  <div class="ring-hint" style="color:${goalHint.color}">${goalHint.text}</div>
+                  <div class="ring-goal">of ${fmtE(baseGoal)} ${ul}</div>
+                  <div class="ring-hint ring-hint-chip" style="--hint:${goalHint.color}">${goalHint.text}</div>
                 </div>
               </div>
             </div>
             ${usesIronlog ? `
-            <div class="ring-col">
-              <div class="ring-title">Workout</div>
+            <div class="ring-col ring-col-sm" aria-label="Workout">
               <div class="ring-wrap-relative">
                 ${calRingSvg(rightPct, 'workout', true, 0, false, hasWorkout ? 'earned' : '')}
                 <div class="ring-center">
@@ -542,48 +544,71 @@ export function renderToday(container) {
               </div>
             </div>` : ''}
           </div>
+          <!-- Legend: same order as the rings, each dot in its ring's colour. -->
+          <div class="ring-legend">
+            ${usesIronlog ? '<span><i style="background:var(--ring-target)"></i>Eat target</span>' : ''}
+            <span><i style="background:var(--ring-goal)"></i>Daily goal</span>
+            ${usesIronlog ? '<span><i style="background:var(--ring-workout)"></i>Workout</span>' : ''}
+          </div>
           ${inTdee && hasWorkout ? `
           <div style="margin-top:10px;font-size:11px;line-height:1.45;color:var(--text-muted);text-align:center">
             Your ${fmtE(burned)} ${ul} workout is already inside your goal, so your eat target is unchanged.
           </div>` : ''}
-          <div id="macro-bar-root" style="margin-top:12px"></div>
-          ${/* Weekly budget (Settings → Weekly calorie budget). Only for your
-               own today: a past day or a connected profile has no "rest of
-               the week" to plan. */
-            settings.week_budget === '1' && isToday ? (() => {
-            const wb = weekBudget(today, baseGoal, recentDays, t.calories || 0);
-            const pct = Math.min(100, Math.max(0, wb.used / wb.budget * 100));
-            const over = wb.left < 0;
-            const last = wb.daysLeft === 1;
-            return `
-          <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:10px">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;font-size:13px">
-              <span style="font-weight:700">This week</span>
-              <span class="num"><strong>${fmtE(wb.used)}</strong><span style="color:var(--text-faint)"> / ${fmtE(wb.budget)} ${ul}</span></span>
-            </div>
-            <div style="height:9px;background:var(--surface-2);border-radius:999px">
-              <div style="height:100%;width:${pct}%;background:${over ? 'var(--warning)' : 'var(--accent)'};border-radius:999px"></div>
-            </div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:6px;line-height:1.45">${over
-              ? `<span style="color:var(--warning);font-weight:600">${fmtE(-wb.left)} ${ul} over</span> this week's budget`
-              : `<strong style="color:var(--text)">${fmtE(wb.left)} ${ul} left</strong> ${last ? 'today (last day of the week)' : `over ${wb.daysLeft} days`}`}${
-              !last && !over ? ` · today's fair share ~${fmtE(wb.todayShare)}` : ''}${
-              wb.banked > 150 ? ` · ${fmtE(wb.banked)} banked so far 👍` : ''}</div>
-          </div>`;
-          })() : ''}
         </div>
       </div>
+
+      <!-- Macros: their own card now, not squeezed under the rings. The
+           protein minimum moves up into the header note so the protein row
+           itself can stay on one line at 390px. -->
+      <div class="calm-head">
+        <h2>Macros</h2>
+        ${goals.proteinMin > 0 && goals.proteinMin < goals.protein
+          ? `<span class="calm-note">protein min ${Math.round(goals.proteinMin)} · aim ${Math.round(goals.protein)}</span>` : ''}
+      </div>
+      <div class="calm-block">
+        <div class="card" id="macro-bar-root"></div>
+      </div>
+      ${/* Weekly budget (Settings → Weekly calorie budget). Only for your
+           own today: a past day or a connected profile has no "rest of
+           the week" to plan. Its own card since the redesign: it used to
+           sit under the macro bars inside the ring card, which is most of
+           what made that card feel crowded. */
+        settings.week_budget === '1' && isToday ? (() => {
+        const wb = weekBudget(today, baseGoal, recentDays, t.calories || 0);
+        const pct = Math.min(100, Math.max(0, wb.used / wb.budget * 100));
+        const over = wb.left < 0;
+        const last = wb.daysLeft === 1;
+        return `
+      <div class="calm-head">
+        <h2>This week</h2>
+        <span class="calm-note">Mon–Sun · day ${8 - wb.daysLeft} of 7</span>
+      </div>
+      <div class="calm-block">
+        <div class="card week-card">
+          <div class="week-top">
+            <span class="num week-amt">${fmtE(wb.used)}<span> / ${fmtE(wb.budget)} ${ul}</span></span>
+          </div>
+          <div class="mb-track"><div class="mb-fill" style="width:${pct}%;--mb:${over ? 'var(--warning)' : 'var(--accent)'}"></div></div>
+          <div class="week-cap">${over
+            ? `<span style="color:var(--warning);font-weight:600">${fmtE(-wb.left)} ${ul} over</span> this week's budget`
+            : `<strong>${fmtE(wb.left)} ${ul} left</strong> ${last ? 'today (last day of the week)' : `over ${wb.daysLeft} days`}`}${
+            !last && !over ? ` · today's fair share ~${fmtE(wb.todayShare)}` : ''}${
+            wb.banked > 150 ? ` · ${fmtE(wb.banked)} banked so far 👍` : ''}</div>
+        </div>
+      </div>`;
+      })() : ''}
 
       <!-- Bodyweight — collapses to a slim row whenever there's a value to show
            (manual weigh-in, IronLog, or a computed trend); the logger and the
            raw/trend toggle sit behind the chevron. Full logger only when
            there's nothing to show at all. -->
-      <div style="padding:0 16px 14px">
+      <div class="calm-block">
         ${weightBigHtml ? `
         <details class="card nl-details">
-          <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">
-            <span class="label">${icon(ICON_SCALE, 13, -3)} Bodyweight</span>
-            <span class="num" style="margin-left:auto;font-size:15px;font-weight:700">${weightBigHtml}</span>
+          <summary class="calm-slim">
+            <span class="calm-ic">${icon(ICON_SCALE, 16)}</span>
+            <span class="calm-slim-t">Bodyweight</span>
+            <span class="num calm-slim-n">${weightBigHtml}</span>
             <span class="nl-chev" style="font-size:9px;color:var(--text-faint)">▾</span>
           </summary>
           ${weightDisplay === 'trend' && rawToday != null
@@ -602,7 +627,7 @@ export function renderToday(container) {
         </details>` : `
         <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
           <div style="min-width:0">
-            <div class="label">${icon(ICON_SCALE, 13, -3)} Bodyweight</div>
+            <div class="calm-slim-t" style="display:flex;align-items:center;gap:8px"><span class="calm-ic">${icon(ICON_SCALE, 16)}</span>Bodyweight</div>
             <div style="font-size:12px;color:var(--warning);margin-top:3px;font-weight:600">Not weighed today — log it here →</div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
@@ -615,7 +640,7 @@ export function renderToday(container) {
 
       <!-- IronLog (collapsible) -->
       ${ironlog ? `
-      <div style="padding:0 16px 14px">
+      <div class="calm-block">
         <button id="ironlog-toggle" class="card" style="width:100%;display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:12px">
           <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
             ${ironlog ? `<span style="color:var(--accent)">${icon(ICON_BOLT, 13)}</span>` : `<span style="color:var(--text-faint)">${icon(ICON_CHART, 13)}</span>`}
@@ -649,11 +674,12 @@ export function renderToday(container) {
       </div>` : ''}
 
       <!-- Meals -->
-      <div class="section-header">
+      <div class="calm-head">
         <h2>Meals</h2>
+        ${mealCount > 0 ? `<span class="calm-note">${mealCount} logged · ${fmtE(eaten)} ${ul}</span>` : ''}
       </div>
       <div id="meals-list"></div>
-      <div style="display:flex;gap:8px;margin:8px 16px 16px">
+      <div class="calm-add-row">
         <button class="new-meal-btn" id="new-meal-btn" style="margin:0;flex:1">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -674,7 +700,7 @@ export function renderToday(container) {
     `;
 
     // Render macro bar
-    renderMacroBar(document.getElementById('macro-bar-root'), t, goals, true, partial);
+    renderMacroBar(document.getElementById('macro-bar-root'), t, goals, true, partial, { minInHeader: true });
 
     // Render sessions
     const mealsList = document.getElementById('meals-list');
