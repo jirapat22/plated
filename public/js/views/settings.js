@@ -50,6 +50,8 @@ function ironlogModeNote(s) {
 }
 
 export function renderSettings(container) {
+  // Scope for the calm redesign's Settings rules in style.css.
+  container.classList.add('settings-view');
   container.innerHTML = `
     <div class="today-header"><div class="today-date">Settings</div></div>
     <div id="settings-body" style="padding:0 16px">
@@ -73,11 +75,16 @@ export function renderSettings(container) {
     if (!body) return;   // view torn down before render
 
     const prof = getProfile() || { name: '', accent_color: ACCENTS[0] };
+    // Calm redesign (20/11/2026): the ten sections are grouped under three
+    // small headers (You / Goals / App) so the list scans in chunks, and each
+    // section's emoji sits in an icon tile. Sections and their contents are
+    // unchanged.
     body.innerHTML = `
+      <div class="calm-head"><h2>You</h2></div>
       <!-- Profile — collapsed like every other section. Settings opens as a
            list of headings you scan, not a wall you scroll past. -->
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
-        <div class="sec-head">👤 Profile<span class="sec-chevron">▾</span></div>
+        <div class="sec-head"><span class="sec-title"><span class="sec-ic">👤</span>Profile</span><span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <label class="form-label">Display name</label>
           <input class="input" id="pf-name" value="${esc(prof.name)}" maxlength="24" style="margin-bottom:12px"/>
@@ -110,7 +117,7 @@ export function renderSettings(container) {
            size and the three switches below are per profile, so a shared phone
            can be large for one person and normal for the other. -->
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
-        <div class="sec-head">🎨 Appearance<span class="sec-chevron">▾</span></div>
+        <div class="sec-head"><span class="sec-title"><span class="sec-ic">🎨</span>Appearance</span><span class="sec-chevron">▾</span></div>
         <div class="settings-row">
           <span class="settings-row-label">Theme</span>
           <div style="display:flex;gap:6px" id="theme-switch">
@@ -144,7 +151,7 @@ export function renderSettings(container) {
 
       <!-- Connections -->
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
-        <div class="sec-head">🔗 Connections<span class="sec-chevron">▾</span></div>
+        <div class="sec-head"><span class="sec-title"><span class="sec-ic">🔗</span>Connections</span><span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
             Connect with someone to view their Today and History from the History tab. Weight and Trends stay private either way. Share your code with them, or enter theirs below.
@@ -166,15 +173,16 @@ export function renderSettings(container) {
       ${prof.is_admin ? `
       <!-- Admin -->
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
-        <div class="sec-head">🛡️ Admin · Profiles<span class="sec-chevron">▾</span></div>
+        <div class="sec-head"><span class="sec-title"><span class="sec-ic">🛡️</span>Admin · Profiles</span><span class="sec-chevron">▾</span></div>
         <div style="padding:8px 16px 14px" id="admin-list">
           <div class="skeleton skel-line" style="margin:8px 0"></div>
         </div>
       </div>` : ''}
 
+      <div class="calm-head"><h2>Goals</h2></div>
       <!-- Phase Selector -->
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
-        <div class="sec-head">🎯 Goal Phase<span class="sec-chevron">▾</span></div>
+        <div class="sec-head"><span class="sec-title"><span class="sec-ic">🎯</span>Goal Phase</span><span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <!-- 1. Maintenance / TDEE — the basis everything is derived from -->
           <label class="form-label">① Maintenance (TDEE)</label>
@@ -235,7 +243,7 @@ export function renderSettings(container) {
 
       <!-- Goals -->
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
-        <div class="sec-head">🍎 Daily Goals<span class="sec-chevron">▾</span></div>
+        <div class="sec-head"><span class="sec-title"><span class="sec-ic">🍎</span>Daily Goals</span><span class="sec-chevron">▾</span></div>
         <div class="settings-row">
           <span class="settings-row-label">Energy unit</span>
           <div style="display:flex;gap:6px">
@@ -293,7 +301,7 @@ export function renderSettings(container) {
 
       <!-- IronLog -->
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
-        <div class="sec-head">⚡ IronLog Integration<span class="sec-chevron">▾</span></div>
+        <div class="sec-head"><span class="sec-title"><span class="sec-ic">⚡</span>IronLog Integration</span><span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;line-height:1.5">
             Connecting IronLog pulls your workout burn, bodyweight and goals into Plated.
@@ -316,9 +324,10 @@ export function renderSettings(container) {
         </div>
       </div>
 
+      <div class="calm-head"><h2>App</h2></div>
       <!-- Ideas & Bugs — report to the team dashboard -->
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
-        <div class="sec-head">💡 Ideas &amp; Bugs<span class="sec-chevron">▾</span></div>
+        <div class="sec-head"><span class="sec-title"><span class="sec-ic">💡</span>Ideas &amp; Bugs</span><span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
             Report a bug or share an idea — sent to the team dashboard.
@@ -335,7 +344,7 @@ export function renderSettings(container) {
 
       <!-- Export -->
       <div class="card sec collapsed" style="margin-bottom:12px;padding:0">
-        <div class="sec-head">📦 Data &amp; Export<span class="sec-chevron">▾</span></div>
+        <div class="sec-head"><span class="sec-title"><span class="sec-ic">📦</span>Data &amp; Export</span><span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <!-- Two of these used to read as the same offer: "report" and "export"
                both sound like "get my data out", and nothing said which file the
@@ -353,7 +362,7 @@ export function renderSettings(container) {
 
       <!-- Danger zone -->
       <div class="card sec collapsed" style="margin-bottom:20px;padding:0;border-color:rgba(255,107,107,.3)">
-        <div class="sec-head danger">⚠️ Danger Zone<span class="sec-chevron">▾</span></div>
+        <div class="sec-head danger"><span class="sec-title"><span class="sec-ic">⚠️</span>Danger Zone</span><span class="sec-chevron">▾</span></div>
         <div style="padding:14px 16px">
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
             Permanently deletes all logged meals, weight entries, and meal-prep batches. Your food database and goal settings are kept.

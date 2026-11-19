@@ -1825,10 +1825,10 @@ canvas { max-width: 100%; }
 
 /* ── Today ── */
 /* Header, numbers and cards: shared by every converted screen. */
-:is(.today-view, .history-view, .trends-view, .foods-view) .today-header { padding: 18px 18px 8px; }
-:is(.today-view, .history-view, .trends-view, .foods-view) .today-date { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
-:is(.today-view, .history-view, .trends-view, .foods-view) .num { font-weight: 700; font-variant-numeric: tabular-nums; }
-:is(.today-view, .history-view, .trends-view, .foods-view) .card {
+:is(.today-view, .history-view, .trends-view, .foods-view, .settings-view) .today-header { padding: 18px 18px 8px; }
+:is(.today-view, .history-view, .trends-view, .foods-view, .settings-view) .today-date { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+:is(.today-view, .history-view, .trends-view, .foods-view, .settings-view) .num { font-weight: 700; font-variant-numeric: tabular-nums; }
+:is(.today-view, .history-view, .trends-view, .foods-view, .settings-view) .card {
   border-color: var(--border-soft);
   border-radius: var(--radius-lg);
   padding: 18px;
@@ -2053,3 +2053,29 @@ canvas { max-width: 100%; }
   overflow-wrap: anywhere;
   line-height: 1.25;
 }
+
+/* ── Settings ── */
+.settings-view .calm-head { padding: 8px 2px 8px; }
+.settings-view .calm-head:first-child { padding-top: 4px; }
+/* Section rows: the title in the body colour (it was muted, which made a
+   list of ten headings all look disabled), the emoji in an icon tile. */
+.settings-view .sec-head {
+  padding: 12px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text);
+  border-bottom-color: var(--border-soft);
+}
+.settings-view .sec-head.danger { color: var(--error); }
+.sec-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.sec-ic {
+  width: 32px; height: 32px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.settings-view .settings-row { border-bottom-color: var(--border-soft); }
