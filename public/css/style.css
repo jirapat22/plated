@@ -2126,3 +2126,18 @@ canvas { max-width: 100%; }
    shrink it below that: at 150% the portion box ran past the right edge and
    pushed "g" off the screen. */
 .qty-input { min-width: 0; }
+
+/* ── Polish pass (20/11/2026): 150% text at 390px ── */
+/* A pill never breaks inside its label: at 150% "🌙 Dark" became two lines
+   inside a 34px-tall pill and the second line was clipped. */
+.seg-btn { white-space: nowrap; }
+/* Settings rows may wrap: a label plus two pills is wider than the ~195px a
+   card has at 150%, and without wrap the pills ran off the card. The control
+   keeps to the right when it drops to its own line. */
+.settings-view .settings-row { flex-wrap: wrap; }
+.settings-view .settings-row > :last-child { margin-left: auto; }
+/* minmax(0, 1fr), not 1fr: a plain 1fr column will not shrink below its
+   content's min-content width, and a goal box's 80px input plus its unit made
+   two columns wider than the card at 150%, so "Bulk surplus ... kcal" ran past
+   the right edge. */
+.form-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }

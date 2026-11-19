@@ -189,7 +189,7 @@ export function renderSettings(container) {
           <div style="font-size:11px;color:var(--text-faint);margin:2px 0 6px">Energy you burn per day. Synced from IronLog, or set it manually.</div>
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
             <input class="input settings-row-input" type="text" inputmode="decimal" value="${eIn(s.tdee)}"
-              data-key="tdee" placeholder="${unitLabel() === 'kJ' ? 'e.g. 11300' : 'e.g. 2700'}" style="height:40px;flex:1;width:auto" />
+              data-key="tdee" placeholder="${unitLabel() === 'kJ' ? 'e.g. 11300' : 'e.g. 2700'}" style="height:40px;flex:1 1 0;width:auto;min-width:0" />
             <span style="font-size:12px;color:var(--text-muted)">${unitLabel()}</span>
             <button class="btn btn-secondary" id="manual-tdee-apply" style="height:40px;padding:0 14px;font-size:13px">Apply</button>
           </div>
@@ -206,8 +206,8 @@ export function renderSettings(container) {
             </div>`;
           })()}
           <div style="display:flex;gap:8px;margin-bottom:4px">
-            <button class="btn btn-secondary" id="tdee-estimate" style="height:36px;font-size:12px;flex:1">🧮 Not sure? Estimate it</button>
-            <button class="btn btn-secondary" id="ironlog-sync" style="height:36px;font-size:12px;flex:1">⟳ Sync from IronLog</button>
+            <button class="btn btn-secondary" id="tdee-estimate" style="height:auto;min-height:36px;padding-top:6px;padding-bottom:6px;line-height:1.2;font-size:12px;flex:1">🧮 Not sure? Estimate it</button>
+            <button class="btn btn-secondary" id="ironlog-sync" style="height:auto;min-height:36px;padding-top:6px;padding-bottom:6px;line-height:1.2;font-size:12px;flex:1">⟳ Sync from IronLog</button>
           </div>
           <div id="tdee-sync-status" style="font-size:11px;color:var(--text-muted);margin-bottom:16px"></div>
 
@@ -498,7 +498,7 @@ export function renderSettings(container) {
       try {
         const conns = await api.get('/api/connections');
         box.innerHTML = conns.length ? conns.map(p => `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-soft)">
             <span style="display:flex;align-items:center;gap:8px">
               <span style="width:10px;height:10px;border-radius:50%;background:${p.accent_color}"></span>
               <span style="font-size:14px">${esc(p.name)}</span>
@@ -547,13 +547,13 @@ export function renderSettings(container) {
               </div>`).join('')}
             <div style="font-size:10px;color:var(--text-faint);margin-top:6px">Typed by whoever asked — unverified. Match it to a profile below yourself.</div>
           </div>` : '') + profiles.map(p => `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-soft)">
             <span style="display:flex;align-items:center;gap:8px">
               <span style="width:10px;height:10px;border-radius:50%;background:${p.accent_color}"></span>
               <span style="font-size:14px">${esc(p.name)}</span>
               ${p.is_admin ? '<span class="food-tag tag-custom">Admin</span>' : ''}
             </span>
-            <span style="display:flex;gap:6px;flex-shrink:0">
+            <span style="display:flex;gap:6px;flex-shrink:0;margin-left:auto">
               <button class="btn btn-secondary admin-code" data-id="${p.id}" data-name="${esc(p.name)}"
                 style="height:32px;padding:0 10px;font-size:12px" title="Reset this profile's passcode">Reset code</button>
               <button class="btn btn-secondary admin-toggle" data-id="${p.id}" data-next="${p.is_admin ? 0 : 1}"
@@ -1564,7 +1564,7 @@ function goalRow(key, label, value, unit, compact = false, locked = false) {
       <div class="form-group" style="margin-bottom:0">
         <label class="form-label">${label}</label>
         <div style="display:flex;align-items:center;gap:6px">
-          <input class="input settings-row-input" type="text" inputmode="decimal" value="${value || ''}" data-key="${key}" step="1" style="height:40px;flex:1" />
+          <input class="input settings-row-input" type="text" inputmode="decimal" value="${value || ''}" data-key="${key}" step="1" style="height:40px;flex:1 1 0;min-width:0" />
           <span style="font-size:12px;color:var(--text-muted)">${unit}</span>
         </div>
       </div>
@@ -1609,7 +1609,7 @@ function macroSplitBox(s) {
   if (gkg && !bw) {
     return `
       <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center;margin-bottom:10px">
           <div class="form-label" style="margin:0">Macro targets</div>${tabs}
         </div>
         <div style="font-size:11px;color:var(--warning)">Log a bodyweight first — g/kg targets need a weight to multiply.</div>
@@ -1644,7 +1644,7 @@ function macroSplitBox(s) {
 
   return `
     <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center;margin-bottom:2px">
         <div class="form-label" style="margin:0">Macro targets</div>${tabs}
       </div>
       <div style="font-size:11px;color:var(--text-faint);margin-bottom:12px">${head}</div>
