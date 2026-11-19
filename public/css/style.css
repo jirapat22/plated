@@ -1836,10 +1836,11 @@ canvas { max-width: 100%; }
 .mb-note { font-size: 11px; color: var(--text-muted); margin-top: 12px; line-height: 1.45; }
 
 /* ── Today ── */
-.today-view .today-header { padding: 18px 18px 8px; }
-.today-view .today-date { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
-.today-view .num { font-weight: 700; font-variant-numeric: tabular-nums; }
-.today-view .card {
+/* Header, numbers and cards: shared by every converted screen. */
+:is(.today-view, .history-view) .today-header { padding: 18px 18px 8px; }
+:is(.today-view, .history-view) .today-date { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+:is(.today-view, .history-view) .num { font-weight: 700; font-variant-numeric: tabular-nums; }
+:is(.today-view, .history-view) .card {
   border-color: var(--border-soft);
   border-radius: var(--radius-lg);
   padding: 18px;
@@ -1917,19 +1918,19 @@ canvas { max-width: 100%; }
 .week-cap { font-size: 12px; color: var(--text-muted); margin-top: 10px; line-height: 1.5; }
 .week-cap strong { color: var(--text); }
 
-/* Meal cards (log.js renderMealCard), Today's copy. */
-.today-view .meal-session {
+/* Meal cards (log.js renderMealCard), on Today and History. */
+:is(.today-view, .history-view) .meal-session {
   border-color: var(--border-soft);
   border-radius: var(--radius-lg);
 }
-.today-view .meal-session-header { padding: 14px 16px; border-bottom-color: var(--border-soft); }
-.today-view .meal-session-title { font-size: 14px; font-weight: 700; }
-.today-view .meal-entry { padding: 12px 16px; }
-.today-view .meal-entry + .meal-entry,
-.today-view .meal-session-footer,
-.today-view .meal-session-add { border-color: var(--border-soft); }
-.today-view .meal-session-add { padding: 12px 16px; }
-.today-view .meal-entry-kcal { font-size: 15px; font-weight: 700; }
+:is(.today-view, .history-view) .meal-session-header { padding: 14px 16px; border-bottom-color: var(--border-soft); }
+:is(.today-view, .history-view) .meal-session-title { font-size: 14px; font-weight: 700; }
+:is(.today-view, .history-view) .meal-entry { padding: 12px 16px; }
+:is(.today-view, .history-view) .meal-entry + .meal-entry,
+:is(.today-view, .history-view) .meal-session-footer,
+:is(.today-view, .history-view) .meal-session-add { border-color: var(--border-soft); }
+:is(.today-view, .history-view) .meal-session-add { padding: 12px 16px; }
+:is(.today-view, .history-view) .meal-entry-kcal { font-size: 15px; font-weight: 700; }
 
 /* New Meal / Quick Log: solid soft cards instead of dashed outlines. */
 .calm-add-row { display: flex; gap: 8px; margin: 4px 16px 16px; }
@@ -1948,3 +1949,41 @@ canvas { max-width: 100%; }
   box-shadow: 0 12px 24px -8px var(--shadow);
   box-shadow: 0 12px 24px -8px color-mix(in srgb, var(--accent) 65%, transparent);
 }
+
+/* ── History ── */
+/* The day strip: soft pills, the chosen day a filled accent wash. */
+.history-view .cal-strip { gap: 6px; padding: 10px 16px 14px; }
+.history-view .cal-day { border-radius: var(--radius-md); padding: 9px 4px; }
+.history-view .cal-day.selected {
+  background: var(--accent-dim);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.history-view .cal-day.selected .cal-day-name { color: var(--accent); }
+/* Cards stack inside #history-day, which already pads 16px each side. */
+.history-view #history-day > .card { margin-bottom: 14px; }
+.history-view #history-day > .card + .card { margin-top: 0; }
+.history-view #history-day .calm-head { padding: 6px 2px 8px; }
+.hist-date { font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
+.hist-sum-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+.history-view .hist-kcal { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+.hist-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.hist-grams { text-align: right; font-size: 13px; line-height: 1.5; }
+.hist-weight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--border-soft);
+  margin-top: 14px;
+  padding-top: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.hist-avg { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.hist-avg-kcal { font-size: 22px; }
+.hist-avg-kcal span { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.hist-avg-g { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+/* Each figure on one line: at 150% "120.0g protein" broke after the number. */
+.hist-grams .num { white-space: nowrap; }
+/* When the buttons do wrap under the meal name, keep them on the right where
+   the thumb expects them. No effect when they share the line. */
+:is(.today-view, .history-view) .meal-session-actions { margin-left: auto; }

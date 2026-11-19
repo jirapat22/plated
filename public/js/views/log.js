@@ -1437,9 +1437,12 @@ export function renderMealCard(session, viewDate, opts = {}, onDone) {
   // card the finger is over may have been rendered by a different view.
   sessionEl.dataset.sessionId = session.id;
   sessionEl.dataset.sessionName = session.name || 'Meal';
+  // The title button's min-width is a floor, not 0: with 0, at 150% text the
+  // "→ Today" pill and the two buttons squeezed "Breakfast" down to "Breakf".
+  // With a floor the header (flex-wrap) moves the buttons to their own line.
   sessionEl.innerHTML = `
     <div class="meal-session-header">
-      <button class="session-rename-btn" style="text-align:left;flex:1;min-width:0">
+      <button class="session-rename-btn" style="text-align:left;flex:1;min-width:6.5em">
         <div class="meal-session-title" style="display:flex;align-items:center;gap:6px">
           ${esc(session.name)}
           <span style="font-size:11px;color:var(--text-faint)">✎</span>

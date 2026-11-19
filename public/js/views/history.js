@@ -37,6 +37,8 @@ function hexToRgba(hex, alpha) {
 }
 
 export function renderHistory(container) {
+  // Scope for the calm redesign's History rules in style.css.
+  container.classList.add('history-view');
   // Yesterday, not today. History is a review tool and today isn't finished —
   // you can't review a day you're still eating. Today also has its own tab with
   // the rings and the logging buttons, so landing here on today duplicated it
@@ -279,56 +281,60 @@ export function renderHistory(container) {
     // ("6 of 7 days logged"); the card was the last place still claiming it.
     const nothingLogged = mealData.sessions.length === 0;
 
+    // Calm redesign (20/11/2026): the one tall card is split the way Today's
+    // is. A summary card (the day's total and grams), then the macro bars, the
+    // 7-day average and the meals, each under its own small section header.
+    // Same numbers, same conditions; only the grouping changed.
+    const showBars = !viewed && !nothingLogged;
     el.innerHTML = `
-      <div class="card" style="margin-bottom:12px">
-        <div style="font-size:15px;font-weight:700;margin-bottom:12px">${fmtDateFull(date)}</div>
+      <div class="card hist-sum">
+        <div class="hist-date">${fmtDateFull(date)}</div>
         ${nothingLogged ? `
-        <div style="margin-bottom:12px">
-          <div style="font-size:17px;font-weight:700;color:var(--text-muted)">${date > localDate() ? 'Not yet' : 'Nothing logged'}</div>
-          <div class="label">${date > localDate() ? 'this day is still ahead' : 'no meals were recorded on this day'}</div>
+        <div>
+          <div style="font-size:18px;font-weight:700;color:var(--text-muted)">${date > localDate() ? 'Not yet' : 'Nothing logged'}</div>
+          <div class="hist-sub">${date > localDate() ? 'this day is still ahead' : 'no meals were recorded on this day'}</div>
         </div>` : `
-        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px">
+        <div class="hist-sum-row">
           <div>
-            <div class="num" style="font-size:28px;font-weight:800">${fmtE(t.calories)}${tp.calories ? '+' : ''}</div>
-            <div class="label">${viewed ? ul : `of ${fmtE(goals.cal)} ${ul}`}</div>
+            <div class="num hist-kcal">${fmtE(t.calories)}${tp.calories ? '+' : ''}</div>
+            <div class="hist-sub">${viewed ? ul : `of ${fmtE(goals.cal)} ${ul}`}</div>
             ${!viewed && goalIsHistoric ? `<div style="font-size:10px;color:var(--text-faint);margin-top:2px">your goal at the time</div>` : ''}
           </div>
-          <div style="text-align:right">
-            <div class="num" style="font-size:13px;color:var(--protein)">${t.protein.toFixed(1)}${tp.protein ? '+' : ''}g protein</div>
-            <div class="num" style="font-size:13px;color:var(--carbs)">${t.carbs.toFixed(1)}${tp.carbs ? '+' : ''}g carbs</div>
-            <div class="num" style="font-size:13px;color:var(--fat)">${t.fat.toFixed(1)}${tp.fat ? '+' : ''}g fat</div>
+          <div class="hist-grams">
+            <div class="num" style="color:var(--protein)">${t.protein.toFixed(1)}${tp.protein ? '+' : ''}g protein</div>
+            <div class="num" style="color:var(--carbs)">${t.carbs.toFixed(1)}${tp.carbs ? '+' : ''}g carbs</div>
+            <div class="num" style="color:var(--fat)">${t.fat.toFixed(1)}${tp.fat ? '+' : ''}g fat</div>
           </div>
         </div>`}
-        <div id="hist-macro-bar"></div>
-        ${viewed ? `<div style="font-size:11px;color:var(--text-faint);margin-top:2px">Totals shown, not compared to a goal — goals stay private</div>` : ''}
+        ${viewed ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">Totals shown, not compared to a goal: goals stay private</div>` : ''}
         ${dayWeight ? `
-        <div style="display:flex;align-items:center;gap:6px;border-top:1px solid var(--border);margin-top:12px;padding-top:10px;font-size:12px;color:var(--text-muted)">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="9" width="18" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 9a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.7"/><path d="M12 12v3.2M12 12l2.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-          Bodyweight <span class="num" style="color:var(--text);font-weight:700">${dayWeight.weight_kg} kg</span>
-        </div>` : ''}
-        ${date <= localDate() && n >= 2 ? `
-        <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">
-          <div style="font-size:10px;font-weight:700;color:var(--text-faint);letter-spacing:.06em;margin-bottom:6px">
-            7-DAY AVG · ${n} of 7 days logged
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <div class="num" style="font-size:18px">${fmtE(wAvg('calories'))}${wPlus('calories')}
-              <span style="font-size:11px;color:var(--text-muted)">${ul}/day</span>
-            </div>
-            <div style="font-size:12px;color:var(--text-muted)">
-              <span style="color:var(--protein)">${wAvg('protein')}${wPlus('protein')}g P</span> ·
-              <span style="color:var(--carbs)">${wAvg('carbs')}${wPlus('carbs')}g C</span> ·
-              <span style="color:var(--fat)">${wAvg('fat')}${wPlus('fat')}g F</span>
-            </div>
-          </div>
+        <div class="hist-weight">
+          <span class="calm-ic" style="width:28px;height:28px;border-radius:9px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="9" width="18" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 9a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.7"/><path d="M12 12v3.2M12 12l2.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+          Bodyweight <span class="num" style="margin-left:auto;color:var(--text);font-size:15px">${dayWeight.weight_kg} kg</span>
         </div>` : ''}
       </div>
+      ${showBars ? `
+      <div class="calm-head"><h2>Macros</h2></div>
+      <div class="card" id="hist-macro-bar"></div>` : ''}
+      ${date <= localDate() && n >= 2 ? `
+      <div class="calm-head"><h2>7-day average</h2><span class="calm-note">${n} of 7 days logged</span></div>
+      <div class="card hist-avg">
+        <div class="num hist-avg-kcal">${fmtE(wAvg('calories'))}${wPlus('calories')}
+          <span>${ul}/day</span>
+        </div>
+        <div class="hist-avg-g">
+          <span style="color:var(--protein)">${wAvg('protein')}${wPlus('protein')}g P</span> ·
+          <span style="color:var(--carbs)">${wAvg('carbs')}${wPlus('carbs')}g C</span> ·
+          <span style="color:var(--fat)">${wAvg('fat')}${wPlus('fat')}g F</span>
+        </div>
+      </div>` : ''}
+      ${mealData.sessions.length ? `<div class="calm-head"><h2>Meals</h2><span class="calm-note">${mealData.sessions.length} logged</span></div>` : ''}
     `;
     // Only render the goal-relative macro bar for your own day — for a
     // connected profile's day we only have your goals, not theirs, and
     // showing their intake "against" your numbers is misleading rather
     // than just incomplete.
-    if (!viewed && !nothingLogged) renderMacroBar(el.querySelector('#hist-macro-bar'), t, goals, false, mealData.totals_partial || null);
+    if (showBars) renderMacroBar(el.querySelector('#hist-macro-bar'), t, goals, false, mealData.totals_partial || null);
 
     if (mealData.sessions.length === 0) {
       const future = date > localDate();
@@ -343,7 +349,7 @@ export function renderHistory(container) {
       mealData.sessions.forEach(session => {
         const card = document.createElement('div');
         card.className = 'meal-session';
-        card.style.margin = '0 0 10px';
+        card.style.margin = '0 0 12px';
         const kcal = session.entries.reduce((s, e) => s + (e.calories || 0), 0);
         card.innerHTML = `
           <div class="meal-session-header">
@@ -370,7 +376,7 @@ export function renderHistory(container) {
       const isPast = date < localDate();
       mealData.sessions.forEach(session => {
         const card = renderMealCard(session, date, { showMoveToday: isPast, showQuickLog: true }, () => refresh(date));
-        card.style.margin = '0 0 10px';   // history-day already has 16px side padding
+        card.style.margin = '0 0 12px';   // history-day already has 16px side padding
         el.appendChild(card);
       });
     }
@@ -383,7 +389,10 @@ export function renderHistory(container) {
     // don't need to repeat it and can sit two-up.
     if (!viewed) {
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;gap:8px;margin:8px 0 16px';
+      // calm-add-row is Today's New Meal / Quick Log row; the inline margin
+      // drops its 16px sides because history-day already pads them.
+      row.className = 'calm-add-row';
+      row.style.margin = '4px 0 16px';
 
       const addBtn = document.createElement('button');
       addBtn.className = 'new-meal-btn';
