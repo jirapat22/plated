@@ -2336,37 +2336,29 @@ canvas { max-width: 100%; }
 }
 
 /* ── Desktop: Foods ── */
-/* The list card holds its rows two-across. One row per line at 1100px left a
-   name on the far left and its star 900px away on the far right, and the eye
-   lost which star belonged to which food. Hairlines stay: a bottom rule on
-   every row, a side rule between the two columns, and none under the last
-   row (or under the last pair, when the count is even). */
+/* Foods is a LIST, so one column (21/11/2026). The rows used to sit
+   two-across, but a long name wraps to two lines and its neighbour does not,
+   so the pairs were ragged and the order zig-zagged. One row per line at
+   1100px left a name far from its star, so instead the whole screen is
+   centred at a reading width, which keeps each row short. The class sits on
+   the shared scroll container and stays there after you leave Foods, so the
+   :has() makes sure this only applies while the Foods list is on screen. */
 @container main (min-width: 760px) {
-  .foods-view #foods-list:has(> .food-list-item) {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-  .foods-view #foods-list > .food-list-item:nth-child(odd) { border-right: 1px solid var(--border-soft); }
-  .foods-view #foods-list > .food-list-item:nth-last-child(2):nth-child(odd) { border-bottom: none; }
+  .foods-view:has(#foods-list) > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+  /* The header, search and tab rows pad their insides by 16px; the list
+     card does not, so it is 32px narrower to line up with their edges. The
+     auto margins are repeated here because the phone rule that gives the
+     card its 16px side margins is more specific than the line above. */
+  .foods-view:has(#foods-list) > #foods-list { max-width: 728px; margin-left: auto; margin-right: auto; }
 }
 
 /* ── Desktop: Settings ── */
-/* The section cards sit two-across under each group header (You / Goals /
-   App), so the closed list fits on one screen instead of ten 1100px-wide
-   bars. An OPEN section spans both columns: its form needs the room, and a
-   half-width open card beside a closed one left a tall hole next to it.
-   The phone's ".card + .card" top margin is zeroed for the same reason as on
-   Trends: in a grid it only shifts the right card of a pair down. */
+/* Settings is a LIST of sections, so one column centred at a reading width
+   (21/11/2026), not ten 1100px-wide bars. It used to be two-across, but a
+   group with an odd count (Goals, App) left a lone card with an empty slot
+   beside it, and an open section next to a closed one left a tall hole. */
 @container main (min-width: 760px) {
-  #settings-body {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: 12px;
-    align-items: start;
-  }
-  #settings-body > .calm-head,
-  #settings-body > .sec:not(.collapsed) { grid-column: 1 / -1; }
-  #settings-body > .card { margin-top: 0; }
+  #settings-body { max-width: 760px; margin-left: auto; margin-right: auto; }
 }
 
 /* ═══ Desktop polish: bigger and roomier (21/11/2026) ═══════════════════
@@ -2414,7 +2406,6 @@ canvas { max-width: 100%; }
   .today-col .meal-session,
   .hist-col .meal-session { margin-left: 0; margin-right: 0; }
   #trends-body { column-gap: 20px; }
-  #settings-body { column-gap: 20px; }
 }
 
 /* A meal column on a laptop is only phone-wide, and there the header put
@@ -2425,6 +2416,21 @@ canvas { max-width: 100%; }
    monitor still keeps everything on one line. */
 @media (min-width: 900px) {
   .today-col, .hist-col { container: col / inline-size; }
+}
+
+/* Today and History: the day's summary (ring, macros, week) on the left is
+   much shorter than its meals on the right, and the meals grow with every
+   food logged, so the left column ended in a big empty area (21/11/2026).
+   It now sticks to the top while the meals scroll past, so the summary is
+   always beside what you are looking at. Only when the window is tall
+   enough to show the whole summary: a sticky column taller than the screen
+   would hide its own bottom cards until the very end of the page. */
+@media (min-width: 900px) and (min-height: 820px) {
+  .today-grid > .today-col:first-child,
+  .hist-grid > .hist-col:first-child {
+    position: sticky;
+    top: 0;
+  }
 }
 @container col (max-width: 560px) {
   .meal-session-macros {
