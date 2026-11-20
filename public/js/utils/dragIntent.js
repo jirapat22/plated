@@ -67,3 +67,12 @@ export function gestureIntent({ dx, dy, elapsedMs, pointerType = 'touch' }) {
 // then scaled back up — otherwise at 150% it renders two thirds the size of the
 // row it is standing in for.
 export const unzoom = (px, scale) => (scale > 0 ? px / scale : px);
+
+// The zoom a row is REALLY drawn at. On a phone that is just --ui-scale, but
+// on a desktop the CSS multiplies it by --desk-zoom (one size step up), so
+// reading --ui-scale alone there drew the drag ghost 15% too small. The
+// computed `zoom` of the zoomed ancestor is the product, whatever it is made of.
+export const effectiveZoom = el => {
+  const host = el?.closest?.('.view-container, .sheet-content');
+  return (host && parseFloat(getComputedStyle(host).zoom)) || 1;
+};

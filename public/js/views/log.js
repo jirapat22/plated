@@ -8,7 +8,7 @@ import { fmtE, unitLabel, toKcal, wireEnergyUnitToggle } from '../utils/energy.j
 import { localDate, addDaysIso }          from '../utils/date.js';
 import { getFoodIcon }                    from '../utils/foodIcon.js';
 import { openPortion, openLeftoverLog }   from './batches.js';
-import { gestureIntent, unzoom, HOLD_MS } from '../utils/dragIntent.js';
+import { gestureIntent, unzoom, effectiveZoom, HOLD_MS } from '../utils/dragIntent.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -1291,8 +1291,9 @@ function makeEntryDraggable(entryEl, entry, onDone) {
     const t0 = performance.now();
     // Read once, at pick-up. Re-reading per move would cost a layout on every
     // frame, and nobody changes their text size mid-drag.
-    const scale = parseFloat(
-      getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1;
+    // The real zoom of the list this row sits in (text size x the desktop
+    // step), not --ui-scale alone; see effectiveZoom.
+    const scale = effectiveZoom(entryEl);
 
     let armed = false, settled = false, ghost = null, over = null;
 

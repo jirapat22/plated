@@ -2368,3 +2368,69 @@ canvas { max-width: 100%; }
   #settings-body > .sec:not(.collapsed) { grid-column: 1 / -1; }
   #settings-body > .card { margin-top: 0; }
 }
+
+/* ═══ Desktop polish: bigger and roomier (21/11/2026) ═══════════════════
+   Pat on a monitor: "still has weird space on the side of each column" and
+   it all felt small. Three fixes, all inside the desktop media query, so the
+   phone and its 150% setting are untouched.
+
+   1. One size step up. --desk-zoom multiplies the text-size setting, through
+      the same zoom the App Shell already uses, so 100% on a desktop is 115%
+      of the phone size and 150% is 150% of THAT. Still px plus zoom, never the
+      root font-size (see App Shell for why). The container queries below
+      measure in zoomed px, so a small laptop at 150% still drops to one
+      column on its own.
+   2. The column gutters. Today's two columns each kept the phone's 16px side
+      padding, which made a 32px hole between them and pulled every card in
+      from the title's edge. The padding now sits on the grid once, the
+      columns are flush, and every screen uses the same 20px gap.
+   3. The cap. 1050 zoomed px is about 1200 real px, the width Pat asked for;
+      wider screens just get even margins either side of it. */
+@media (min-width: 900px) {
+  :root { --desk-zoom: 1.15; }
+  .view-container, .sheet-content { zoom: calc(var(--ui-scale) * var(--desk-zoom)); }
+  .bottom-nav { zoom: calc(var(--ui-scale) * var(--desk-zoom)); }
+  .view-container { padding: 16px 28px 48px; }
+  .view-container > * { max-width: 1050px; }
+  /* The sheet is zoomed by the same factor, so its cap grows with it, or the
+     bigger text would make a cramped sheet. */
+  .sheet { max-width: calc(600px * var(--ui-scale) * var(--desk-zoom)); }
+}
+@container main (min-width: 760px) {
+  /* Meals get the wider column: a meal header carries the kcal + three macros
+     on one line, and at an even split it wrapped while the left column's
+     cards had room to spare. */
+  .today-grid {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    column-gap: 20px;
+    padding: 0 16px;
+  }
+  .today-col > .calm-block { padding-left: 0; padding-right: 0; }
+  .today-col > .calm-head  { padding-left: 2px; padding-right: 2px; }
+  .today-col > .calm-add-row { margin-left: 0; margin-right: 0; }
+  /* The meal cards bring their own 16px phone margin too; flush them to the
+     column like every other card. History pads its whole day, so its cards
+     lose the margin the same way and line up with the calendar strip. */
+  .today-col .meal-session,
+  .hist-col .meal-session { margin-left: 0; margin-right: 0; }
+  #trends-body { column-gap: 20px; }
+  #settings-body { column-gap: 20px; }
+}
+
+/* A meal column on a laptop is only phone-wide, and there the header put
+   "640 kcal . 52g P . 70g C . 14g F" beside the name and pushed the menu and
+   delete buttons down onto a line of their own, under a big empty gap. Same
+   cure as the phone (@media max-width 430px above): the figures take their own
+   line under the name. Measured on the COLUMN, not the screen, so a wide
+   monitor still keeps everything on one line. */
+@media (min-width: 900px) {
+  .today-col, .hist-col { container: col / inline-size; }
+}
+@container col (max-width: 560px) {
+  .meal-session-macros {
+    order: 3;
+    flex: 1 1 100%;
+    margin-left: 0;
+    white-space: normal;
+  }
+}
