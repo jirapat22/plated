@@ -2334,3 +2334,18 @@ canvas { max-width: 100%; }
   #trends-body > .tr-progress ~ .tr-weight { grid-column: 2; grid-row: span 2; }
   #trends-body > .tr-progress ~ .tr-cal { grid-column: 1; }
 }
+
+/* ── Desktop: Foods ── */
+/* The list card holds its rows two-across. One row per line at 1100px left a
+   name on the far left and its star 900px away on the far right, and the eye
+   lost which star belonged to which food. Hairlines stay: a bottom rule on
+   every row, a side rule between the two columns, and none under the last
+   row (or under the last pair, when the count is even). */
+@container main (min-width: 760px) {
+  .foods-view #foods-list:has(> .food-list-item) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .foods-view #foods-list > .food-list-item:nth-child(odd) { border-right: 1px solid var(--border-soft); }
+  .foods-view #foods-list > .food-list-item:nth-last-child(2):nth-child(odd) { border-bottom: none; }
+}
