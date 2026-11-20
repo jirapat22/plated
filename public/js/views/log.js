@@ -846,7 +846,11 @@ export function openEditEntry(entry, onSuccess, viewDate = null) {
           </div>
         </div>
         <div class="label" style="margin-bottom:10px">Macros — optional</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <!-- margin-bottom, same 16px as the Quick Log sheet's copy of this grid. Pat's bug 20/11 ("meal
+             button overlap"): without it the Meal chips below sat flush on the P/C/F boxes, 0px apart at
+             100% and at 150% (measured), so the chips' and boxes' borders touched and read as one
+             overlapping block. In px like everything else here; .sheet-content's zoom scales it. -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
           ${['pro','carb','fat'].map((id, i) => {
             const [label, color] = [['Protein','var(--protein)'],['Carbs','var(--carbs)'],['Fat','var(--fat)']][i];
             return `<div style="position:relative">
