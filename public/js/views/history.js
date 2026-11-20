@@ -286,7 +286,13 @@ export function renderHistory(container) {
     // 7-day average and the meals, each under its own small section header.
     // Same numbers, same conditions; only the grouping changed.
     const showBars = !viewed && !nothingLogged;
+    // Two plain wrappers (desktop redesign, 20/11/2026): on a phone they are
+    // ordinary blocks; on a wide screen style.css puts the day's numbers on the
+    // left and its meals on the right. Everything that used to be appended to
+    // `el` after this goes into the meals column, so the order is unchanged.
     el.innerHTML = `
+      <div class="hist-grid">
+      <div class="hist-col">
       <div class="card hist-sum">
         <div class="hist-date">${fmtDateFull(date)}</div>
         ${nothingLogged ? `
@@ -328,8 +334,13 @@ export function renderHistory(container) {
           <span style="color:var(--fat)">${wAvg('fat')}${wPlus('fat')}g F</span>
         </div>
       </div>` : ''}
+      </div>
+      <div class="hist-col hist-meals">
       ${mealData.sessions.length ? `<div class="calm-head"><h2>Meals</h2><span class="calm-note">${mealData.sessions.length} logged</span></div>` : ''}
+      </div>
+      </div>
     `;
+    const mealsCol = el.querySelector('.hist-meals');
     // Only render the goal-relative macro bar for your own day — for a
     // connected profile's day we only have your goals, not theirs, and
     // showing their intake "against" your numbers is misleading rather
@@ -339,7 +350,7 @@ export function renderHistory(container) {
     if (mealData.sessions.length === 0) {
       const future = date > localDate();
       const emptyText = viewed ? `Nothing logged` : (future ? 'Nothing planned yet — add a meal below to plan ahead' : 'No meals logged');
-      el.insertAdjacentHTML('beforeend', `<div class="empty-state" style="padding:20px 0"><div class="empty-icon">🍽</div><div class="empty-text">${emptyText}</div></div>`);
+      mealsCol.insertAdjacentHTML('beforeend', `<div class="empty-state" style="padding:20px 0"><div class="empty-icon">🍽</div><div class="empty-text">${emptyText}</div></div>`);
     } else if (viewed) {
       // Read-only: someone else's meals render as plain summary cards — no
       // edit/delete/move/copy affordances. Kept deliberately separate from
@@ -370,14 +381,14 @@ export function renderHistory(container) {
             </div>
           `).join('')}
         `;
-        el.appendChild(card);
+        mealsCol.appendChild(card);
       });
     } else {
       const isPast = date < localDate();
       mealData.sessions.forEach(session => {
         const card = renderMealCard(session, date, { showMoveToday: isPast, showQuickLog: true }, () => refresh(date));
         card.style.margin = '0 0 12px';   // history-day already has 16px side padding
-        el.appendChild(card);
+        mealsCol.appendChild(card);
       });
     }
 
@@ -413,7 +424,7 @@ export function renderHistory(container) {
         openQuickLog(lazySession(date), () => refresh(date)));
 
       row.append(addBtn, qlBtn);
-      el.appendChild(row);
+      mealsCol.appendChild(row);
     }
   }
 

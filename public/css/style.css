@@ -1947,9 +1947,11 @@ canvas { max-width: 100%; }
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .history-view .cal-day.selected .cal-day-name { color: var(--accent); }
-/* Cards stack inside #history-day, which already pads 16px each side. */
-.history-view #history-day > .card { margin-bottom: 14px; }
-.history-view #history-day > .card + .card { margin-top: 0; }
+/* Cards stack inside #history-day, which already pads 16px each side. Since
+   the desktop layout they sit one level down, in a .hist-col wrapper; :is()
+   keeps the old #id specificity so nothing else changes rank. */
+.history-view :is(#history-day, #history-day .hist-col) > .card { margin-bottom: 14px; }
+.history-view :is(#history-day, #history-day .hist-col) > .card + .card { margin-top: 0; }
 .history-view #history-day .calm-head { padding: 6px 2px 8px; }
 .hist-date { font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
 .hist-sum-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
@@ -2290,6 +2292,19 @@ canvas { max-width: 100%; }
   .today-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+/* ── Desktop: History ── */
+/* The chosen day's totals, macros and 7-day average on the left, its meals on
+   the right; same container query as Today, so 150% on a small laptop stays
+   one column. 20px gutter because #history-day pads its sides, not the cards. */
+@container main (min-width: 760px) {
+  .hist-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 20px;
     align-items: start;
   }
 }
