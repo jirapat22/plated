@@ -2308,3 +2308,29 @@ canvas { max-width: 100%; }
     align-items: start;
   }
 }
+
+/* ── Desktop: Trends ── */
+/* The verdict stays a full-width hero. Under it, its evidence: Progress and
+   the Calories chart down the left, the Bodyweight chart (with its weigh-in
+   and waist lists) on the right, so the two charts the verdict is built from
+   sit side by side. "Your week & logging" then pairs its cards two-up in DOM
+   order. Placement by class, so the phone's order is untouched.
+   align-items:start so a short card does not stretch to its row partner, and
+   minmax(0, 1fr) so a Chart.js canvas can shrink with its column. */
+@container main (min-width: 760px) {
+  #trends-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 14px;
+    align-items: start;
+  }
+  #trends-body > .tr-verdict,
+  #trends-body > .tr-head { grid-column: 1 / -1; }
+  /* The phone's ".card + .card" top margin spaces a STACK; in a grid it only
+     pushed the right-hand card of a pair 12px below its partner. */
+  #trends-body > .card { margin-top: 0; }
+  /* No Progress card (no target weight set): the two charts just pair up. */
+  #trends-body > .tr-progress { grid-column: 1; }
+  #trends-body > .tr-progress ~ .tr-weight { grid-column: 2; grid-row: span 2; }
+  #trends-body > .tr-progress ~ .tr-cal { grid-column: 1; }
+}

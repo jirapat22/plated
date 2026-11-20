@@ -996,8 +996,11 @@ export function renderTrends(container) {
     const trendsBody = document.getElementById('trends-body');
     if (!trendsBody) return;   // view torn down before render
     trendsBody.innerHTML = `
+      <!-- The tr-* classes on the cards below do nothing on a phone. On a wide
+           screen style.css uses them to place the cards in a two-column grid
+           (desktop redesign, 20/11/2026) without changing their order here. -->
       <!-- Verdict (hero) -->
-      <div class="card" style="margin-bottom:12px;border:1px solid ${haveVerdict ? (verdictGood ? 'rgba(93,202,138,.32)' : 'rgba(249,115,22,.35)') : 'var(--border-soft)'};background:${haveVerdict ? `linear-gradient(180deg, ${verdictGood ? 'rgba(93,202,138,.07)' : 'rgba(249,115,22,.08)'} 0%, transparent 58%), var(--surface)` : 'var(--surface)'}">
+      <div class="card tr-verdict" style="margin-bottom:12px;border:1px solid ${haveVerdict ? (verdictGood ? 'rgba(93,202,138,.32)' : 'rgba(249,115,22,.35)') : 'var(--border-soft)'};background:${haveVerdict ? `linear-gradient(180deg, ${verdictGood ? 'rgba(93,202,138,.07)' : 'rgba(249,115,22,.08)'} 0%, transparent 58%), var(--surface)` : 'var(--surface)'}">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px">
           <div class="label">${phase === 'cut' ? 'Is your cut working?' : phase === 'bulk' ? 'Is your bulk working?' : 'Holding maintenance?'}</div>
           <div style="font-size:10px;color:var(--text-faint);flex-shrink:0">last 4 weeks · fixed</div>
@@ -1040,7 +1043,7 @@ export function renderTrends(container) {
 
       ${progress ? `
       <!-- Progress to target: kg to go + two finish dates -->
-      <div class="card progress-card" style="margin-bottom:12px">
+      <div class="card progress-card tr-progress" style="margin-bottom:12px">
         <div class="label" style="margin-bottom:8px">Progress to ${targetWeight} kg</div>
         ${progress.reached ? `<div style="font-size:15px;font-weight:700;color:var(--success)">You're there 🎉 trend weight ${curWeight.toFixed(1)} kg</div>` : `
         <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px">
@@ -1054,7 +1057,7 @@ export function renderTrends(container) {
       </div>` : ''}
 
       <!-- Bodyweight + target + expected (the verdict's weight evidence) -->
-      <div class="card" style="margin-bottom:12px">
+      <div class="card tr-weight" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
           <div class="label">Bodyweight <span class="range-chip">· ${rangeLabel()}</span></div>
           <div style="display:flex;gap:10px;font-size:10px;color:var(--text-faint);flex-wrap:wrap">
@@ -1130,7 +1133,7 @@ export function renderTrends(container) {
       </div>
 
       <!-- Calories chart (the verdict's intake evidence) -->
-      <div class="card" style="margin-bottom:12px">
+      <div class="card tr-cal" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <div class="label">Calories <span class="range-chip">· ${rangeLabel()}</span></div>
           <div style="display:flex;gap:10px;font-size:10px;color:var(--text-faint)">
@@ -1147,7 +1150,7 @@ export function renderTrends(container) {
       </div>
 
       <!-- ── Shift from "is it working" to "your week & logging" ── -->
-      <div class="calm-head" style="padding:12px 2px 8px"><h2>Your week &amp; logging</h2></div>
+      <div class="calm-head tr-head" style="padding:12px 2px 8px"><h2>Your week &amp; logging</h2></div>
 
       <!-- This week (Mon–Sun) -->
       ${wkAll.length ? `
