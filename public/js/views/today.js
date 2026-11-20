@@ -503,6 +503,12 @@ export function renderToday(container) {
         </div>
       </div>` : ''}
 
+      <!-- Desktop grid (20/11/2026): two plain wrappers. On a phone they are
+           ordinary blocks and change nothing; at 900px+ style.css lays them
+           side by side, the day's numbers on the left and the meals on the
+           right, like the approved desktop mock. -->
+      <div class="today-grid">
+      <div class="today-col">
       <!-- Calorie ring(s). Calm redesign (20/11/2026, Pat's approved mock):
            thinner bands, no bezel ticks, and the ring names moved out of the
            rings into one legend row underneath. The hero card is a size
@@ -673,6 +679,8 @@ export function renderToday(container) {
         </div>
       </div>` : ''}
 
+      </div>
+      <div class="today-col">
       <!-- Meals -->
       <div class="calm-head">
         <h2>Meals</h2>
@@ -689,6 +697,8 @@ export function renderToday(container) {
         <button class="new-meal-btn" id="quick-log-standalone" style="margin:0;flex:1;color:var(--carbs);border-color:color-mix(in srgb, var(--carbs) 35%, transparent)">
           ${icon(ICON_BOLT, 14)} Quick Log
         </button>
+      </div>
+      </div>
       </div>
 
       <button class="fab-log" id="fab-log" aria-label="Log food">

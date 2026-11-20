@@ -121,6 +121,20 @@
   <main id="view-container" class="view-container"></main>
 
   <nav class="bottom-nav" id="bottom-nav">
+    <!-- Desktop only (calm redesign, 20/11/2026): at 900px and wider this nav
+         becomes a left side bar, and the app name sits at its top like the
+         approved desktop mock. display:none on a phone, so the bottom bar's
+         5-column grid never sees it. Not a button: it goes nowhere. -->
+    <div class="side-brand" aria-hidden="true">
+      <span class="side-logo">
+        <svg width="18" height="18" viewBox="0 0 48 48" fill="none">
+          <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="3.5"/>
+          <circle cx="24" cy="24" r="13" stroke="currentColor" stroke-width="2.5" stroke-dasharray="4 3"/>
+          <circle cx="24" cy="24" r="5" fill="currentColor"/>
+        </svg>
+      </span>
+      Plated
+    </div>
     <button class="nav-item active" data-view="today">
       <svg class="nav-icon" viewBox="0 0 24 24" fill="none">
         <rect x="3" y="6" width="18" height="15" rx="2" stroke="currentColor" stroke-width="1.7"/>
